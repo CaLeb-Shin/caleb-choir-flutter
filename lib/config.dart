@@ -3,7 +3,7 @@ class AppConfig {
   // API 서버 URL (Express/tRPC 백엔드)
   static const String apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3000',
+    defaultValue: 'https://caleb-choir-app.vercel.app',
   );
 
   // OAuth 포털 URL

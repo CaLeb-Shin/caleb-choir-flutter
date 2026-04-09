@@ -9,7 +9,7 @@ class ApiService {
 
   String baseUrl;
 
-  ApiService({this.baseUrl = 'https://caleb-choir-536qds6c6-sinbun001s-projects.vercel.app'}) {
+  ApiService({this.baseUrl = 'https://caleb-choir-app.vercel.app'}) {
     _dio = Dio(BaseOptions(
       baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 10),
