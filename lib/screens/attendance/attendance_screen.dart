@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:share_plus/share_plus.dart' show Share;
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../qr_scan/qr_scan_screen.dart';
@@ -65,7 +65,7 @@ class AttendanceScreen extends ConsumerWidget {
                   final result = await api.getAttendanceCsv();
                   final csv = result['csv'] as String?;
                   if (csv != null && csv.isNotEmpty) {
-                    await SharePlus.instance.share(ShareParams(text: csv, subject: '갈렙찬양대 출석기록'));
+                    await Share.share(csv, subject: '갈렙찬양대 출석기록');
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('출석 데이터 ${result['count']}건 내보내기')),

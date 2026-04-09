@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'theme/app_theme.dart';
+import 'services/api_service.dart';
+import 'providers/app_providers.dart';
+import 'screens/login/login_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/videos/videos_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
@@ -13,16 +16,56 @@ void main() {
   runApp(const ProviderScope(child: CalebChoirApp()));
 }
 
-class CalebChoirApp extends StatelessWidget {
+// Auth state provider
+final isLoggedInProvider = StateProvider<bool>((ref) => false);
+
+class CalebChoirApp extends ConsumerStatefulWidget {
   const CalebChoirApp({super.key});
 
   @override
+  ConsumerState<CalebChoirApp> createState() => _CalebChoirAppState();
+}
+
+class _CalebChoirAppState extends ConsumerState<CalebChoirApp> {
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
+    _handleDeepLink();
+  }
+
+  Future<void> _checkAuth() async {
+    final api = ref.read(apiServiceProvider);
+    final token = await api.getToken();
+    if (token != null && token.isNotEmpty) {
+      ref.read(isLoggedInProvider.notifier).state = true;
+    }
+  }
+
+  void _handleDeepLink() {
+    // Handle deep link: calebchoir://auth?token=TOKEN
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Deep link handling will work via platform channels
+      // For initial launch deep link, we check window
+    });
+  }
+
+  void handleAuthToken(String token) async {
+    final api = ref.read(apiServiceProvider);
+    await api.setToken(token);
+    ref.read(isLoggedInProvider.notifier).state = true;
+    ref.invalidate(profileProvider);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final isLoggedIn = ref.watch(isLoggedInProvider);
+
     return MaterialApp(
       title: '갈렙 찬양대',
       theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
-      home: const MainShell(),
+      home: isLoggedIn ? const MainShell() : const LoginScreen(),
     );
   }
 }
@@ -38,13 +81,13 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
   final _screens = const [
-    HomeScreen(),       // 0: 대시보드
-    SheetMusicScreen(), // 1: 악보 도서관
-    VideosScreen(),     // 2: 찬양 영상
-    AttendanceScreen(), // 3: 연습 일정 (출석)
-    CommunityScreen(),  // 4: 커뮤니티
-    EventsScreen(),     // 5: 이벤트
-    ProfileScreen(),    // 6: 마이
+    HomeScreen(),
+    SheetMusicScreen(),
+    VideosScreen(),
+    AttendanceScreen(),
+    CommunityScreen(),
+    EventsScreen(),
+    ProfileScreen(),
   ];
 
   static const _navItems = [

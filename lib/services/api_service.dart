@@ -7,10 +7,9 @@ class ApiService {
   late final Dio _dio;
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  // TODO: Update this to your actual API server URL
   String baseUrl;
 
-  ApiService({this.baseUrl = 'http://localhost:3000'}) {
+  ApiService({this.baseUrl = 'https://caleb-choir-536qds6c6-sinbun001s-projects.vercel.app'}) {
     _dio = Dio(BaseOptions(
       baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 10),
