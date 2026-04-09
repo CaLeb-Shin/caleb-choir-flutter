@@ -1,0 +1,41 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "caleb-choir-2026",
+          "appId": "1:714127777029:android:368bc1b07d147d2557ab6c",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "caleb-choir-2026",
+          "appId": "1:714127777029:ios:842902ac3abded7457ab6c",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "caleb-choir-2026",
+          "configurations": {
+            "android": "1:714127777029:android:368bc1b07d147d2557ab6c",
+            "ios": "1:714127777029:ios:842902ac3abded7457ab6c",
+            "web": "1:714127777029:web:c5d01c3c4f66db7b57ab6c"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": ["firebase-debug.log", ".firebase"],
+    "rewrites": [
+      { "source": "**", "destination": "/index.html" }
+    ]
+  }
+}

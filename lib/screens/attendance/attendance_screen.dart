@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart' show Share;
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
+import '../../services/firebase_service.dart';
 import '../qr_scan/qr_scan_screen.dart';
 
 class AttendanceScreen extends ConsumerWidget {
@@ -61,8 +62,8 @@ class AttendanceScreen extends ConsumerWidget {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () async {
-                  final api = ref.read(apiServiceProvider);
-                  final result = await api.getAttendanceCsv();
+                  final history = ref.read(myHistoryProvider).valueOrNull ?? [];
+                  final result = {'csv': history.map((r) => '${r['sessionTitle']},${r['checkedInAt']}').join('\n'), 'count': history.length};
                   final csv = result['csv'] as String?;
                   if (csv != null && csv.isNotEmpty) {
                     await Share.share(csv, subject: '갈렙찬양대 출석기록');
@@ -113,8 +114,7 @@ class AttendanceScreen extends ConsumerWidget {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () async {
-                      final api = ref.read(apiServiceProvider);
-                      await api.checkIn(session['id']);
+                      await FirebaseService.checkIn(session['id']);
                       ref.invalidate(myHistoryProvider);
                     },
                     icon: const Icon(Icons.check_circle, size: 20),

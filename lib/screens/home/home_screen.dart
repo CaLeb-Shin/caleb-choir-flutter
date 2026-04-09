@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
+import '../../models/user.dart' as app_user;
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});

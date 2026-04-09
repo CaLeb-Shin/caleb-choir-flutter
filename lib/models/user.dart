@@ -1,5 +1,5 @@
 class User {
-  final int id;
+  final String id;
   final String? name;
   final String? email;
   final String? role;
@@ -21,18 +21,20 @@ class User {
 
   bool get isAdmin => role == 'admin';
 
-  factory User.fromJson(Map<String, dynamic> json) {
+  factory User.fromMap(Map<String, dynamic> map) {
     return User(
-      id: json['id'] as int,
-      name: json['name'] as String?,
-      email: json['email'] as String?,
-      role: json['role'] as String?,
-      generation: json['generation'] as String?,
-      part: json['part'] as String?,
-      phone: json['phone'] as String?,
-      profileCompleted: json['profileCompleted'] as bool? ?? false,
+      id: (map['id'] ?? '').toString(),
+      name: map['name'] as String?,
+      email: map['email'] as String?,
+      role: map['role'] as String?,
+      generation: map['generation'] as String?,
+      part: map['part'] as String?,
+      phone: map['phone'] as String?,
+      profileCompleted: map['profileCompleted'] as bool? ?? false,
     );
   }
+
+  factory User.fromJson(Map<String, dynamic> json) => User.fromMap(json);
 
   static const partLabels = {
     'soprano': '소프라노',

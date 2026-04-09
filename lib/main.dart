@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'theme/app_theme.dart';
-import 'services/api_service.dart';
 import 'providers/app_providers.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/home/home_screen.dart';
@@ -12,60 +13,28 @@ import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
 import 'screens/events/events_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const ProviderScope(child: CalebChoirApp()));
 }
 
-// Auth state provider
-final isLoggedInProvider = StateProvider<bool>((ref) => false);
-
-class CalebChoirApp extends ConsumerStatefulWidget {
+class CalebChoirApp extends ConsumerWidget {
   const CalebChoirApp({super.key});
 
   @override
-  ConsumerState<CalebChoirApp> createState() => _CalebChoirAppState();
-}
-
-class _CalebChoirAppState extends ConsumerState<CalebChoirApp> {
-  @override
-  void initState() {
-    super.initState();
-    _checkAuth();
-    _handleDeepLink();
-  }
-
-  Future<void> _checkAuth() async {
-    final api = ref.read(apiServiceProvider);
-    final token = await api.getToken();
-    if (token != null && token.isNotEmpty) {
-      ref.read(isLoggedInProvider.notifier).state = true;
-    }
-  }
-
-  void _handleDeepLink() {
-    // Handle deep link: calebchoir://auth?token=TOKEN
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Deep link handling will work via platform channels
-      // For initial launch deep link, we check window
-    });
-  }
-
-  void handleAuthToken(String token) async {
-    final api = ref.read(apiServiceProvider);
-    await api.setToken(token);
-    ref.read(isLoggedInProvider.notifier).state = true;
-    ref.invalidate(profileProvider);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isLoggedIn = ref.watch(isLoggedInProvider);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authStateProvider);
 
     return MaterialApp(
       title: '갈렙 찬양대',
       theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
-      home: isLoggedIn ? const MainShell() : const LoginScreen(),
+      home: authState.when(
+        loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+        error: (_, __) => const LoginScreen(),
+        data: (user) => user != null ? const MainShell() : const LoginScreen(),
+      ),
     );
   }
 }

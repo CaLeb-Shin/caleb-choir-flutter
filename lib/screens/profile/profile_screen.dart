@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
+import '../../services/firebase_service.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -107,9 +108,7 @@ class ProfileScreen extends ConsumerWidget {
                         TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
                         TextButton(
                           onPressed: () async {
-                            final api = ref.read(apiServiceProvider);
-                            await api.logout();
-                            await api.clearToken();
+                            await FirebaseService.signOut();
                             if (context.mounted) Navigator.pop(context);
                           },
                           child: const Text('로그아웃', style: TextStyle(color: AppColors.error)),

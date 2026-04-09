@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import '../../theme/app_theme.dart';
-import '../../config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,25 +12,30 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   String? _error;
+  bool _loading = false;
 
-  Future<void> _handleLogin() async {
-    setState(() => _error = null);
-
-    final loginUrl = AppConfig.getLoginUrl();
-    if (loginUrl == null) {
-      setState(() => _error = 'OAuth가 설정되지 않았습니다.\n서버 관리자에게 문의해주세요.');
-      return;
-    }
+  Future<void> _handleGoogleSignIn() async {
+    setState(() { _error = null; _loading = true; });
 
     try {
-      final uri = Uri.parse(loginUrl);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        setState(() => _error = '브라우저를 열 수 없습니다.');
+      final googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        setState(() => _loading = false);
+        return; // cancelled
       }
+
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      // Auth state listener in main.dart will handle navigation
     } catch (e) {
-      setState(() => _error = '로그인 중 오류가 발생했습니다.');
+      setState(() => _error = '로그인에 실패했습니다.\n다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -71,8 +76,10 @@ class _LoginScreenState extends State<LoginScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _handleLogin,
-                  child: const Text('로그인 / 회원가입'),
+                  onPressed: _loading ? null : _handleGoogleSignIn,
+                  child: _loading
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : const Text('Google로 로그인'),
                 ),
               ),
               const SizedBox(height: 12),
