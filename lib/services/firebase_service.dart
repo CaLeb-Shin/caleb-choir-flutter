@@ -199,19 +199,117 @@ class FirebaseService {
         'userName': userDoc.data()?['name'] ?? '',
         'userPart': userDoc.data()?['part'] ?? '',
         'userGeneration': userDoc.data()?['generation'] ?? '',
+        'userImageUrl': userDoc.data()?['imageUrl'],
         'createdAt': (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
       });
     }
     return posts;
   }
 
-  static Future<void> createPost(String content, {String? imageUrl}) async {
-    await _db.collection('posts').add({
+  static Future<Map<String, dynamic>?> getPost(String postId) async {
+    final doc = await _db.collection('posts').doc(postId).get();
+    if (!doc.exists) return null;
+    final data = doc.data()!;
+    final userDoc = await _db.collection('users').doc(data['userId']).get();
+    return {
+      'id': doc.id,
+      ...data,
+      'userName': userDoc.data()?['name'] ?? '',
+      'userPart': userDoc.data()?['part'] ?? '',
+      'userGeneration': userDoc.data()?['generation'] ?? '',
+      'userImageUrl': userDoc.data()?['imageUrl'],
+      'createdAt': (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+    };
+  }
+
+  /// 게시물 이미지 업로드 → downloadUrl 반환
+  static Future<String?> uploadPostImage(Uint8List bytes, {String contentType = 'image/jpeg'}) async {
+    if (uid == null) return null;
+    final filename = '${DateTime.now().millisecondsSinceEpoch}_$uid.jpg';
+    final ref = FirebaseStorage.instance.ref().child('post_images').child(filename);
+    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+    return await ref.getDownloadURL();
+  }
+
+  static Future<String> createPost({
+    required String title,
+    String? content,
+    String? imageUrl,
+  }) async {
+    final docRef = await _db.collection('posts').add({
       'userId': uid,
+      'title': title,
       'content': content,
       'imageUrl': imageUrl,
+      'reactions': <String, List<String>>{
+        'like': [],
+        'sad': [],
+        'pray': [],
+      },
+      'commentCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    return docRef.id;
+  }
+
+  static Future<void> deletePost(String postId) async {
+    await _db.collection('posts').doc(postId).delete();
+  }
+
+  /// Toggle the current user's reaction of [type] on [postId]. Atomic.
+  static Future<void> toggleReaction(String postId, String type) async {
+    if (uid == null) return;
+    final ref = _db.collection('posts').doc(postId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      if (!snap.exists) return;
+      final reactionsRaw = (snap.data()?['reactions'] as Map<String, dynamic>?) ?? {};
+      final list = List<String>.from((reactionsRaw[type] as List<dynamic>?) ?? []);
+      if (list.contains(uid)) {
+        list.remove(uid);
+      } else {
+        list.add(uid!);
+      }
+      tx.update(ref, {'reactions.$type': list});
+    });
+  }
+
+  // ============ Post Comments ============
+  static Future<List<Map<String, dynamic>>> getComments(String postId) async {
+    final snapshot = await _db
+        .collection('posts').doc(postId)
+        .collection('comments').orderBy('createdAt', descending: false).get();
+    final comments = <Map<String, dynamic>>[];
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final userDoc = await _db.collection('users').doc(data['userId']).get();
+      comments.add({
+        'id': doc.id,
+        ...data,
+        'userName': userDoc.data()?['name'] ?? '',
+        'userPart': userDoc.data()?['part'] ?? '',
+        'userImageUrl': userDoc.data()?['imageUrl'],
+        'createdAt': (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+      });
+    }
+    return comments;
+  }
+
+  static Future<void> addComment(String postId, String content) async {
+    if (uid == null) return;
+    final postRef = _db.collection('posts').doc(postId);
+    await postRef.collection('comments').add({
+      'userId': uid,
+      'content': content,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    await postRef.update({'commentCount': FieldValue.increment(1)});
+  }
+
+  static Future<void> deleteComment(String postId, String commentId) async {
+    final postRef = _db.collection('posts').doc(postId);
+    await postRef.collection('comments').doc(commentId).delete();
+    await postRef.update({'commentCount': FieldValue.increment(-1)});
   }
 
   // ============ Announcements ============

@@ -68,6 +68,14 @@ final postsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return FirebaseService.getPosts();
 });
 
+final postProvider = FutureProvider.family<Map<String, dynamic>?, String>((ref, postId) async {
+  return FirebaseService.getPost(postId);
+});
+
+final commentsProvider = FutureProvider.family<List<Map<String, dynamic>>, String>((ref, postId) async {
+  return FirebaseService.getComments(postId);
+});
+
 final announcementsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return FirebaseService.getAnnouncements();
 });

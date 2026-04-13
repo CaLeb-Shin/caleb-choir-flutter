@@ -15,7 +15,7 @@ import 'screens/attendance/attendance_screen.dart';
 import 'screens/community/community_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
-import 'services/firebase_service.dart';
+import 'screens/community/post_compose_sheet.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -173,7 +173,7 @@ class _MainShellState extends ConsumerState<MainShell> {
       ),
       floatingActionButton: index == 4
           ? FloatingActionButton(
-              onPressed: () => _showPostDialog(context, ref),
+              onPressed: () => _openComposeSheet(context),
               backgroundColor: AppColors.primaryContainer,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: const Icon(Icons.edit_rounded, color: Colors.white),
@@ -182,21 +182,12 @@ class _MainShellState extends ConsumerState<MainShell> {
     );
   }
 
-  void _showPostDialog(BuildContext context, WidgetRef ref) {
-    final ctrl = TextEditingController();
-    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
-      title: const Text('게시물 작성'),
-      content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '내용을 입력하세요'), maxLines: 4),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
-        TextButton(onPressed: () async {
-          Navigator.pop(dialogCtx);
-          if (ctrl.text.trim().isNotEmpty) {
-            await FirebaseService.createPost(ctrl.text.trim());
-            ref.invalidate(postsProvider);
-          }
-        }, child: const Text('게시')),
-      ],
-    ));
+  void _openComposeSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const PostComposeSheet(),
+    );
   }
 }
