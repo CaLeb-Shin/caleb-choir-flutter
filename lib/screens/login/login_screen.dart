@@ -1,91 +1,203 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/google_logo.dart';
+import '../../providers/app_providers.dart';
 
-class LoginScreen extends StatefulWidget {
+import 'kakao_sign_in_stub.dart'
+    if (dart.library.io) 'kakao_sign_in_mobile.dart' as kakao_helper;
+
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _error;
   bool _loading = false;
+  String? _loadingProvider;
 
   Future<void> _handleGoogleSignIn() async {
-    setState(() { _error = null; _loading = true; });
-
+    setState(() { _error = null; _loading = true; _loadingProvider = 'google'; });
     try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) {
-        setState(() => _loading = false);
-        return; // cancelled
+      if (kIsWeb) {
+        await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+      } else {
+        final googleUser = await GoogleSignIn().signIn();
+        if (googleUser == null) {
+          setState(() { _loading = false; _loadingProvider = null; });
+          return;
+        }
+        final googleAuth = await googleUser.authentication;
+        final credential = GoogleAuthProvider.credential(
+          accessToken: googleAuth.accessToken,
+          idToken: googleAuth.idToken,
+        );
+        await FirebaseAuth.instance.signInWithCredential(credential);
       }
-
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-
-      await FirebaseAuth.instance.signInWithCredential(credential);
-      // Auth state listener in main.dart will handle navigation
     } catch (e) {
-      setState(() => _error = '로그인에 실패했습니다.\n다시 시도해주세요.');
+      debugPrint('Google sign-in error: $e');
+      setState(() => _error = 'Google 로그인에 실패했습니다.\n다시 시도해주세요.');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _loadingProvider = null; });
+    }
+  }
+
+  Future<void> _handleKakaoSignIn() async {
+    if (kIsWeb) {
+      setState(() => _error = '카카오 로그인은 모바일 앱에서만 지원됩니다.');
+      return;
+    }
+    setState(() { _error = null; _loading = true; _loadingProvider = 'kakao'; });
+    try {
+      final accessToken = await kakao_helper.signInWithKakao();
+      if (accessToken == null) {
+        setState(() { _loading = false; _loadingProvider = null; });
+        return;
+      }
+      final callable = FirebaseFunctions.instance.httpsCallable('createKakaoCustomToken');
+      final result = await callable.call<Map<String, dynamic>>({'accessToken': accessToken});
+      final customToken = result.data['token'] as String;
+      await FirebaseAuth.instance.signInWithCustomToken(customToken);
+    } catch (e) {
+      debugPrint('Kakao sign-in error: $e');
+      setState(() => _error = '카카오 로그인에 실패했습니다.\n다시 시도해주세요.');
+    } finally {
+      if (mounted) setState(() { _loading = false; _loadingProvider = null; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final loggedOut = ref.watch(loggedOutProvider);
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             children: [
-              const Spacer(),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: Image.asset('assets/images/icon.png', width: 140, height: 140),
+              if (loggedOut)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.success.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.check_circle_rounded, size: 18, color: AppColors.success),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('로그아웃되었습니다',
+                      style: TextStyle(color: AppColors.success, fontSize: 13, fontWeight: FontWeight.w600))),
+                    GestureDetector(
+                      onTap: () => ref.read(loggedOutProvider.notifier).state = false,
+                      child: const Icon(Icons.close_rounded, size: 16, color: AppColors.success),
+                    ),
+                  ]),
+                ),
+              const Spacer(flex: 3),
+              // Logo
+              Container(
+                width: 100, height: 100,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(color: AppColors.accent.withValues(alpha: 0.15), blurRadius: 30, offset: const Offset(0, 10)),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Image.asset('assets/images/icon.png', width: 100, height: 100),
+                ),
               ),
               const SizedBox(height: 24),
               const Text('갈렙찬양대',
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.primary, letterSpacing: -0.5)),
-              const SizedBox(height: 4),
-              const Text('Caleb Choir',
-                style: TextStyle(fontSize: 16, color: AppColors.muted, letterSpacing: 2)),
-              const Spacer(),
+                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.ink, letterSpacing: -0.5)),
+              const SizedBox(height: 6),
+              const Text('함께 찬양하는 기쁨',
+                style: TextStyle(fontSize: 15, color: AppColors.muted)),
+              const Spacer(flex: 2),
+
+              // Error
               if (_error != null)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
-                  margin: const EdgeInsets.only(bottom: 12),
+                  margin: const EdgeInsets.only(bottom: 14),
                   decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.07),
+                    color: AppColors.error.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.error.withValues(alpha: 0.2)),
                   ),
                   child: Text(_error!, textAlign: TextAlign.center,
                     style: const TextStyle(color: AppColors.error, fontSize: 13, height: 1.4)),
                 ),
+
+              // Kakao (mobile only)
+              if (!kIsWeb)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _handleKakaoSignIn,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFEE500),
+                        foregroundColor: const Color(0xFF191919),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: _loading && _loadingProvider == 'kakao'
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF191919)))
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.chat_bubble, size: 18),
+                                SizedBox(width: 8),
+                                Text('카카오로 시작하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
+
+              // Google
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                child: OutlinedButton(
                   onPressed: _loading ? null : _handleGoogleSignIn,
-                  child: _loading
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('Google로 로그인'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.ink,
+                    backgroundColor: AppColors.card,
+                    side: const BorderSide(color: AppColors.border),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    overlayColor: const Color(0xFF4285F4),
+                  ),
+                  child: _loading && _loadingProvider == 'google'
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            GoogleLogo(size: 20),
+                            SizedBox(width: 10),
+                            Text('Google로 시작하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
                 ),
               ),
-              const SizedBox(height: 12),
-              const Text('간편하게 로그인하고 갈렙찬양대에 참여하세요',
-                style: TextStyle(fontSize: 13, color: AppColors.muted)),
-              const SizedBox(height: 60),
+              const SizedBox(height: 16),
+              const Text('간편하게 로그인하고 참여하세요', style: TextStyle(fontSize: 13, color: AppColors.muted)),
+              const SizedBox(height: 48),
             ],
           ),
         ),

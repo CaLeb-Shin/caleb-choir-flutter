@@ -12,7 +12,12 @@
           "package_name": "com.calebchoir.caleb_choir"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "714127777029-h8h9er18rk9cfh0bid8cfalpnddhis9b.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBktXCxzhGx0FODnm-mdHveXhe7rFK6Rts"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "714127777029-h8h9er18rk9cfh0bid8cfalpnddhis9b.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "714127777029-ujl5cr93mn5q4j9371k3h1kgdflu1c6p.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.calebchoir.calebChoir"
+              }
+            }
+          ]
         }
       }
     }

@@ -69,6 +69,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '714127777029',
     projectId: 'caleb-choir-2026',
     storageBucket: 'caleb-choir-2026.firebasestorage.app',
+    iosClientId: '714127777029-ujl5cr93mn5q4j9371k3h1kgdflu1c6p.apps.googleusercontent.com',
     iosBundleId: 'com.calebchoir.calebChoir',
   );
+
 }

@@ -1,21 +1,31 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'firebase_options.dart';
+import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'providers/app_providers.dart';
 import 'screens/login/login_screen.dart';
+import 'screens/profile_setup/profile_setup_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/videos/videos_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
 import 'screens/community/community_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
-import 'screens/events/events_screen.dart';
+import 'services/firebase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  KakaoSdk.init(nativeAppKey: 'YOUR_KAKAO_NATIVE_APP_KEY');
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  try {
+    await NotificationService.initialize();
+  } catch (e) {
+    debugPrint('Notification init failed: $e');
+  }
   runApp(const ProviderScope(child: CalebChoirApp()));
 }
 
@@ -26,92 +36,137 @@ class CalebChoirApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
 
-    return MaterialApp(
-      title: '갈렙 찬양대',
+    Widget app = MaterialApp(
+      title: 'C.C',
       theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
       home: authState.when(
         loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
         error: (_, __) => const LoginScreen(),
-        data: (user) => user != null ? const MainShell() : const LoginScreen(),
+        data: (user) {
+          if (user == null) return const LoginScreen();
+          // 로그인은 됐는데 프로필이 있는지 확인
+          final profileAsync = ref.watch(profileProvider);
+          return profileAsync.when(
+            loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+            error: (_, __) => const ProfileSetupScreen(),
+            data: (profile) {
+              if (profile == null || !profile.profileCompleted) {
+                return const ProfileSetupScreen();
+              }
+              return const MainShell();
+            },
+          );
+        },
       ),
     );
+
+    if (kIsWeb) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFF000E24),
+          body: Center(
+            child: Container(
+              width: 430,
+              height: 932,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(40),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 60),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(40),
+                child: app,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return app;
   }
 }
 
-class MainShell extends StatefulWidget {
+class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
 
   @override
-  State<MainShell> createState() => _MainShellState();
+  ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> {
-  int _currentIndex = 0;
-
+class _MainShellState extends ConsumerState<MainShell> {
   final _screens = const [
     HomeScreen(),
     SheetMusicScreen(),
     VideosScreen(),
     AttendanceScreen(),
     CommunityScreen(),
-    EventsScreen(),
     ProfileScreen(),
   ];
 
-  static const _navItems = [
-    {'icon': Icons.dashboard, 'label': '홈'},
-    {'icon': Icons.music_note, 'label': '악보'},
-    {'icon': Icons.play_circle_filled, 'label': '영상'},
-    {'icon': Icons.event_note, 'label': '출석'},
-    {'icon': Icons.forum, 'label': '커뮤니티'},
-    {'icon': Icons.emoji_events, 'label': '이벤트'},
-    {'icon': Icons.person, 'label': '마이'},
+  static const _items = [
+    (Icons.home_rounded, '홈'),
+    (Icons.music_note_rounded, '악보'),
+    (Icons.play_circle_rounded, '영상'),
+    (Icons.calendar_today_rounded, '출석'),
+    (Icons.chat_bubble_rounded, '소통'),
+    (Icons.person_rounded, '마이'),
   ];
 
   @override
   Widget build(BuildContext context) {
+    final index = ref.watch(tabIndexProvider);
+
     return Scaffold(
-      body: SafeArea(child: _screens[_currentIndex]),
+      body: SafeArea(child: _screens[index]),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          color: AppColors.background,
-          border: Border(top: BorderSide(color: AppColors.border.withValues(alpha: 0.15))),
+          color: AppColors.card,
+          border: Border(top: BorderSide(color: AppColors.border.withValues(alpha: 0.3))),
         ),
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(_navItems.length, (i) {
-                final isActive = _currentIndex == i;
-                final item = _navItems[i];
-                return GestureDetector(
-                  onTap: () => setState(() => _currentIndex = i),
-                  behavior: HitTestBehavior.opaque,
-                  child: SizedBox(
-                    width: 52,
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: EdgeInsets.symmetric(horizontal: isActive ? 14 : 0, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isActive ? AppColors.primaryContainer : Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
+              children: List.generate(_items.length, (i) {
+                final active = index == i;
+                final (icon, label) = _items[i];
+                return MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => ref.read(tabIndexProvider.notifier).state = i,
+                    behavior: HitTestBehavior.opaque,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 56,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        AnimatedScale(
+                          scale: active ? 1.15 : 1.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Icon(icon, size: 24, color: active ? AppColors.primary : AppColors.muted),
                         ),
-                        child: Icon(item['icon'] as IconData, size: 22, color: isActive ? Colors.white : AppColors.muted),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        item['label'] as String,
-                        style: TextStyle(
-                          fontSize: 9, fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
-                          color: isActive ? AppColors.primaryContainer : AppColors.muted,
-                          letterSpacing: 0.3,
+                        const SizedBox(height: 4),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                            color: active ? AppColors.primary : AppColors.muted,
+                          ),
                         ),
-                      ),
-                    ]),
+                        if (active) ...[
+                          const SizedBox(height: 3),
+                          Container(width: 4, height: 4, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.secondaryContainer)),
+                        ],
+                      ]),
+                    ),
                   ),
                 );
               }),
@@ -119,14 +174,32 @@ class _MainShellState extends State<MainShell> {
           ),
         ),
       ),
-      floatingActionButton: _currentIndex == 4
+      floatingActionButton: index == 4
           ? FloatingActionButton(
-              onPressed: () {},
+              onPressed: () => _showPostDialog(context, ref),
               backgroundColor: AppColors.primaryContainer,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: const Icon(Icons.edit, color: Colors.white),
+              child: const Icon(Icons.edit_rounded, color: Colors.white),
             )
           : null,
     );
+  }
+
+  void _showPostDialog(BuildContext context, WidgetRef ref) {
+    final ctrl = TextEditingController();
+    showDialog(context: context, builder: (_) => AlertDialog(
+      title: const Text('게시물 작성'),
+      content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '내용을 입력하세요'), maxLines: 4),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () async {
+          if (ctrl.text.trim().isNotEmpty) {
+            await FirebaseService.createPost(ctrl.text.trim());
+            ref.invalidate(postsProvider);
+          }
+          if (context.mounted) Navigator.pop(context);
+        }, child: const Text('게시')),
+      ],
+    ));
   }
 }

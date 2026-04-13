@@ -1,11 +1,11 @@
 {
-    "name": "caleb_choir",
-    "short_name": "caleb_choir",
+    "name": "C.C",
+    "short_name": "C.C",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#000E24",
+    "theme_color": "#000E24",
+    "description": "갈렙찬양대 (Caleb Choir)",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

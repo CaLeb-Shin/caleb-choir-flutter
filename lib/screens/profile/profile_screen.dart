@@ -1,8 +1,14 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
+import '../../models/user.dart';
+import '../../widgets/interactive.dart';
+import '../admin/members_screen.dart';
+import 'my_qr_screen.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -11,153 +17,443 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
     final historyAsync = ref.watch(myHistoryProvider);
+    final viewAsMember = ref.watch(viewAsMemberProvider);
+    final effectiveIsAdmin = ref.watch(effectiveIsAdminProvider);
 
     return profileAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, __) => const Center(child: Text('프로필을 불러올 수 없습니다')),
       data: (profile) {
         if (profile == null) return const SizedBox.shrink();
-        final attendanceCount = historyAsync.valueOrNull?.length ?? 0;
+        final history = historyAsync.valueOrNull ?? [];
+        final total = history.length;
+
+        // 최근 4주 출석 계산
+        final now = DateTime.now();
+        final weekCounts = List.generate(4, (w) {
+          final start = now.subtract(Duration(days: (w + 1) * 7));
+          final end = now.subtract(Duration(days: w * 7));
+          return history.where((r) {
+            try {
+              final d = DateTime.parse(r['checkedInAt'].toString());
+              return d.isAfter(start) && d.isBefore(end);
+            } catch (_) { return false; }
+          }).length;
+        }).reversed.toList();
+        final maxWeek = weekCounts.fold<int>(1, (a, b) => a > b ? a : b);
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header
-              Text('마이페이지', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2, color: AppColors.secondary)),
-              const SizedBox(height: 2),
-              const Text('내 프로필', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.primary)),
-              const SizedBox(height: 20),
+              Text('마이페이지', style: AppText.label()),
+              const SizedBox(height: 6),
+              Text(profile.displayName.isEmpty ? '멤버' : profile.displayName, style: AppText.headline(28)),
+              if (profile.isAdmin && viewAsMember) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondaryContainer.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.secondary.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.visibility_outlined, size: 16, color: AppColors.secondary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '단원 시점으로 보고 있습니다',
+                        style: AppText.body(12, weight: FontWeight.w600, color: AppColors.secondary),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => ref.read(viewAsMemberProvider.notifier).state = false,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text('나가기', style: AppText.body(12, weight: FontWeight.w700, color: AppColors.secondary)),
+                    ),
+                  ]),
+                ),
+              ],
+              const SizedBox(height: 24),
 
-              // Profile Hero
+              // ── Profile Card
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(32),
-                decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(24)),
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF000E24), Color(0xFF00234B)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                ),
                 child: Column(children: [
+                  // 프로필 이미지 또는 파트 이니셜
                   Container(
-                    width: 80, height: 80,
-                    decoration: BoxDecoration(color: AppColors.secondaryContainer, borderRadius: BorderRadius.circular(28)),
-                    child: Center(child: Text(profile.partInitial, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.primaryContainer))),
+                    width: 84, height: 84,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.secondaryContainer,
+                      image: profile.profileImageUrl != null
+                          ? DecorationImage(image: NetworkImage(profile.profileImageUrl!), fit: BoxFit.cover)
+                          : null,
+                    ),
+                    child: profile.profileImageUrl == null
+                        ? Center(child: Text(profile.partInitial,
+                            style: AppText.headline(32, color: AppColors.primary)))
+                        : null,
                   ),
                   const SizedBox(height: 16),
-                  Text(profile.name ?? '', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white)),
+                  Text(profile.displayName.isEmpty ? '이름 없음' : profile.displayName,
+                    style: AppText.headline(22, color: Colors.white)),
                   const SizedBox(height: 4),
-                  Text(profile.partLabel, style: TextStyle(fontSize: 15, color: Colors.white.withValues(alpha: 0.6))),
+                  Text('${profile.generation ?? ''} · ${profile.partLabel}',
+                    style: AppText.body(14, color: Colors.white60)),
                   const SizedBox(height: 16),
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    _MetaChip(label: profile.generation ?? ''),
+                    _Chip(label: profile.roleLabel, bg: Colors.white.withValues(alpha: 0.12), fg: Colors.white70),
                     const SizedBox(width: 8),
-                    _MetaChip(label: profile.isAdmin ? '관리자' : '멤버'),
+                    _Chip(label: '출석 $total회', bg: AppColors.secondaryContainer.withValues(alpha: 0.3), fg: AppColors.secondaryContainer),
                   ]),
                 ]),
               ),
               const SizedBox(height: 16),
 
-              // Stats Row
-              Row(children: [
-                Expanded(child: _StatCard(value: '$attendanceCount', label: '총 출석')),
-                const SizedBox(width: 10),
-                Expanded(child: _StatCard(value: profile.isAdmin ? '관리자' : '멤버', label: '역할')),
-                const SizedBox(width: 10),
-                Expanded(child: _StatCard(value: profile.partInitial, label: '파트')),
-              ]),
+              // ── Attendance Stats
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('출석 현황', style: AppText.label()),
+                  const SizedBox(height: 4),
+                  Text('총 $total회 출석', style: AppText.headline(20)),
+                  const SizedBox(height: 16),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: List.generate(4, (i) {
+                      final h = maxWeek > 0 ? (weekCounts[i] / maxWeek * 48).clamp(4.0, 48.0) : 4.0;
+                      final isThisWeek = i == 3;
+                      return Expanded(child: Column(children: [
+                        Text('${weekCounts[i]}', style: AppText.body(12, weight: FontWeight.w700, color: isThisWeek ? AppColors.secondary : AppColors.muted)),
+                        const SizedBox(height: 4),
+                        Container(
+                          height: h,
+                          margin: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: isThisWeek ? AppColors.secondaryContainer : AppColors.surfaceHigh,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text('${4 - i}주전', style: AppText.body(10, color: AppColors.muted)),
+                      ]));
+                    }),
+                  ),
+                ]),
+              ),
               const SizedBox(height: 16),
 
-              // Contact Info
+              // ── Contact Info
+              if (profile.email != null)
+                _InfoTile(icon: Icons.mail_outline_rounded, label: '이메일', value: profile.email!),
               if (profile.phone != null && profile.phone!.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface, borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(children: [
-                    Container(
-                      width: 40, height: 40,
-                      decoration: BoxDecoration(color: AppColors.primaryContainer.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                      child: const Icon(Icons.person, size: 18, color: AppColors.secondary),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('연락처', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted, letterSpacing: 0.5)),
-                      const SizedBox(height: 2),
-                      Text(profile.phone!, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.primary)),
-                    ])),
-                  ]),
-                ),
+                _InfoTile(icon: Icons.phone_outlined, label: '연락처', value: profile.phone!),
+              const SizedBox(height: 8),
 
-              // Menu
+              // ── Menu
               Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surface, borderRadius: BorderRadius.circular(16),
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
                 ),
                 child: Column(children: [
-                  _MenuItem(icon: Icons.person, label: '프로필 수정', onTap: () {}),
-                  Divider(height: 0.5, color: AppColors.border.withValues(alpha: 0.15)),
-                  _MenuItem(icon: Icons.calendar_today, label: '출석 기록', onTap: () {}),
-                  Divider(height: 0.5, color: AppColors.border.withValues(alpha: 0.15)),
-                  _MenuItem(icon: Icons.arrow_back, label: '로그아웃', isDestructive: true, onTap: () {
-                    showDialog(context: context, builder: (_) => AlertDialog(
-                      title: const Text('로그아웃'),
-                      content: const Text('정말 로그아웃 하시겠습니까?'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
-                        TextButton(
-                          onPressed: () async {
-                            await FirebaseService.signOut();
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          child: const Text('로그아웃', style: TextStyle(color: AppColors.error)),
-                        ),
-                      ],
-                    ));
-                  }),
+                  _MenuItem(icon: Icons.person_outline_rounded, label: '프로필 수정',
+                    onTap: () => _showEditSheet(context, ref, profile)),
+                  Divider(height: 0.5, indent: 56, color: AppColors.border.withValues(alpha: 0.2)),
+                  _MenuItem(icon: Icons.qr_code_rounded, label: '내 출석 QR',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MyQrScreen()))),
+                  Divider(height: 0.5, indent: 56, color: AppColors.border.withValues(alpha: 0.2)),
+                  _MenuItem(icon: Icons.calendar_today_rounded, label: '출석 기록',
+                    onTap: () => ref.read(tabIndexProvider.notifier).state = 3),
+                  if (effectiveIsAdmin) ...[
+                    Divider(height: 0.5, indent: 56, color: AppColors.border.withValues(alpha: 0.2)),
+                    _MenuItem(icon: Icons.admin_panel_settings_rounded, label: '단원 관리',
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MembersScreen()))),
+                  ],
+                  if (profile.isAdmin) ...[
+                    Divider(height: 0.5, indent: 56, color: AppColors.border.withValues(alpha: 0.2)),
+                    _MenuItem(
+                      icon: viewAsMember ? Icons.admin_panel_settings_outlined : Icons.visibility_outlined,
+                      label: viewAsMember ? '관리자 모드로 복귀' : '단원 뷰로 전환',
+                      onTap: () {
+                        ref.read(viewAsMemberProvider.notifier).state = !viewAsMember;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(!viewAsMember ? '단원 시점으로 보고 있습니다' : '관리자 모드로 돌아왔습니다'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                  Divider(height: 0.5, indent: 56, color: AppColors.border.withValues(alpha: 0.2)),
+                  _MenuItem(icon: Icons.logout_rounded, label: '로그아웃', isDestructive: true,
+                    onTap: () => _confirmLogout(context, ref)),
                 ]),
               ),
-              const SizedBox(height: 24),
-              const Center(child: Text('갈렙찬양대 v1.0.0', style: TextStyle(fontSize: 12, color: AppColors.muted))),
+              const SizedBox(height: 32),
+              Center(child: Text('갈렙찬양대 v1.0.0', style: AppText.body(12, color: AppColors.subtle))),
             ],
           ),
         );
       },
     );
   }
+
+  void _showEditSheet(BuildContext context, WidgetRef ref, User profile) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => _ProfileEditSheet(profile: profile, ref: ref),
+    );
+  }
+
+  void _confirmLogout(BuildContext context, WidgetRef ref) {
+    showDialog(context: context, builder: (_) => AlertDialog(
+      title: const Text('로그아웃'),
+      content: const Text('정말 로그아웃 하시겠습니까?'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(
+          onPressed: () async {
+            ref.read(loggedOutProvider.notifier).state = true;
+            await FirebaseService.signOut();
+            if (context.mounted) Navigator.pop(context);
+          },
+          child: const Text('로그아웃', style: TextStyle(color: AppColors.error)),
+        ),
+      ],
+    ));
+  }
 }
 
-class _MetaChip extends StatelessWidget {
+// ── Profile Edit Sheet (with image upload, nickname, free-text generation)
+class _ProfileEditSheet extends StatefulWidget {
+  final User profile;
+  final WidgetRef ref;
+  const _ProfileEditSheet({required this.profile, required this.ref});
+
+  @override
+  State<_ProfileEditSheet> createState() => _ProfileEditSheetState();
+}
+
+class _ProfileEditSheetState extends State<_ProfileEditSheet> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _nicknameCtrl;
+  late final TextEditingController _phoneCtrl;
+  late final TextEditingController _genCtrl;
+  late String _part;
+  Uint8List? _newImageBytes;
+  String? _imageUrl;
+  bool _uploading = false;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.profile.name ?? '');
+    _nicknameCtrl = TextEditingController(text: widget.profile.nickname ?? '');
+    _phoneCtrl = TextEditingController(text: widget.profile.phone ?? '');
+    _genCtrl = TextEditingController(text: widget.profile.generation ?? '');
+    _part = widget.profile.part ?? 'soprano';
+    _imageUrl = widget.profile.profileImageUrl;
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _nicknameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _genCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      setState(() { _newImageBytes = bytes; _uploading = true; });
+      final url = await FirebaseService.uploadProfileImage(bytes);
+      setState(() { _imageUrl = url; _uploading = false; });
+    } catch (e) {
+      setState(() => _uploading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('업로드 실패: $e')));
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      final data = <String, dynamic>{
+        'name': _nameCtrl.text.trim(),
+        'nickname': _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
+        'generation': _genCtrl.text.trim(),
+        'part': _part,
+        'phone': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+      };
+      if (_imageUrl != null) data['profileImageUrl'] = _imageUrl;
+      await FirebaseService.updateProfile(data);
+      widget.ref.invalidate(profileProvider);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() => _saving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('저장 실패: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.subtle, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 20),
+          Text('프로필 수정', style: AppText.headline(20)),
+          const SizedBox(height: 20),
+
+          // ── Profile image
+          Center(
+            child: GestureDetector(
+              onTap: _uploading ? null : _pickImage,
+              child: Stack(children: [
+                Container(
+                  width: 90, height: 90,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primarySoft,
+                    image: _newImageBytes != null
+                        ? DecorationImage(image: MemoryImage(_newImageBytes!), fit: BoxFit.cover)
+                        : (_imageUrl != null
+                            ? DecorationImage(image: NetworkImage(_imageUrl!), fit: BoxFit.cover)
+                            : null),
+                  ),
+                  child: (_newImageBytes == null && _imageUrl == null)
+                      ? Icon(Icons.person_rounded, size: 40, color: AppColors.primary.withValues(alpha: 0.4))
+                      : null,
+                ),
+                if (_uploading)
+                  Positioned.fill(
+                    child: Container(
+                      decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black45),
+                      child: const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                    ),
+                  ),
+                Positioned(
+                  bottom: 0, right: 0,
+                  child: Container(
+                    width: 28, height: 28,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary, shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 14),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: '이름 (실명)')),
+          const SizedBox(height: 12),
+          TextField(controller: _nicknameCtrl, decoration: const InputDecoration(labelText: '별칭 (선택)', hintText: '예: 길동이')),
+          const SizedBox(height: 12),
+          TextField(controller: _genCtrl, decoration: const InputDecoration(labelText: '기수', hintText: '예: 91기')),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            value: _part,
+            decoration: const InputDecoration(labelText: '파트'),
+            items: User.partLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+            onChanged: (v) => setState(() => _part = v ?? _part),
+          ),
+          const SizedBox(height: 12),
+          TextField(controller: _phoneCtrl, decoration: const InputDecoration(labelText: '전화번호 (선택)'), keyboardType: TextInputType.phone),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('저장'),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
   final String label;
-  const _MetaChip({required this.label});
+  final Color bg, fg;
+  const _Chip({required this.label, required this.bg, required this.fg});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-      child: Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.8))),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+      child: Text(label, style: AppText.body(12, weight: FontWeight.w600, color: fg)),
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
-  final String value, label;
-  const _StatCard({required this.value, required this.label});
+class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+  const _InfoTile({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface, borderRadius: BorderRadius.circular(16),
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
       ),
-      child: Column(children: [
-        Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.primary)),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.muted, letterSpacing: 0.5)),
+      child: Row(children: [
+        Icon(icon, size: 18, color: AppColors.muted),
+        const SizedBox(width: 12),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: AppText.body(11, color: AppColors.muted)),
+          Text(value, style: AppText.body(14, weight: FontWeight.w600)),
+        ]),
       ]),
     );
   }
@@ -172,21 +468,17 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isDestructive ? AppColors.error : AppColors.primary;
-    final bgColor = isDestructive ? AppColors.error.withValues(alpha: 0.07) : AppColors.primaryContainer.withValues(alpha: 0.07);
-    return InkWell(
+    final color = isDestructive ? AppColors.error : AppColors.ink;
+    return HoverButton(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, size: 18, color: isDestructive ? AppColors.error : AppColors.secondary),
-          ),
+          Icon(icon, size: 20, color: isDestructive ? AppColors.error : AppColors.muted),
           const SizedBox(width: 14),
-          Expanded(child: Text(label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: color))),
-          const Icon(Icons.chevron_right, size: 16, color: AppColors.muted),
+          Expanded(child: Text(label, style: AppText.body(15, weight: FontWeight.w500, color: color))),
+          const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.subtle),
         ]),
       ),
     );

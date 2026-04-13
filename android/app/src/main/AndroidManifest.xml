@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="갈렙찬양대"
+        android:label="C.C"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -30,6 +30,17 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="calebchoir"/>
+            </intent-filter>
+        </activity>
+        <!-- 카카오 로그인 리다이렉트 - TODO: YOUR_KAKAO_NATIVE_APP_KEY를 실제 키로 교체 -->
+        <activity
+            android:name="com.kakao.sdk.flutter.AuthCodeHandlerActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:host="oauth" android:scheme="kakaoYOUR_KAKAO_NATIVE_APP_KEY" />
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

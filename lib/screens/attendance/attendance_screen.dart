@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart' show Share;
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
+import '../../widgets/interactive.dart';
 import '../qr_scan/qr_scan_screen.dart';
 
 class AttendanceScreen extends ConsumerWidget {
@@ -18,245 +19,223 @@ class AttendanceScreen extends ConsumerWidget {
     final profile = profileAsync.valueOrNull;
     final session = sessionAsync.valueOrNull;
     final history = historyAsync.valueOrNull ?? [];
-    final totalAttendance = history.length;
-    final attendanceRate = totalAttendance > 0
-        ? (totalAttendance / (totalAttendance + 2).clamp(10, 999) * 100).round().clamp(0, 100)
-        : 0;
+    final total = history.length;
+    final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Hero
-          Text('공동체와 리듬', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 2, color: AppColors.secondary)),
-          const SizedBox(height: 8),
-          const Text('연습 일정', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.primary)),
-          const SizedBox(height: 8),
-          const Text('당신의 참여는 우리 합창의 심장박동입니다.', style: TextStyle(fontSize: 15, color: AppColors.muted, height: 1.5)),
-          const SizedBox(height: 16),
+          Text('출석', style: AppText.headline(28)),
+          const SizedBox(height: 4),
+          Text('연습 출석을 관리하세요', style: AppText.body(14, color: AppColors.muted)),
+          const SizedBox(height: 20),
 
-          // Action Buttons: QR Scan + Export
+          // Action buttons
           Row(children: [
             Expanded(
               child: ElevatedButton.icon(
                 onPressed: () {
                   Navigator.push(context, MaterialPageRoute(
                     builder: (_) => QrScanScreen(onScanned: (code) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('QR 스캔 완료: $code')),
-                      );
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('QR 스캔 완료: $code')));
                     }),
                   ));
                 },
-                icon: const Icon(Icons.qr_code_scanner, size: 18),
+                icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
                 label: const Text('QR 스캔'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryContainer,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () async {
-                  final history = ref.read(myHistoryProvider).valueOrNull ?? [];
-                  final result = {'csv': history.map((r) => '${r['sessionTitle']},${r['checkedInAt']}').join('\n'), 'count': history.length};
-                  final csv = result['csv'] as String?;
-                  if (csv != null && csv.isNotEmpty) {
-                    await Share.share(csv, subject: '갈렙찬양대 출석기록');
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('출석 데이터 ${result['count']}건 내보내기')),
-                      );
-                    }
-                  }
+                  final h = ref.read(myHistoryProvider).valueOrNull ?? [];
+                  final csv = h.map((r) => '${r['sessionTitle']},${r['checkedInAt']}').join('\n');
+                  if (csv.isNotEmpty) await Share.share(csv, subject: '갈렙찬양대 출석기록');
                 },
-                icon: const Icon(Icons.download, size: 18),
-                label: const Text('엑셀 내보내기'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
+                icon: const Icon(Icons.download_rounded, size: 18),
+                label: const Text('내보내기'),
               ),
             ),
           ]),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
-          // Active Session / Check-in
-          if (session != null)
+          // ── Admin: 출석 열기/닫기
+          if (isAdmin) ...[
             Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(20)),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.secondarySoft,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.secondary.withValues(alpha: 0.2)),
+              ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Container(width: 6, height: 6, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF66BB6A))),
-                    const SizedBox(width: 6),
-                    Text('출석 진행 중', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.8))),
-                  ]),
-                ),
-                const SizedBox(height: 12),
-                Text(session['title'] ?? '', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Icon(Icons.schedule, size: 16, color: Colors.white.withValues(alpha: 0.6)),
-                  const SizedBox(width: 6),
-                  Text(_formatDate(session['openedAt']), style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6))),
-                ]),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: () async {
-                      await FirebaseService.checkIn(session['id']);
-                      ref.invalidate(myHistoryProvider);
-                    },
-                    icon: const Icon(Icons.check_circle, size: 20),
-                    label: const Text('출석 체크하기'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.secondaryContainer,
-                      foregroundColor: AppColors.primaryContainer,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                Text('관리자', style: AppText.label()),
+                const SizedBox(height: 10),
+                if (session != null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await FirebaseService.closeSession(session['id']);
+                        ref.invalidate(activeSessionProvider);
+                      },
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.error, foregroundColor: Colors.white),
+                      icon: const Icon(Icons.stop_rounded, size: 18),
+                      label: const Text('출석 마감'),
+                    ),
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _showOpenSessionDialog(context, ref),
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary, foregroundColor: Colors.white),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                      label: const Text('출석 열기'),
                     ),
                   ),
-                ),
               ]),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Active session
+          if (session != null)
+            Tappable(
+              onTap: () {},
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF000E24), Color(0xFF00234B)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80))),
+                    const SizedBox(width: 8),
+                    Text('출석 진행 중', style: AppText.body(13, weight: FontWeight.w600, color: Colors.white70)),
+                  ]),
+                  const SizedBox(height: 12),
+                  Text(session['title'] ?? '', style: AppText.headline(20, color: Colors.white)),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        await FirebaseService.checkIn(session['id']);
+                        ref.invalidate(myHistoryProvider);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.secondaryContainer, foregroundColor: AppColors.primary, elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text('출석 체크하기'),
+                    ),
+                  ),
+                ]),
+              ),
             )
           else
             Container(
-              padding: const EdgeInsets.all(32),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 40),
               decoration: BoxDecoration(
-                color: AppColors.surface, borderRadius: BorderRadius.circular(20),
+                color: AppColors.card, borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
               ),
               child: Column(children: [
-                Container(
-                  width: 64, height: 64,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.primaryContainer.withValues(alpha: 0.1)),
-                  child: const Icon(Icons.event_note, size: 32, color: AppColors.muted),
-                ),
-                const SizedBox(height: 12),
-                const Text('현재 열린 출석이 없습니다', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.primary)),
-                const SizedBox(height: 6),
-                const Text('관리자가 출석을 열면 여기서 출석할 수 있습니다', style: TextStyle(fontSize: 13, color: AppColors.muted), textAlign: TextAlign.center),
+                Icon(Icons.calendar_today_rounded, size: 32, color: AppColors.subtle),
+                const SizedBox(height: 10),
+                Text('현재 열린 출석이 없습니다', style: AppText.body(15, weight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text('관리자가 출석을 열면 여기에 표시됩니다', style: AppText.body(13, color: AppColors.muted)),
               ]),
             ),
-          const SizedBox(height: 16),
-
-          // Stats Card
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: AppColors.primaryContainer, borderRadius: BorderRadius.circular(20)),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('출석 현황', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white.withValues(alpha: 0.5), letterSpacing: 2)),
-              const SizedBox(height: 8),
-              Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                Text('$attendanceRate%', style: const TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: Colors.white)),
-                const SizedBox(width: 8),
-                Text(attendanceRate >= 80 ? '우수함' : attendanceRate >= 50 ? '양호' : '시작',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.secondaryContainer)),
-              ]),
-              const SizedBox(height: 4),
-              Text('이번 시즌에 총 $totalAttendance번 출석하셨습니다.',
-                style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.5))),
-              const SizedBox(height: 20),
-              Row(children: List.generate(5, (i) => Expanded(
-                child: Container(
-                  height: 4, margin: EdgeInsets.only(right: i < 4 ? 4 : 0),
-                  decoration: BoxDecoration(
-                    color: i < (attendanceRate / 20).ceil() ? AppColors.secondaryContainer : Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ))),
-            ]),
-          ),
-          const SizedBox(height: 16),
-
-          // QR Card
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: AppColors.surface, borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-            ),
-            child: Column(children: [
-              Row(children: [
-                Icon(Icons.qr_code_2, size: 20, color: AppColors.secondary),
-                const SizedBox(width: 8),
-                const Text('내 출석 카드', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.primary)),
-              ]),
-              const SizedBox(height: 16),
-              Container(
-                width: 140, height: 140,
-                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border.withValues(alpha: 0.3))),
-                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Icon(Icons.qr_code_2, size: 80, color: AppColors.primary),
-                  Text('ID: ${profile?.id ?? "---"}', style: const TextStyle(fontSize: 10, color: AppColors.muted)),
-                ]),
-              ),
-              const SizedBox(height: 12),
-              Text(profile?.name ?? '', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.primary)),
-              Text('${profile?.generation ?? ''} · ${profile?.partLabel ?? ''}', style: const TextStyle(fontSize: 14, color: AppColors.muted)),
-            ]),
-          ),
           const SizedBox(height: 20),
 
-          // History
-          Row(children: [
-            Icon(Icons.event_available, size: 20, color: AppColors.secondary),
-            const SizedBox(width: 8),
-            const Text('출석 기록', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.primary)),
-          ]),
-          const SizedBox(height: 12),
+          // Stats
           Container(
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: AppColors.surface, borderRadius: BorderRadius.circular(16),
+              color: AppColors.card, borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
             ),
-            child: history.isEmpty
-                ? const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('아직 출석 기록이 없습니다', style: TextStyle(color: AppColors.muted))))
-                : Column(children: history.take(10).toList().asMap().entries.map((entry) {
-                    final i = entry.key;
-                    final record = entry.value;
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                      decoration: BoxDecoration(border: i < history.length - 1 && i < 9 ? Border(bottom: BorderSide(color: AppColors.border.withValues(alpha: 0.15))) : null),
-                      child: Row(children: [
-                        Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: i == 0 ? AppColors.secondary : AppColors.border)),
-                        const SizedBox(width: 12),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(record['sessionTitle'] ?? '', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.primary)),
-                          const SizedBox(height: 2),
-                          Text(_formatDate(record['checkedInAt']), style: const TextStyle(fontSize: 12, color: AppColors.muted)),
-                        ])),
-                        Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.primaryContainer.withValues(alpha: 0.1)),
-                          child: const Center(child: Text('✓', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primaryContainer))),
-                        ),
-                      ]),
-                    );
-                  }).toList()),
+            child: Row(children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(14)),
+                child: const Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('총 $total회 출석', style: AppText.headline(18)),
+                Text(profile?.partLabel ?? '', style: AppText.body(13, color: AppColors.muted)),
+              ]),
+            ]),
           ),
+          const SizedBox(height: 24),
+
+          // History
+          Text('출석 기록', style: AppText.headline(18)),
+          const SizedBox(height: 12),
+          if (history.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: Text('아직 출석 기록이 없습니다', style: AppText.body(14, color: AppColors.muted))),
+            )
+          else
+            ...history.take(10).map((record) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.card, borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.check_circle_rounded, size: 20, color: AppColors.success),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(record['sessionTitle'] ?? '', style: AppText.body(14, weight: FontWeight.w600)),
+                  Text(_fmt(record['checkedInAt']), style: AppText.body(12, color: AppColors.muted)),
+                ])),
+              ]),
+            )),
         ],
       ),
     );
   }
 
-  static String _formatDate(dynamic dateStr) {
-    if (dateStr == null) return '';
+  void _showOpenSessionDialog(BuildContext context, WidgetRef ref) {
+    final ctrl = TextEditingController();
+    showDialog(context: context, builder: (_) => AlertDialog(
+      title: const Text('출석 열기'),
+      content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '연습 제목 (예: 주일 연습)')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () async {
+          if (ctrl.text.trim().isNotEmpty) {
+            await FirebaseService.openSession(ctrl.text.trim());
+            ref.invalidate(activeSessionProvider);
+          }
+          if (context.mounted) Navigator.pop(context);
+        }, child: const Text('열기')),
+      ],
+    ));
+  }
+
+  static String _fmt(dynamic s) {
+    if (s == null) return '';
     try {
-      final d = DateTime.parse(dateStr.toString());
+      final d = DateTime.parse(s.toString());
       return '${d.year}.${d.month}.${d.day} ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return '';
-    }
+    } catch (_) { return ''; }
   }
 }

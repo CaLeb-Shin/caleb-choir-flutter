@@ -1,16 +1,28 @@
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 
 class FirebaseService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static final fb.FirebaseAuth _auth = fb.FirebaseAuth.instance;
+
+  /// 자동 관리자 이메일 화이트리스트
+  static const adminEmails = {'sinbun001@gmail.com'};
 
   // ============ Auth ============
   static fb.User? get currentUser => _auth.currentUser;
   static String? get uid => _auth.currentUser?.uid;
   static Stream<fb.User?> get authStateChanges => _auth.authStateChanges();
 
-  static Future<void> signOut() => _auth.signOut();
+  static Future<void> signOut() async {
+    // 카카오 로그아웃 시도 (카카오로 로그인한 경우)
+    try {
+      await kakao.UserApi.instance.logout();
+    } catch (_) {}
+    await _auth.signOut();
+  }
 
   // ============ User Profile ============
   static Future<Map<String, dynamic>?> getProfile() async {
@@ -22,18 +34,43 @@ class FirebaseService {
 
   static Future<void> createProfile(Map<String, dynamic> data) async {
     if (uid == null) return;
+    final email = currentUser?.email;
+    final autoRole = (email != null && adminEmails.contains(email.toLowerCase())) ? 'admin' : 'member';
     await _db.collection('users').doc(uid).set({
       ...data,
-      'email': currentUser?.email,
-      'role': 'user',
+      'email': email,
+      'role': autoRole,
       'profileCompleted': true,
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
+  /// 관리자 이메일이면 기존 프로필도 admin으로 승격 (로그인 시 자동 실행)
+  static Future<void> ensureAdminRole() async {
+    final email = currentUser?.email?.toLowerCase();
+    if (email == null || !adminEmails.contains(email) || uid == null) return;
+    final doc = await _db.collection('users').doc(uid).get();
+    if (doc.exists && doc.data()?['role'] != 'admin') {
+      await _db.collection('users').doc(uid).update({'role': 'admin'});
+    }
+  }
+
+  /// 관리자 전용: 다른 사용자 등급 변경
+  static Future<void> updateUserRole(String userId, String role) async {
+    await _db.collection('users').doc(userId).update({'role': role});
+  }
+
   static Future<void> updateProfile(Map<String, dynamic> data) async {
     if (uid == null) return;
     await _db.collection('users').doc(uid).update(data);
+  }
+
+  /// 프로필 이미지 업로드 → downloadUrl 반환
+  static Future<String?> uploadProfileImage(Uint8List bytes, {String contentType = 'image/jpeg'}) async {
+    if (uid == null) return null;
+    final ref = FirebaseStorage.instance.ref().child('profile_images').child('$uid.jpg');
+    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+    return await ref.getDownloadURL();
   }
 
   static Future<List<Map<String, dynamic>>> getAllMembers() async {
@@ -195,5 +232,49 @@ class FirebaseService {
   static Future<List<Map<String, dynamic>>> getEvents() async {
     final snapshot = await _db.collection('events').orderBy('createdAt', descending: true).get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
+  // ============ Admin: Announcements ============
+  static Future<void> createAnnouncement(String title, {String? content}) async {
+    await _db.collection('announcements').add({
+      'title': title,
+      'content': content,
+      'createdBy': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> deleteAnnouncement(String id) async {
+    await _db.collection('announcements').doc(id).delete();
+  }
+
+  // ============ Admin: Videos ============
+  static Future<void> addVideo(String title, String youtubeUrl, {String? description}) async {
+    await _db.collection('videos').add({
+      'title': title,
+      'youtubeUrl': youtubeUrl,
+      'description': description,
+      'createdBy': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> deleteVideo(String id) async {
+    await _db.collection('videos').doc(id).delete();
+  }
+
+  // ============ Admin: Sheet Music ============
+  static Future<void> addSheetMusic(String title, {String? composer, String? fileUrl}) async {
+    await _db.collection('sheet_music').add({
+      'title': title,
+      'composer': composer,
+      'fileUrl': fileUrl,
+      'createdBy': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> deleteSheetMusic(String id) async {
+    await _db.collection('sheet_music').doc(id).delete();
   }
 }
