@@ -14,6 +14,7 @@ class HomeScreen extends ConsumerWidget {
     final announcementsAsync = ref.watch(announcementsProvider);
     final historyAsync = ref.watch(myHistoryProvider);
     final sessionAsync = ref.watch(activeSessionProvider);
+    final eventsAsync = ref.watch(eventsProvider);
     final recentSheets = ref.watch(recentSheetMusicProvider).valueOrNull ?? [];
     final recentVids = ref.watch(recentVideosProvider).valueOrNull ?? [];
 
@@ -29,12 +30,25 @@ class HomeScreen extends ConsumerWidget {
         final weekday = ['월', '화', '수', '목', '금', '토', '일'][now.weekday - 1];
         final totalUploads = recentSheets.length + recentVids.length;
 
+        // Pick the next upcoming event from Firestore (date >= today)
+        final allEvents = eventsAsync.valueOrNull ?? [];
+        final upcomingEvents = allEvents.where((e) {
+          final d = e['date'];
+          if (d == null || d is! String || d.isEmpty) return false;
+          final parsed = DateTime.tryParse(d);
+          if (parsed == null) return false;
+          return !parsed.isBefore(DateTime(now.year, now.month, now.day));
+        }).toList()
+          ..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
+        final nextEvent = upcomingEvents.isNotEmpty ? upcomingEvents.first : null;
+
         return RefreshIndicator(
           onRefresh: () async {
             ref.invalidate(profileProvider);
             ref.invalidate(announcementsProvider);
             ref.invalidate(myHistoryProvider);
             ref.invalidate(activeSessionProvider);
+            ref.invalidate(eventsProvider);
             ref.invalidate(recentSheetMusicProvider);
             ref.invalidate(recentVideosProvider);
           },
@@ -123,7 +137,9 @@ class HomeScreen extends ConsumerWidget {
                               ),
                             ]),
                           ])
-                        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        : nextEvent != null
+                            ? _buildNextEventCard(nextEvent, attendanceCount, now)
+                            : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
@@ -132,7 +148,7 @@ class HomeScreen extends ConsumerWidget {
                             const SizedBox(height: 14),
                             Text('예정된 연습이 없습니다', style: AppText.headline(20, color: Colors.white)),
                             const SizedBox(height: 8),
-                            Text('관리자가 출석을 열면 여기에 표시됩니다', style: AppText.body(13, color: Colors.white54)),
+                            Text('관리자가 일정을 등록하면 여기에 표시됩니다', style: AppText.body(13, color: Colors.white54)),
                             const SizedBox(height: 16),
                             Text('총 $attendanceCount회 출석', style: AppText.body(13, weight: FontWeight.w600, color: AppColors.secondaryContainer)),
                           ]),
@@ -299,6 +315,63 @@ class HomeScreen extends ConsumerWidget {
       if (diff.inDays < 7) return '${diff.inDays}일 전';
       return '${d.month}/${d.day}';
     } catch (_) { return ''; }
+  }
+
+  Widget _buildNextEventCard(Map<String, dynamic> ev, int attendanceCount, DateTime now) {
+    const typeLabels = {
+      'event': '일반',
+      'rehearsal': '연습',
+      'dressrehearsal': '리허설',
+      'concert': '공연',
+      'milestone': '기념',
+    };
+    const wd = ['일', '월', '화', '수', '목', '금', '토'];
+    final type = (ev['type'] as String?) ?? 'event';
+    final label = typeLabels[type] ?? '일정';
+    final date = DateTime.tryParse((ev['date'] as String?) ?? '');
+    final dateText = date == null
+        ? ''
+        : '${date.year}.${date.month.toString().padLeft(2, '0')}.${date.day.toString().padLeft(2, '0')} (${wd[date.weekday % 7]}) ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    String dday = '';
+    if (date != null) {
+      final t1 = DateTime(date.year, date.month, date.day);
+      final t0 = DateTime(now.year, now.month, now.day);
+      final diff = t1.difference(t0).inDays;
+      dday = diff == 0 ? 'D-DAY' : (diff > 0 ? 'D-$diff' : 'D+${-diff}');
+    }
+    final loc = (ev['location'] as String?) ?? '';
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(color: AppColors.secondaryContainer, borderRadius: BorderRadius.circular(6)),
+          child: Text(label, style: AppText.body(10, weight: FontWeight.w700, color: AppColors.secondary)),
+        ),
+        if (dday.isNotEmpty) ...[
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+            child: Text(dday, style: AppText.body(10, weight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ]),
+      const SizedBox(height: 14),
+      Text((ev['title'] as String?) ?? '', style: AppText.headline(20, color: Colors.white)),
+      const SizedBox(height: 8),
+      if (dateText.isNotEmpty)
+        Text(dateText, style: AppText.body(13, color: Colors.white70)),
+      if (loc.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Row(children: [
+          const Icon(Icons.location_on_outlined, size: 14, color: Colors.white54),
+          const SizedBox(width: 4),
+          Text(loc, style: AppText.body(13, color: Colors.white54)),
+        ]),
+      ],
+      const SizedBox(height: 16),
+      Text('총 $attendanceCount회 출석', style: AppText.body(13, weight: FontWeight.w600, color: AppColors.secondaryContainer)),
+    ]);
   }
 }
 
