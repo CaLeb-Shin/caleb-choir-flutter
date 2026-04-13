@@ -116,7 +116,7 @@ class VideosScreen extends ConsumerWidget {
     final titleCtrl = TextEditingController();
     final urlCtrl = TextEditingController();
     final descCtrl = TextEditingController();
-    showDialog(context: context, builder: (_) => AlertDialog(
+    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
       title: const Text('영상 추가'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: titleCtrl, decoration: const InputDecoration(hintText: '영상 제목')),
@@ -126,13 +126,13 @@ class VideosScreen extends ConsumerWidget {
         TextField(controller: descCtrl, decoration: const InputDecoration(hintText: '설명 (선택)')),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
         TextButton(onPressed: () async {
+          Navigator.pop(dialogCtx);
           if (titleCtrl.text.trim().isNotEmpty && urlCtrl.text.trim().isNotEmpty) {
             await FirebaseService.addVideo(titleCtrl.text.trim(), urlCtrl.text.trim(), description: descCtrl.text.trim());
             ref.invalidate(videosProvider);
           }
-          if (context.mounted) Navigator.pop(context);
         }, child: const Text('추가')),
       ],
     ));

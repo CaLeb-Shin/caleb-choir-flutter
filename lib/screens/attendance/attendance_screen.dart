@@ -215,17 +215,17 @@ class AttendanceScreen extends ConsumerWidget {
 
   void _showOpenSessionDialog(BuildContext context, WidgetRef ref) {
     final ctrl = TextEditingController();
-    showDialog(context: context, builder: (_) => AlertDialog(
+    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
       title: const Text('출석 열기'),
       content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '연습 제목 (예: 주일 연습)')),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
         TextButton(onPressed: () async {
+          Navigator.pop(dialogCtx);
           if (ctrl.text.trim().isNotEmpty) {
             await FirebaseService.openSession(ctrl.text.trim());
             ref.invalidate(activeSessionProvider);
           }
-          if (context.mounted) Navigator.pop(context);
         }, child: const Text('열기')),
       ],
     ));

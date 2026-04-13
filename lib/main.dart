@@ -36,35 +36,13 @@ class CalebChoirApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
 
-    Widget app = MaterialApp(
+    return MaterialApp(
       title: 'C.C',
       theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
-      home: authState.when(
-        loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-        error: (_, __) => const LoginScreen(),
-        data: (user) {
-          if (user == null) return const LoginScreen();
-          // 로그인은 됐는데 프로필이 있는지 확인
-          final profileAsync = ref.watch(profileProvider);
-          return profileAsync.when(
-            loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-            error: (_, __) => const ProfileSetupScreen(),
-            data: (profile) {
-              if (profile == null || !profile.profileCompleted) {
-                return const ProfileSetupScreen();
-              }
-              return const MainShell();
-            },
-          );
-        },
-      ),
-    );
-
-    if (kIsWeb) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
+      builder: (context, child) {
+        if (!kIsWeb || child == null) return child ?? const SizedBox.shrink();
+        return Scaffold(
           backgroundColor: const Color(0xFF000E24),
           body: Center(
             child: Container(
@@ -79,15 +57,34 @@ class CalebChoirApp extends ConsumerWidget {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(40),
-                child: app,
+                child: MediaQuery(
+                  data: MediaQuery.of(context).copyWith(size: const Size(430, 932)),
+                  child: child,
+                ),
               ),
             ),
           ),
-        ),
-      );
-    }
-
-    return app;
+        );
+      },
+      home: authState.when(
+        loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+        error: (_, __) => const LoginScreen(),
+        data: (user) {
+          if (user == null) return const LoginScreen();
+          final profileAsync = ref.watch(profileProvider);
+          return profileAsync.when(
+            loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+            error: (_, __) => const ProfileSetupScreen(),
+            data: (profile) {
+              if (profile == null || !profile.profileCompleted) {
+                return const ProfileSetupScreen();
+              }
+              return const MainShell();
+            },
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -187,17 +184,17 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   void _showPostDialog(BuildContext context, WidgetRef ref) {
     final ctrl = TextEditingController();
-    showDialog(context: context, builder: (_) => AlertDialog(
+    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
       title: const Text('게시물 작성'),
       content: TextField(controller: ctrl, decoration: const InputDecoration(hintText: '내용을 입력하세요'), maxLines: 4),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
         TextButton(onPressed: () async {
+          Navigator.pop(dialogCtx);
           if (ctrl.text.trim().isNotEmpty) {
             await FirebaseService.createPost(ctrl.text.trim());
             ref.invalidate(postsProvider);
           }
-          if (context.mounted) Navigator.pop(context);
         }, child: const Text('게시')),
       ],
     ));

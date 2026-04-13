@@ -101,7 +101,7 @@ class SheetMusicScreen extends ConsumerWidget {
   void _showAddDialog(BuildContext context, WidgetRef ref) {
     final titleCtrl = TextEditingController();
     final composerCtrl = TextEditingController();
-    showDialog(context: context, builder: (_) => AlertDialog(
+    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
       title: const Text('악보 추가'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: titleCtrl, decoration: const InputDecoration(hintText: '곡 제목')),
@@ -109,13 +109,13 @@ class SheetMusicScreen extends ConsumerWidget {
         TextField(controller: composerCtrl, decoration: const InputDecoration(hintText: '작곡가 (선택)')),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
         TextButton(onPressed: () async {
+          Navigator.pop(dialogCtx);
           if (titleCtrl.text.trim().isNotEmpty) {
             await FirebaseService.addSheetMusic(titleCtrl.text.trim(), composer: composerCtrl.text.trim());
             ref.invalidate(sheetMusicProvider);
           }
-          if (context.mounted) Navigator.pop(context);
         }, child: const Text('추가')),
       ],
     ));

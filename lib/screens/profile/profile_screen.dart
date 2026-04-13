@@ -231,16 +231,16 @@ class ProfileScreen extends ConsumerWidget {
   }
 
   void _confirmLogout(BuildContext context, WidgetRef ref) {
-    showDialog(context: context, builder: (_) => AlertDialog(
+    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
       title: const Text('로그아웃'),
       content: const Text('정말 로그아웃 하시겠습니까?'),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
         TextButton(
           onPressed: () async {
+            Navigator.pop(dialogCtx);
             ref.read(loggedOutProvider.notifier).state = true;
             await FirebaseService.signOut();
-            if (context.mounted) Navigator.pop(context);
           },
           child: const Text('로그아웃', style: TextStyle(color: AppColors.error)),
         ),

@@ -98,7 +98,7 @@ class MembersScreen extends ConsumerWidget {
   }
 
   void _showRoleDialog(BuildContext context, WidgetRef ref, Map<String, dynamic> member) {
-    showDialog(context: context, builder: (_) => AlertDialog(
+    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
       title: Text('${member['name'] ?? ''}님의 등급'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         for (final entry in User.roleLabels.entries)
@@ -107,9 +107,9 @@ class MembersScreen extends ConsumerWidget {
             title: Text(entry.value),
             trailing: member['role'] == entry.key ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
             onTap: () async {
+              Navigator.pop(dialogCtx);
               await FirebaseService.updateUserRole(member['id'], entry.key);
               ref.invalidate(membersProvider);
-              if (context.mounted) Navigator.pop(context);
             },
           ),
       ]),

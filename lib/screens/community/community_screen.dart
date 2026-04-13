@@ -137,7 +137,7 @@ class CommunityScreen extends ConsumerWidget {
   void _showAnnouncementDialog(BuildContext context, WidgetRef ref) {
     final titleCtrl = TextEditingController();
     final contentCtrl = TextEditingController();
-    showDialog(context: context, builder: (_) => AlertDialog(
+    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
       title: const Text('공지 작성'),
       content: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: titleCtrl, decoration: const InputDecoration(hintText: '제목')),
@@ -145,14 +145,14 @@ class CommunityScreen extends ConsumerWidget {
         TextField(controller: contentCtrl, decoration: const InputDecoration(hintText: '내용 (선택)'), maxLines: 3),
       ]),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('취소')),
+        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
         TextButton(onPressed: () async {
+          Navigator.pop(dialogCtx);
           if (titleCtrl.text.trim().isNotEmpty) {
             await FirebaseService.createAnnouncement(titleCtrl.text.trim(), content: contentCtrl.text.trim());
             await NotificationService.sendToAll(titleCtrl.text.trim(), contentCtrl.text.trim());
             ref.invalidate(announcementsProvider);
           }
-          if (context.mounted) Navigator.pop(context);
         }, child: const Text('작성')),
       ],
     ));
