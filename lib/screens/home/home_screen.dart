@@ -30,7 +30,7 @@ class HomeScreen extends ConsumerWidget {
         final weekday = ['월', '화', '수', '목', '금', '토', '일'][now.weekday - 1];
         final totalUploads = recentSheets.length + recentVids.length;
 
-        // Pick the next upcoming event from Firestore (date >= today)
+        // Pick upcoming events from Firestore (date >= today), up to 3
         final allEvents = eventsAsync.valueOrNull ?? [];
         final upcomingEvents = allEvents.where((e) {
           final d = e['date'];
@@ -40,7 +40,7 @@ class HomeScreen extends ConsumerWidget {
           return !parsed.isBefore(DateTime(now.year, now.month, now.day));
         }).toList()
           ..sort((a, b) => (a['date'] as String).compareTo(b['date'] as String));
-        final nextEvent = upcomingEvents.isNotEmpty ? upcomingEvents.first : null;
+        final upcomingTop = upcomingEvents.take(3).toList();
 
         return RefreshIndicator(
           onRefresh: () async {
@@ -137,8 +137,8 @@ class HomeScreen extends ConsumerWidget {
                               ),
                             ]),
                           ])
-                        : nextEvent != null
-                            ? _buildNextEventCard(nextEvent, attendanceCount, now)
+                        : upcomingTop.isNotEmpty
+                            ? _buildUpcomingEventsCard(upcomingTop, attendanceCount, now)
                             : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -317,7 +317,28 @@ class HomeScreen extends ConsumerWidget {
     } catch (_) { return ''; }
   }
 
-  Widget _buildNextEventCard(Map<String, dynamic> ev, int attendanceCount, DateTime now) {
+  Widget _buildUpcomingEventsCard(List<Map<String, dynamic>> events, int attendanceCount, DateTime now) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+        child: Text('다음 일정', style: AppText.body(10, weight: FontWeight.w700, color: Colors.white70)),
+      ),
+      const SizedBox(height: 14),
+      for (int i = 0; i < events.length; i++) ...[
+        if (i > 0) ...[
+          const SizedBox(height: 12),
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
+          const SizedBox(height: 12),
+        ],
+        _eventRow(events[i], now, primary: i == 0),
+      ],
+      const SizedBox(height: 16),
+      Text('총 $attendanceCount회 출석', style: AppText.body(13, weight: FontWeight.w600, color: AppColors.secondaryContainer)),
+    ]);
+  }
+
+  Widget _eventRow(Map<String, dynamic> ev, DateTime now, {required bool primary}) {
     const typeLabels = {
       'event': '일반',
       'rehearsal': '연습',
@@ -325,9 +346,17 @@ class HomeScreen extends ConsumerWidget {
       'concert': '공연',
       'milestone': '기념',
     };
+    const typeBadgeColors = {
+      'rehearsal': Color(0xFF4ADE80),
+      'dressrehearsal': Color(0xFF2DD4BF),
+      'concert': Color(0xFFFBBF24),
+      'event': Color(0xFF60A5FA),
+      'milestone': Color(0xFFA78BFA),
+    };
     const wd = ['일', '월', '화', '수', '목', '금', '토'];
     final type = (ev['type'] as String?) ?? 'event';
     final label = typeLabels[type] ?? '일정';
+    final badgeColor = typeBadgeColors[type] ?? const Color(0xFF60A5FA);
     final date = DateTime.tryParse((ev['date'] as String?) ?? '');
     final dateText = date == null
         ? ''
@@ -340,37 +369,51 @@ class HomeScreen extends ConsumerWidget {
       dday = diff == 0 ? 'D-DAY' : (diff > 0 ? 'D-$diff' : 'D+${-diff}');
     }
     final loc = (ev['location'] as String?) ?? '';
+
+    final titleSize = primary ? 20.0 : 15.0;
+    final titleWeight = primary ? FontWeight.w700 : FontWeight.w600;
+    final metaSize = primary ? 13.0 : 11.0;
+
+    final metaParts = <String>[
+      if (dateText.isNotEmpty) dateText,
+      if (loc.isNotEmpty) loc,
+    ];
+    final metaText = metaParts.join('  ·  ');
+
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: AppColors.secondaryContainer, borderRadius: BorderRadius.circular(6)),
-          child: Text(label, style: AppText.body(10, weight: FontWeight.w700, color: AppColors.secondary)),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(color: badgeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(5)),
+          child: Text(label, style: AppText.body(10, weight: FontWeight.w700, color: badgeColor)),
         ),
         if (dday.isNotEmpty) ...[
           const SizedBox(width: 6),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(5)),
             child: Text(dday, style: AppText.body(10, weight: FontWeight.w700, color: Colors.white)),
           ),
         ],
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            (ev['title'] as String?) ?? '',
+            style: AppText.body(titleSize, weight: titleWeight, color: Colors.white),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ]),
-      const SizedBox(height: 14),
-      Text((ev['title'] as String?) ?? '', style: AppText.headline(20, color: Colors.white)),
-      const SizedBox(height: 8),
-      if (dateText.isNotEmpty)
-        Text(dateText, style: AppText.body(13, color: Colors.white70)),
-      if (loc.isNotEmpty) ...[
+      if (metaText.isNotEmpty) ...[
         const SizedBox(height: 4),
-        Row(children: [
-          const Icon(Icons.location_on_outlined, size: 14, color: Colors.white54),
-          const SizedBox(width: 4),
-          Text(loc, style: AppText.body(13, color: Colors.white54)),
-        ]),
+        Text(
+          metaText,
+          style: AppText.body(metaSize, color: Colors.white70),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
-      const SizedBox(height: 16),
-      Text('총 $attendanceCount회 출석', style: AppText.body(13, weight: FontWeight.w600, color: AppColors.secondaryContainer)),
     ]);
   }
 }
