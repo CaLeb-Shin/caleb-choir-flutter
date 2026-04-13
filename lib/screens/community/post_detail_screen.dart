@@ -5,6 +5,7 @@ import '../../theme/app_theme.dart';
 import '../../models/user.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
+import '../../widgets/user_badges.dart';
 
 const reactionMeta = <String, ({String label, String emoji})>{
   'like': (label: '좋아요', emoji: '❤️'),
@@ -190,7 +191,11 @@ class _PostHeader extends StatelessWidget {
       _Avatar(name: post['userName'], part: post['userPart'], imageUrl: post['userImageUrl']),
       const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(post['userName'] ?? '', style: AppText.body(15, weight: FontWeight.w700)),
+        Row(children: [
+          Flexible(child: Text(post['userName'] ?? '', style: AppText.body(15, weight: FontWeight.w700), overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 6),
+          Flexible(child: UserBadges(userId: post['userId'] as String?)),
+        ]),
         Text(
           '${post['userGeneration'] ?? ''} · ${User.partLabels[post['userPart']] ?? ''} · ${_timeAgo(post['createdAt'])}',
           style: AppText.body(11, color: AppColors.muted),
@@ -324,9 +329,9 @@ class _CommentTile extends StatelessWidget {
         _Avatar(name: comment['userName'], part: comment['userPart'], imageUrl: comment['userImageUrl']),
         const SizedBox(width: 10),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
+          Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 6, runSpacing: 2, children: [
             Text(comment['userName'] ?? '', style: AppText.body(13, weight: FontWeight.w700)),
-            const SizedBox(width: 6),
+            UserBadges(userId: comment['userId'] as String?, max: 2),
             Text(_PostHeader._timeAgo(comment['createdAt']), style: AppText.body(11, color: AppColors.muted)),
           ]),
           const SizedBox(height: 2),

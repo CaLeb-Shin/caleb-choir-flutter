@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/awards_provider.dart';
 import '../../models/user.dart';
 import '../../services/firebase_service.dart';
 import '../../services/notification_service.dart';
 import '../../widgets/interactive.dart';
+import '../../widgets/user_badges.dart';
 import 'post_detail_screen.dart';
 
 class CommunityScreen extends ConsumerWidget {
@@ -18,6 +20,15 @@ class CommunityScreen extends ConsumerWidget {
     final announcementsAsync = ref.watch(announcementsProvider);
     final announcements = announcementsAsync.valueOrNull ?? [];
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
+    final awardsAsync = ref.watch(awardsProvider);
+    final members = ref.watch(membersProvider).valueOrNull ?? [];
+    Map<String, dynamic>? memberById(String? uid) {
+      if (uid == null) return null;
+      for (final m in members) {
+        if (m['id'] == uid) return m;
+      }
+      return null;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,6 +71,39 @@ class CommunityScreen extends ConsumerWidget {
               ),
             ),
           ),
+
+        // 명예의 전당: 이주의 갈렙 + 이달의 갈렙
+        awardsAsync.maybeWhen(
+          data: (awards) {
+            final hasAny = awards.currentWeeklyCalebUid != null || awards.currentMonthlyCalebUid != null;
+            if (!hasAny) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Row(children: [
+                Expanded(
+                  child: _CalebAwardCard(
+                    label: '이주의 갈렙',
+                    member: memberById(awards.currentWeeklyCalebUid),
+                    likes: awards.currentWeeklyCalebLikes,
+                    bg: const Color(0xFFFEF3C7),
+                    fg: const Color(0xFFB45309),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _CalebAwardCard(
+                    label: '이달의 갈렙',
+                    member: memberById(awards.currentMonthlyCalebUid),
+                    likes: awards.currentMonthlyCalebLikes,
+                    bg: const Color(0xFFFCE7F3),
+                    fg: const Color(0xFFBE185D),
+                  ),
+                ),
+              ]),
+            );
+          },
+          orElse: () => const SizedBox.shrink(),
+        ),
 
         Expanded(
           child: postsAsync.when(
@@ -197,11 +241,13 @@ class _PostCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Expanded(child: Text(
+                Flexible(child: Text(
                   '${post['userName'] ?? ''} · ${CommunityScreen._timeAgo(post['createdAt'])}',
                   style: AppText.body(11, color: AppColors.muted),
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 )),
+                const SizedBox(width: 6),
+                Flexible(child: UserBadges(userId: post['userId'] as String?)),
               ]),
               const SizedBox(height: 10),
               Wrap(spacing: 10, runSpacing: 4, children: [
@@ -230,5 +276,61 @@ class _MiniStat extends StatelessWidget {
       const SizedBox(width: 3),
       Text('$count', style: AppText.body(12, weight: FontWeight.w600, color: AppColors.muted)),
     ]);
+  }
+}
+
+class _CalebAwardCard extends StatelessWidget {
+  final String label;
+  final Map<String, dynamic>? member;
+  final int likes;
+  final Color bg;
+  final Color fg;
+  const _CalebAwardCard({
+    required this.label,
+    required this.member,
+    required this.likes,
+    required this.bg,
+    required this.fg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = member?['name'] as String? ?? '집계 중';
+    final part = member?['part'] as String?;
+    final imageUrl = member?['imageUrl'] as String?;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          const Text('🏆', style: TextStyle(fontSize: 14)),
+          const SizedBox(width: 4),
+          Text(label, style: AppText.body(11, weight: FontWeight.w800, color: fg)),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          if (imageUrl != null && imageUrl.isNotEmpty)
+            ClipOval(
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                width: 32, height: 32, fit: BoxFit.cover,
+                placeholder: (_, __) => Container(width: 32, height: 32, color: Colors.white),
+                errorWidget: (_, __, ___) => CircleAvatar(radius: 16, backgroundColor: Colors.white, child: Text(User.partLabels[part]?[0] ?? '?', style: AppText.body(12, weight: FontWeight.w700, color: fg))),
+              ),
+            )
+          else
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: Colors.white,
+              child: Text(User.partLabels[part]?[0] ?? '?', style: AppText.body(12, weight: FontWeight.w700, color: fg)),
+            ),
+          const SizedBox(width: 8),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name, style: AppText.body(13, weight: FontWeight.w800, color: fg), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text('❤️ $likes', style: AppText.body(11, weight: FontWeight.w600, color: fg.withValues(alpha: 0.8))),
+          ])),
+        ]),
+      ]),
+    );
   }
 }

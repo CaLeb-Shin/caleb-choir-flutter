@@ -186,6 +186,41 @@ class FirebaseService {
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
+  // ============ Awards data ============
+  /// Posts created on/after [since], with userId+reactions intact (light shape).
+  static Future<List<Map<String, dynamic>>> getPostsSince(DateTime since) async {
+    final snapshot = await _db
+        .collection('posts')
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs.map((d) {
+      final data = d.data();
+      return {
+        'id': d.id,
+        'userId': data['userId'],
+        'reactions': data['reactions'] ?? {},
+        'createdAt': (data['createdAt'] as Timestamp?)?.toDate(),
+      };
+    }).toList();
+  }
+
+  /// Attendance records on/after [since].
+  static Future<List<Map<String, dynamic>>> getAttendanceSince(DateTime since) async {
+    final snapshot = await _db
+        .collection('attendance')
+        .where('checkedInAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .get();
+    return snapshot.docs.map((d) {
+      final data = d.data();
+      return {
+        'id': d.id,
+        'userId': data['userId'],
+        'checkedInAt': (data['checkedInAt'] as Timestamp?)?.toDate(),
+      };
+    }).toList();
+  }
+
   // ============ Posts ============
   static Future<List<Map<String, dynamic>>> getPosts() async {
     final snapshot = await _db.collection('posts').orderBy('createdAt', descending: true).limit(50).get();
