@@ -216,7 +216,39 @@ class FirebaseService {
       return {
         'id': d.id,
         'userId': data['userId'],
+        'sessionId': data['sessionId'],
         'checkedInAt': (data['checkedInAt'] as Timestamp?)?.toDate(),
+      };
+    }).toList();
+  }
+
+  /// Attendance sessions opened on/after [since].
+  static Future<List<Map<String, dynamic>>> getSessionsSince(DateTime since) async {
+    final snapshot = await _db
+        .collection('attendance_sessions')
+        .where('openedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .get();
+    return snapshot.docs.map((d) {
+      final data = d.data();
+      return {
+        'id': d.id,
+        'openedAt': (data['openedAt'] as Timestamp?)?.toDate(),
+      };
+    }).toList();
+  }
+
+  /// All comments authored on/after [since], across every post.
+  static Future<List<Map<String, dynamic>>> getCommentsSince(DateTime since) async {
+    final snapshot = await _db
+        .collectionGroup('comments')
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .get();
+    return snapshot.docs.map((d) {
+      final data = d.data();
+      return {
+        'id': d.id,
+        'userId': data['userId'],
+        'createdAt': (data['createdAt'] as Timestamp?)?.toDate(),
       };
     }).toList();
   }

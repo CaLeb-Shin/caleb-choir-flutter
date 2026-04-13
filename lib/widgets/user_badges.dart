@@ -25,6 +25,7 @@ class UserBadges extends ConsumerWidget {
     return awardsAsync.maybeWhen(
       data: (awards) {
         final pills = <_BadgeSpec>[];
+        // Priority: active titles first, cumulative counts last.
         if (awards.isCurrentWeeklyCaleb(userId)) {
           pills.add(const _BadgeSpec('이주의 갈렙', _BadgeStyle.weeklyActive));
         }
@@ -33,6 +34,18 @@ class UserBadges extends ConsumerWidget {
         }
         if (awards.isAttendanceChampion(userId)) {
           pills.add(const _BadgeSpec('출석챔피언', _BadgeStyle.champion));
+        }
+        if (awards.isPrayKing(userId)) {
+          pills.add(const _BadgeSpec('🙏 기도왕', _BadgeStyle.prayKing));
+        }
+        if (awards.isCommentKing(userId)) {
+          pills.add(const _BadgeSpec('💬 댓글왕', _BadgeStyle.commentKing));
+        }
+        if (awards.isPerfectAttendance(userId)) {
+          pills.add(const _BadgeSpec('✨ 개근', _BadgeStyle.perfect));
+        }
+        if (awards.isNewcomer(userId)) {
+          pills.add(const _BadgeSpec('🌱 신입', _BadgeStyle.newcomer));
         }
         final c = awards.countsFor(userId);
         if (c.weeklyCalebWins > 0) {
@@ -52,7 +65,10 @@ class UserBadges extends ConsumerWidget {
   }
 }
 
-enum _BadgeStyle { weeklyActive, monthlyActive, champion, weeklyCount, monthlyCount }
+enum _BadgeStyle {
+  weeklyActive, monthlyActive, champion, prayKing, commentKing, perfect, newcomer,
+  weeklyCount, monthlyCount,
+}
 
 class _BadgeSpec {
   final String label;
@@ -88,6 +104,14 @@ class _Pill extends StatelessWidget {
         return (const Color(0xFFFCE7F3), const Color(0xFFBE185D)); // pink
       case _BadgeStyle.champion:
         return (const Color(0xFFDCFCE7), const Color(0xFF15803D)); // green
+      case _BadgeStyle.prayKing:
+        return (const Color(0xFFE0E7FF), const Color(0xFF3730A3)); // indigo
+      case _BadgeStyle.commentKing:
+        return (const Color(0xFFCFFAFE), const Color(0xFF155E75)); // cyan
+      case _BadgeStyle.perfect:
+        return (const Color(0xFFFFEDD5), const Color(0xFFC2410C)); // orange
+      case _BadgeStyle.newcomer:
+        return (const Color(0xFFECFCCB), const Color(0xFF4D7C0F)); // lime
       case _BadgeStyle.weeklyCount:
         return (const Color(0xFFFEF9C3), const Color(0xFF854D0E)); // soft yellow
       case _BadgeStyle.monthlyCount:
