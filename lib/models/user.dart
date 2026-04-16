@@ -8,6 +8,7 @@ class User {
   final String? part;
   final String? phone;
   final String? profileImageUrl;
+  final String? partLeaderFor;
   final bool profileCompleted;
 
   User({
@@ -20,21 +21,31 @@ class User {
     this.part,
     this.phone,
     this.profileImageUrl,
+    this.partLeaderFor,
     this.profileCompleted = false,
   });
 
   bool get isAdmin => role == 'admin';
   bool get isOfficer => role == 'officer';
-  /// 관리자/임원 권한 (콘텐츠 작성, 출석 관리 등)
-  bool get hasManagePermission => isAdmin || isOfficer;
+  bool get isPartLeader => role == 'part_leader';
+  bool get hasManagePermission => isAdmin || isOfficer || isPartLeader;
+  bool canActOnPart(String? targetPart) =>
+      isAdmin || (isPartLeader && partLeaderFor == targetPart);
 
   static const roleLabels = {
     'admin': '관리자',
     'officer': '임원',
+    'part_leader': '파트장',
     'member': '단원',
   };
 
-  String get roleLabel => roleLabels[role] ?? '단원';
+  String get roleLabel {
+    if (isPartLeader && partLeaderFor != null) {
+      final pLabel = partLabels[partLeaderFor] ?? partLeaderFor;
+      return '$pLabel 파트장';
+    }
+    return roleLabels[role] ?? '단원';
+  }
 
   /// "홍길동 (길동이)" 형식. 별칭 없으면 그냥 이름.
   String get displayName {
@@ -56,6 +67,7 @@ class User {
       part: map['part'] as String?,
       phone: map['phone'] as String?,
       profileImageUrl: map['profileImageUrl'] as String?,
+      partLeaderFor: map['partLeaderFor'] as String?,
       profileCompleted: map['profileCompleted'] as bool? ?? false,
     );
   }

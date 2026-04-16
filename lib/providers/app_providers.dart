@@ -92,6 +92,33 @@ final membersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return FirebaseService.getAllMembers();
 });
 
+// ─── Part Leader ───
+final effectiveIsPartLeaderProvider = Provider<bool>((ref) {
+  final profile = ref.watch(profileProvider).valueOrNull;
+  final viewAsMember = ref.watch(viewAsMemberProvider);
+  return (profile?.isPartLeader ?? false) && !viewAsMember;
+});
+
+// ─── Polls ───
+final pollsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return FirebaseService.getPolls();
+});
+
+final pollVotesProvider = FutureProvider.family<List<Map<String, dynamic>>, String>((ref, pollId) async {
+  return FirebaseService.getPollVotes(pollId);
+});
+
+// ─── Seating ───
+final seatingChartsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final profile = ref.watch(profileProvider).valueOrNull;
+  final publishedOnly = profile?.role == 'member';
+  return FirebaseService.getSeatingCharts(publishedOnly: publishedOnly);
+});
+
+final seatAssignmentsProvider = FutureProvider.family<List<Map<String, dynamic>>, String>((ref, chartId) async {
+  return FirebaseService.getSeatAssignments(chartId);
+});
+
 // ─── This Week's Uploads ───
 final recentSheetMusicProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final all = await FirebaseService.getSheetMusic();

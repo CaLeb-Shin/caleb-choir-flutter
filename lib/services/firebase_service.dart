@@ -442,4 +442,230 @@ class FirebaseService {
   static Future<void> deleteSheetMusic(String id) async {
     await _db.collection('sheet_music').doc(id).delete();
   }
+
+  // ============ Part Leader ============
+  static Future<void> setPartLeader(String userId, String? part) async {
+    if (part == null) {
+      await _db.collection('users').doc(userId).update({
+        'role': 'member',
+        'partLeaderFor': FieldValue.delete(),
+      });
+    } else {
+      await _db.collection('users').doc(userId).update({
+        'role': 'part_leader',
+        'partLeaderFor': part,
+      });
+    }
+  }
+
+  // ============ Admin QR Check-in ============
+  static Future<Map<String, dynamic>> adminCheckIn(String userId) async {
+    final session = await getActiveSession();
+    if (session == null) throw Exception('열린 출석 세션이 없습니다');
+
+    final userDoc = await _db.collection('users').doc(userId).get();
+    if (!userDoc.exists) throw Exception('해당 단원을 찾을 수 없습니다');
+
+    final existing = await _db.collection('attendance')
+        .where('userId', isEqualTo: userId)
+        .where('sessionId', isEqualTo: session['id'])
+        .limit(1)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      return {'alreadyCheckedIn': true, 'userName': userDoc.data()?['name'] ?? ''};
+    }
+
+    await _db.collection('attendance').add({
+      'userId': userId,
+      'sessionId': session['id'],
+      'checkedInAt': FieldValue.serverTimestamp(),
+    });
+
+    return {'alreadyCheckedIn': false, 'userName': userDoc.data()?['name'] ?? ''};
+  }
+
+  // ============ Polls (참석 투표) ============
+  static Future<String> createPoll({
+    required String title,
+    required String targetDate,
+    String? scopePart,
+  }) async {
+    final docRef = await _db.collection('polls').add({
+      'title': title,
+      'targetDate': targetDate,
+      'createdBy': uid,
+      'scopePart': scopePart,
+      'isOpen': true,
+      'closedAt': null,
+      'closedBy': null,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
+  }
+
+  static Future<void> closePoll(String pollId) async {
+    await _db.collection('polls').doc(pollId).update({
+      'isOpen': false,
+      'closedAt': FieldValue.serverTimestamp(),
+      'closedBy': uid,
+    });
+  }
+
+  static Future<List<Map<String, dynamic>>> getPolls() async {
+    final snapshot = await _db.collection('polls')
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
+  static Future<void> vote(String pollId, String choice) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final existing = await _db.collection('poll_votes')
+        .where('pollId', isEqualTo: pollId)
+        .where('userId', isEqualTo: uid)
+        .limit(1)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      await existing.docs.first.reference.update({
+        'choice': choice,
+        'votedAt': FieldValue.serverTimestamp(),
+      });
+    } else {
+      await _db.collection('poll_votes').add({
+        'pollId': pollId,
+        'userId': uid,
+        'choice': choice,
+        'votedAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPollVotes(String pollId) async {
+    final snapshot = await _db.collection('poll_votes')
+        .where('pollId', isEqualTo: pollId)
+        .get();
+    final votes = <Map<String, dynamic>>[];
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final userDoc = await _db.collection('users').doc(data['userId']).get();
+      votes.add({
+        'id': doc.id,
+        ...data,
+        'userName': userDoc.data()?['name'] ?? '',
+        'userPart': userDoc.data()?['part'] ?? '',
+      });
+    }
+    return votes;
+  }
+
+  // ============ Seating Charts (배치판) ============
+  static Future<String> createSeatingChart({
+    required String label,
+    required String eventDate,
+  }) async {
+    final docRef = await _db.collection('seating_charts').add({
+      'label': label,
+      'eventDate': eventDate,
+      'createdBy': uid,
+      'isPublished': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
+  }
+
+  static Future<void> publishSeatingChart(String chartId, bool isPublished) async {
+    await _db.collection('seating_charts').doc(chartId).update({'isPublished': isPublished});
+  }
+
+  static Future<void> deleteSeatingChart(String chartId) async {
+    final assignments = await _db.collection('seat_assignments')
+        .where('chartId', isEqualTo: chartId).get();
+    for (final doc in assignments.docs) {
+      await doc.reference.delete();
+    }
+    await _db.collection('seating_charts').doc(chartId).delete();
+  }
+
+  static Future<List<Map<String, dynamic>>> getSeatingCharts({bool publishedOnly = false}) async {
+    Query<Map<String, dynamic>> query = _db.collection('seating_charts')
+        .orderBy('createdAt', descending: true);
+    if (publishedOnly) {
+      query = query.where('isPublished', isEqualTo: true);
+    }
+    final snapshot = await query.get();
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> getSeatAssignments(String chartId) async {
+    final snapshot = await _db.collection('seat_assignments')
+        .where('chartId', isEqualTo: chartId)
+        .get();
+    final assignments = <Map<String, dynamic>>[];
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final userDoc = await _db.collection('users').doc(data['userId']).get();
+      assignments.add({
+        'id': doc.id,
+        ...data,
+        'userName': userDoc.data()?['name'] ?? '',
+        'userGeneration': userDoc.data()?['generation'] ?? '',
+      });
+    }
+    return assignments;
+  }
+
+  static Future<void> assignSeat({
+    required String chartId,
+    required String part,
+    required int row,
+    required int col,
+    required String userId,
+  }) async {
+    // Remove any existing seat for this user in this chart
+    final existingUser = await _db.collection('seat_assignments')
+        .where('chartId', isEqualTo: chartId)
+        .where('userId', isEqualTo: userId)
+        .get();
+    for (final doc in existingUser.docs) {
+      await doc.reference.delete();
+    }
+    // Remove any existing seat at this cell
+    final existingCell = await _db.collection('seat_assignments')
+        .where('chartId', isEqualTo: chartId)
+        .where('part', isEqualTo: part)
+        .where('row', isEqualTo: row)
+        .where('col', isEqualTo: col)
+        .get();
+    for (final doc in existingCell.docs) {
+      await doc.reference.delete();
+    }
+    await _db.collection('seat_assignments').add({
+      'chartId': chartId,
+      'part': part,
+      'row': row,
+      'col': col,
+      'userId': userId,
+      'assignedBy': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> clearSeat({
+    required String chartId,
+    required String part,
+    required int row,
+    required int col,
+  }) async {
+    final existing = await _db.collection('seat_assignments')
+        .where('chartId', isEqualTo: chartId)
+        .where('part', isEqualTo: part)
+        .where('row', isEqualTo: row)
+        .where('col', isEqualTo: col)
+        .get();
+    for (final doc in existing.docs) {
+      await doc.reference.delete();
+    }
+  }
 }

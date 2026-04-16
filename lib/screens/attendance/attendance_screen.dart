@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart' show Share;
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
-import '../../widgets/interactive.dart';
+import '../../models/user.dart' show User;
 import '../qr_scan/qr_scan_screen.dart';
 
 class AttendanceScreen extends ConsumerWidget {
@@ -32,37 +33,7 @@ class AttendanceScreen extends ConsumerWidget {
           Text('연습 출석을 관리하세요', style: AppText.body(14, color: AppColors.muted)),
           const SizedBox(height: 20),
 
-          // Action buttons
-          Row(children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => QrScanScreen(onScanned: (code) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('QR 스캔 완료: $code')));
-                    }),
-                  ));
-                },
-                icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
-                label: const Text('QR 스캔'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  final h = ref.read(myHistoryProvider).valueOrNull ?? [];
-                  final csv = h.map((r) => '${r['sessionTitle']},${r['checkedInAt']}').join('\n');
-                  if (csv.isNotEmpty) await Share.share(csv, subject: '갈렙찬양대 출석기록');
-                },
-                icon: const Icon(Icons.download_rounded, size: 18),
-                label: const Text('내보내기'),
-              ),
-            ),
-          ]),
-          const SizedBox(height: 16),
-
-          // ── Admin: 출석 열기/닫기
+          // ── Admin controls
           if (isAdmin) ...[
             Container(
               padding: const EdgeInsets.all(16),
@@ -74,29 +45,70 @@ class AttendanceScreen extends ConsumerWidget {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('관리자', style: AppText.label()),
                 const SizedBox(height: 10),
-                if (session != null)
-                  SizedBox(
-                    width: double.infinity,
+                Row(children: [
+                  Expanded(
+                    child: session != null
+                        ? ElevatedButton.icon(
+                            onPressed: () async {
+                              await FirebaseService.closeSession(session['id']);
+                              ref.invalidate(activeSessionProvider);
+                            },
+                            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error, foregroundColor: Colors.white),
+                            icon: const Icon(Icons.stop_rounded, size: 18),
+                            label: const Text('출석 마감'),
+                          )
+                        : ElevatedButton.icon(
+                            onPressed: () => _showOpenSessionDialog(context, ref),
+                            style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary, foregroundColor: Colors.white),
+                            icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                            label: const Text('출석 열기'),
+                          ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: () async {
-                        await FirebaseService.closeSession(session['id']);
-                        ref.invalidate(activeSessionProvider);
+                      onPressed: session == null ? null : () {
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => QrScanScreen(onScanned: (code) async {
+                            final match = RegExp(r'^caleb-choir:(.+)$').firstMatch(code);
+                            if (match == null) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('올바르지 않은 QR 코드입니다')),
+                                );
+                              }
+                              return;
+                            }
+                            final userId = match.group(1)!;
+                            try {
+                              final result = await FirebaseService.adminCheckIn(userId);
+                              if (context.mounted) {
+                                final name = result['userName'] ?? '';
+                                final already = result['alreadyCheckedIn'] == true;
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text(already
+                                      ? '$name님은 이미 출석했습니다'
+                                      : '$name님 출석 완료!'),
+                                  backgroundColor: already ? null : AppColors.success,
+                                ));
+                              }
+                              ref.invalidate(activeSessionProvider);
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('출석 실패: $e')),
+                                );
+                              }
+                            }
+                          }),
+                        ));
                       },
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.error, foregroundColor: Colors.white),
-                      icon: const Icon(Icons.stop_rounded, size: 18),
-                      label: const Text('출석 마감'),
-                    ),
-                  )
-                else
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _showOpenSessionDialog(context, ref),
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary, foregroundColor: Colors.white),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                      label: const Text('출석 열기'),
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryContainer, foregroundColor: Colors.white),
+                      icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+                      label: const Text('QR 스캔'),
                     ),
                   ),
+                ]),
               ]),
             ),
             const SizedBox(height: 16),
@@ -104,44 +116,28 @@ class AttendanceScreen extends ConsumerWidget {
 
           // Active session
           if (session != null)
-            Tappable(
-              onTap: () {},
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF000E24), Color(0xFF00234B)],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF000E24), Color(0xFF00234B)],
+                  begin: Alignment.topLeft, end: Alignment.bottomRight,
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80))),
-                    const SizedBox(width: 8),
-                    Text('출석 진행 중', style: AppText.body(13, weight: FontWeight.w600, color: Colors.white70)),
-                  ]),
-                  const SizedBox(height: 12),
-                  Text(session['title'] ?? '', style: AppText.headline(20, color: Colors.white)),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        await FirebaseService.checkIn(session['id']);
-                        ref.invalidate(myHistoryProvider);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.secondaryContainer, foregroundColor: AppColors.primary, elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: const Text('출석 체크하기'),
-                    ),
-                  ),
-                ]),
+                borderRadius: BorderRadius.circular(20),
               ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Container(width: 8, height: 8, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80))),
+                  const SizedBox(width: 8),
+                  Text('출석 진행 중', style: AppText.body(13, weight: FontWeight.w600, color: Colors.white70)),
+                ]),
+                const SizedBox(height: 12),
+                Text(session['title'] ?? '', style: AppText.headline(20, color: Colors.white)),
+                const SizedBox(height: 8),
+                Text('아래 QR 코드를 관리자에게 보여주세요',
+                    style: AppText.body(13, weight: FontWeight.w600, color: const Color(0xFFFED488))),
+              ]),
             )
           else
             Container(
@@ -161,25 +157,68 @@ class AttendanceScreen extends ConsumerWidget {
             ),
           const SizedBox(height: 20),
 
-          // Stats
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: AppColors.card, borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-            ),
-            child: Row(children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(14)),
-                child: const Icon(Icons.bar_chart_rounded, color: AppColors.primary, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('총 $total회 출석', style: AppText.headline(18)),
-                Text(profile?.partLabel ?? '', style: AppText.body(13, color: AppColors.muted)),
-              ]),
+          // ── My QR Code
+          if (profile != null) ...[
+            Row(children: [
+              const Icon(Icons.qr_code_rounded, size: 20, color: AppColors.secondary),
+              const SizedBox(width: 8),
+              Text('내 출석 QR', style: AppText.headline(18)),
             ]),
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+                ),
+                child: Column(children: [
+                  QrImageView(
+                    data: 'caleb-choir:${profile.id}',
+                    version: QrVersions.auto,
+                    size: 200,
+                    eyeStyle: const QrEyeStyle(color: Color(0xFF000E24), eyeShape: QrEyeShape.roundedOuter),
+                    dataModuleStyle: const QrDataModuleStyle(color: Color(0xFF000E24), dataModuleShape: QrDataModuleShape.roundedOuter),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(profile.displayName, style: AppText.headline(18)),
+                  const SizedBox(height: 4),
+                  Text('관리자에게 이 QR을 보여주세요', style: AppText.body(12, color: AppColors.muted)),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Profile meta row
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.card, borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+              ),
+              child: Row(children: [
+                _metaItem('파트', profile.partLabel),
+                Container(width: 1, height: 32, color: AppColors.border.withValues(alpha: 0.3)),
+                _metaItem('기수', profile.generation ?? '-'),
+                Container(width: 1, height: 32, color: AppColors.border.withValues(alpha: 0.3)),
+                _metaItem('총 출석', '$total회'),
+              ]),
+            ),
+            const SizedBox(height: 24),
+          ],
+
+          // Export button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final h = ref.read(myHistoryProvider).valueOrNull ?? [];
+                final csv = h.map((r) => '${r['sessionTitle']},${r['checkedInAt']}').join('\n');
+                if (csv.isNotEmpty) await Share.share(csv, subject: '갈렙찬양대 출석기록');
+              },
+              icon: const Icon(Icons.download_rounded, size: 18),
+              label: const Text('출석 내보내기'),
+            ),
           ),
           const SizedBox(height: 24),
 
@@ -211,6 +250,14 @@ class AttendanceScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Widget _metaItem(String label, String value) {
+    return Expanded(child: Column(children: [
+      Text(label, style: AppText.body(10, weight: FontWeight.w700, color: AppColors.muted)),
+      const SizedBox(height: 4),
+      Text(value, style: AppText.body(16, weight: FontWeight.w800)),
+    ]));
   }
 
   void _showOpenSessionDialog(BuildContext context, WidgetRef ref) {

@@ -4,6 +4,8 @@ import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../widgets/interactive.dart';
 import '../../services/firebase_service.dart';
+import '../polls/polls_screen.dart';
+import '../seating/seating_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -156,16 +158,28 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // ── Quick Actions (2x2 grid)
+                // ── Quick Actions (3x2 grid)
                 Row(children: [
                   Expanded(child: _ActionCard(
-                    icon: Icons.qr_code_scanner_rounded, title: 'QR 출석', desc: 'QR코드로 빠른 출석',
+                    icon: Icons.qr_code_rounded, title: 'QR 출석', desc: 'QR코드로 빠른 출석',
                     isDark: true, onTap: () => ref.read(tabIndexProvider.notifier).state = 3,
                   )),
                   const SizedBox(width: 10),
                   Expanded(child: _ActionCard(
+                    icon: Icons.how_to_vote_rounded, title: '참석 투표', desc: '주일 참석 여부',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PollsScreen())),
+                  )),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(child: _ActionCard(
+                    icon: Icons.grid_view_rounded, title: '배치판', desc: '내 자리 확인',
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SeatingScreen())),
+                  )),
+                  const SizedBox(width: 10),
+                  Expanded(child: _ActionCard(
                     icon: Icons.music_note_rounded, title: '악보 열람', desc: '파트별 악보 확인',
-                    onTap: () => ref.read(tabIndexProvider.notifier).state = 1,
+                    isDark: true, onTap: () => ref.read(tabIndexProvider.notifier).state = 1,
                   )),
                 ]),
                 const SizedBox(height: 10),
