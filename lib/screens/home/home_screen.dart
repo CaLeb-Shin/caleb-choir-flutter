@@ -83,7 +83,7 @@ class HomeScreen extends ConsumerWidget {
                 // ── Welcome
                 Text('환영합니다', style: AppText.label()),
                 const SizedBox(height: 8),
-                Text('${profile.name ?? "멤버"}님,\n오늘도 함께 찬양해요', style: AppText.headline(26, weight: FontWeight.w700)),
+                Text('${profile.name ?? "멤버"}님, 오늘도 함께 찬양해요', style: AppText.headline(22, weight: FontWeight.w700)),
                 const SizedBox(height: 24),
 
                 // ── Upcoming Rehearsal / Active Session
@@ -315,6 +315,27 @@ class HomeScreen extends ConsumerWidget {
         ? (ref.watch(pendingUsersProvider).valueOrNull?.length ?? 0)
         : 0;
 
+    // 새 콘텐츠 여부 (최근 7일 이내 등록/미확인)
+    final announcements = ref.watch(announcementsProvider).valueOrNull ?? [];
+    final hasNewAnnouncement = announcements.any((a) => a['isRead'] == false);
+    final hasNewSheetMusic = (ref.watch(recentSheetMusicProvider).valueOrNull ?? []).isNotEmpty;
+    final hasNewVideos = (ref.watch(recentVideosProvider).valueOrNull ?? []).isNotEmpty;
+    final posts = ref.watch(postsProvider).valueOrNull ?? [];
+    final hasNewPosts = posts.any((p) => _isRecent(p['createdAt']));
+    final events = ref.watch(eventsProvider).valueOrNull ?? [];
+    final now = DateTime.now();
+    final hasNewEvents = events.any((e) {
+      final d = e['date'];
+      if (d == null || d is! String || d.isEmpty) return false;
+      final parsed = DateTime.tryParse(d);
+      if (parsed == null) return false;
+      // 앞으로 7일 이내의 일정이면 N 표시
+      return !parsed.isBefore(DateTime(now.year, now.month, now.day)) &&
+          parsed.difference(now).inDays <= 7;
+    });
+    final polls = ref.watch(pollsProvider).valueOrNull ?? [];
+    final hasNewPolls = polls.any((p) => p['isOpen'] == true);
+
     final items = <Widget>[
       MiniActionTile(
         icon: Icons.qr_code_rounded,
@@ -325,6 +346,7 @@ class HomeScreen extends ConsumerWidget {
         icon: Icons.how_to_vote_rounded,
         label: '참석 투표',
         tone: 'secondary',
+        hasNew: hasNewPolls,
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PollsScreen())),
       ),
       MiniActionTile(
@@ -336,28 +358,33 @@ class HomeScreen extends ConsumerWidget {
         icon: Icons.music_note_rounded,
         label: '악보',
         tone: 'secondary',
+        hasNew: hasNewSheetMusic,
         onTap: () => ref.read(tabIndexProvider.notifier).state = 1,
       ),
       MiniActionTile(
         icon: Icons.play_circle_rounded,
         label: '영상',
+        hasNew: hasNewVideos,
         onTap: () => ref.read(tabIndexProvider.notifier).state = 2,
       ),
       MiniActionTile(
         icon: Icons.campaign_rounded,
         label: '공지',
         tone: 'secondary',
+        hasNew: hasNewAnnouncement,
         onTap: () => ref.read(tabIndexProvider.notifier).state = 4,
       ),
       MiniActionTile(
         icon: Icons.chat_bubble_rounded,
         label: '커뮤니티',
+        hasNew: hasNewPosts,
         onTap: () => ref.read(tabIndexProvider.notifier).state = 4,
       ),
       MiniActionTile(
         icon: Icons.calendar_today_rounded,
         label: '일정',
         tone: 'secondary',
+        hasNew: hasNewEvents,
         onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EventsScreen())),
       ),
       MiniActionTile(

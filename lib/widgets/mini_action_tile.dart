@@ -9,6 +9,8 @@ class MiniActionTile extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final int? badgeCount;
+  /// 새 콘텐츠 알림 (숫자 대신 'N' 라벨)
+  final bool hasNew;
   /// 색상 톤: 'primary' (네이비) 또는 'secondary' (골드)
   final String tone;
 
@@ -18,6 +20,7 @@ class MiniActionTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.badgeCount,
+    this.hasNew = false,
     this.tone = 'primary',
   });
 
@@ -56,6 +59,28 @@ class MiniActionTile extends StatelessWidget {
                 child: Text(
                   badgeCount! > 9 ? '9+' : '$badgeCount',
                   style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+            )
+          else if (hasNew)
+            Positioned(
+              top: -4, right: -4,
+              child: Container(
+                width: 20, height: 20,
+                decoration: BoxDecoration(
+                  color: AppColors.error,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.bg, width: 2),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'N',
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
