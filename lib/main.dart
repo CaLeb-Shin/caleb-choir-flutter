@@ -9,6 +9,8 @@ import 'theme/app_theme.dart';
 import 'providers/app_providers.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/profile_setup/profile_setup_screen.dart';
+import 'screens/approval/pending_approval_screen.dart';
+import 'screens/approval/rejected_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/videos/videos_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
@@ -71,14 +73,22 @@ class CalebChoirApp extends ConsumerWidget {
         error: (_, __) => const LoginScreen(),
         data: (user) {
           if (user == null) return const LoginScreen();
-          final profileAsync = ref.watch(profileProvider);
-          return profileAsync.when(
+          // 승인 상태 실시간 스트림 (관리자 승인 시 자동 전환)
+          final myProfileStream = ref.watch(myProfileStreamProvider);
+          return myProfileStream.when(
             loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
             error: (_, __) => const ProfileSetupScreen(),
             data: (profile) {
               if (profile == null || !profile.profileCompleted) {
                 return const ProfileSetupScreen();
               }
+              if (profile.isRejected) {
+                return const RejectedScreen();
+              }
+              if (profile.isPending) {
+                return const PendingApprovalScreen();
+              }
+              // approvalStatus가 null이거나 'approved'면 메인
               return const MainShell();
             },
           );

@@ -35,14 +35,37 @@ class FirebaseService {
   static Future<void> createProfile(Map<String, dynamic> data) async {
     if (uid == null) return;
     final email = currentUser?.email;
-    final autoRole = (email != null && adminEmails.contains(email.toLowerCase())) ? 'admin' : 'member';
+    final isWhitelisted = email != null && adminEmails.contains(email.toLowerCase());
+
+    // 관리자 화이트리스트 이메일은 자동 승인 + admin role
+    final autoApproval = isWhitelisted
+        ? {
+            'role': 'admin',
+            'approvalStatus': 'approved',
+          }
+        : {
+            'role': null, // 승인 후 관리자가 확정
+            'approvalStatus': 'pending',
+          };
+
     await _db.collection('users').doc(uid).set({
       ...data,
+      ...autoApproval,
       'email': email,
-      'role': autoRole,
       'profileCompleted': true,
       'createdAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  /// 거절된 유저가 다시 신청: 상태 pending으로 리셋
+  static Future<void> reapplyApproval(Map<String, dynamic> data) async {
+    if (uid == null) return;
+    await _db.collection('users').doc(uid).update({
+      ...data,
+      'approvalStatus': 'pending',
+      'rejectionReason': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// 관리자 이메일이면 기존 프로필도 admin으로 승격 (로그인 시 자동 실행)
@@ -50,14 +73,66 @@ class FirebaseService {
     final email = currentUser?.email?.toLowerCase();
     if (email == null || !adminEmails.contains(email) || uid == null) return;
     final doc = await _db.collection('users').doc(uid).get();
-    if (doc.exists && doc.data()?['role'] != 'admin') {
-      await _db.collection('users').doc(uid).update({'role': 'admin'});
+    if (!doc.exists) return;
+    final data = doc.data()!;
+    final updates = <String, dynamic>{};
+    if (data['role'] != 'admin') updates['role'] = 'admin';
+    if (data['approvalStatus'] != 'approved') updates['approvalStatus'] = 'approved';
+    if (updates.isNotEmpty) {
+      await _db.collection('users').doc(uid).update(updates);
     }
   }
 
   /// 관리자 전용: 다른 사용자 등급 변경
   static Future<void> updateUserRole(String userId, String role) async {
     await _db.collection('users').doc(userId).update({'role': role});
+  }
+
+  // ============ Approval Workflow ============
+  static Future<List<Map<String, dynamic>>> getPendingUsers() async {
+    final snapshot = await _db.collection('users')
+        .where('approvalStatus', isEqualTo: 'pending')
+        .get();
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> getRejectedUsers() async {
+    final snapshot = await _db.collection('users')
+        .where('approvalStatus', isEqualTo: 'rejected')
+        .get();
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
+  static Future<void> approveUser(String userId, {
+    required String role,
+    String? partLeaderFor,
+  }) async {
+    await _db.collection('users').doc(userId).update({
+      'approvalStatus': 'approved',
+      'role': role,
+      'partLeaderFor': partLeaderFor,
+      'rejectionReason': FieldValue.delete(),
+      'approvedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> rejectUser(String userId, String reason) async {
+    await _db.collection('users').doc(userId).update({
+      'approvalStatus': 'rejected',
+      'rejectionReason': reason,
+      'role': null,
+      'partLeaderFor': null,
+      'rejectedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// 현재 유저의 프로필 실시간 스트림 (승인 상태 변화 감지용)
+  static Stream<Map<String, dynamic>?> watchMyProfile() {
+    if (uid == null) return const Stream.empty();
+    return _db.collection('users').doc(uid).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      return {'id': doc.id, ...doc.data()!};
+    });
   }
 
   static Future<void> updateProfile(Map<String, dynamic> data) async {
@@ -77,7 +152,12 @@ class FirebaseService {
     final snapshot = await _db.collection('users')
         .where('profileCompleted', isEqualTo: true)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    // 승인된 유저만 반환 (pending/rejected 제외)
+    // approvalStatus가 없는 기존 유저는 포함 (하위 호환성)
+    return snapshot.docs
+        .map((d) => {'id': d.id, ...d.data()})
+        .where((m) => m['approvalStatus'] == null || m['approvalStatus'] == 'approved')
+        .toList();
   }
 
   // ============ Attendance Sessions ============

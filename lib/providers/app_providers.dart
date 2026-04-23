@@ -46,6 +46,28 @@ final profileProvider = FutureProvider<User?>((ref) async {
   return User.fromMap(data);
 });
 
+/// 실시간 프로필 스트림 (관리자 승인 시 UI 자동 전환용)
+final myProfileStreamProvider = StreamProvider<User?>((ref) {
+  final authState = ref.watch(authStateProvider);
+  final fbUser = authState.valueOrNull;
+  if (fbUser == null) return Stream.value(null);
+  // 로그인 시 한 번 admin 자동 승격 실행
+  FirebaseService.ensureAdminRole();
+  return FirebaseService.watchMyProfile().map((data) {
+    if (data == null) return null;
+    return User.fromMap(data);
+  });
+});
+
+// ─── Admin: Pending Approvals ───
+final pendingUsersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return FirebaseService.getPendingUsers();
+});
+
+final rejectedUsersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return FirebaseService.getRejectedUsers();
+});
+
 // ─── Attendance ───
 final activeSessionProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
   return FirebaseService.getActiveSession();

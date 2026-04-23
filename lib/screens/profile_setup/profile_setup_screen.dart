@@ -8,7 +8,9 @@ import '../../services/firebase_service.dart';
 import '../../providers/app_providers.dart';
 
 class ProfileSetupScreen extends ConsumerStatefulWidget {
-  const ProfileSetupScreen({super.key});
+  /// 거절 후 재신청 모드
+  final bool isReapply;
+  const ProfileSetupScreen({super.key, this.isReapply = false});
 
   @override
   ConsumerState<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
@@ -20,6 +22,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   final _genCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   String _part = 'soprano';
+  // 가입 희망 역할
+  String _requestedRole = 'member';
+  // 파트장 신청 시 담당 파트 (part와 동일하게 시작)
+  String _leaderPart = 'soprano';
   Uint8List? _imageBytes;
   String? _uploadedImageUrl;
   bool _saving = false;
@@ -70,14 +76,21 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     }
     setState(() { _saving = true; _error = null; });
     try {
-      await FirebaseService.createProfile({
+      final data = {
         'name': _nameCtrl.text.trim(),
         'nickname': _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
         'generation': _genCtrl.text.trim(),
         'part': _part,
         'phone': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
         'profileImageUrl': _uploadedImageUrl,
-      });
+        'requestedRole': _requestedRole,
+        'requestedPart': _requestedRole == 'part_leader' ? _leaderPart : null,
+      };
+      if (widget.isReapply) {
+        await FirebaseService.reapplyApproval(data);
+      } else {
+        await FirebaseService.createProfile(data);
+      }
       ref.invalidate(profileProvider);
     } catch (e) {
       setState(() { _saving = false; _error = '저장 실패: $e'; });
@@ -94,9 +107,9 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('환영합니다', style: AppText.label()),
+              Text(widget.isReapply ? '다시 신청' : '환영합니다', style: AppText.label()),
               const SizedBox(height: 6),
-              Text('프로필을 완성해주세요', style: AppText.headline(26)),
+              Text(widget.isReapply ? '프로필을 수정하여 다시 신청해주세요' : '프로필을 완성해주세요', style: AppText.headline(26)),
               const SizedBox(height: 8),
               Text('함께 찬양할 멤버 정보를 알려주세요',
                 style: AppText.body(14, color: AppColors.muted)),
@@ -146,6 +159,70 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               Center(child: Text('사진 추가 (선택)', style: AppText.body(12, color: AppColors.muted))),
               const SizedBox(height: 28),
 
+              // ── Role selection
+              _Label(text: '가입 유형 *'),
+              const SizedBox(height: 6),
+              Column(children: [
+                _RoleOption(
+                  value: 'member',
+                  groupValue: _requestedRole,
+                  label: '찬양대원',
+                  desc: '일반 단원으로 가입합니다',
+                  icon: Icons.person_rounded,
+                  onChanged: (v) => setState(() => _requestedRole = v),
+                ),
+                const SizedBox(height: 8),
+                _RoleOption(
+                  value: 'part_leader',
+                  groupValue: _requestedRole,
+                  label: '파트장',
+                  desc: '파트를 이끄는 역할입니다',
+                  icon: Icons.star_rounded,
+                  onChanged: (v) => setState(() => _requestedRole = v),
+                ),
+                if (_requestedRole == 'part_leader') ...[
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12, right: 12),
+                    child: DropdownButtonFormField<String>(
+                      value: _leaderPart,
+                      decoration: const InputDecoration(labelText: '담당 파트'),
+                      items: User.partLabels.entries
+                          .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                          .toList(),
+                      onChanged: (v) => setState(() => _leaderPart = v ?? _leaderPart),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                _RoleOption(
+                  value: 'admin',
+                  groupValue: _requestedRole,
+                  label: '관리자',
+                  desc: '앱 전체를 관리합니다 (승인 필요)',
+                  icon: Icons.shield_rounded,
+                  onChanged: (v) => setState(() => _requestedRole = v),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.secondarySoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.secondary),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    '가입 신청 후 관리자의 승인이 필요합니다',
+                    style: AppText.body(12, weight: FontWeight.w600, color: AppColors.secondary),
+                  )),
+                ]),
+              ),
+              const SizedBox(height: 24),
+
               // ── Form fields
               _Label(text: '이름 *'),
               const SizedBox(height: 6),
@@ -178,7 +255,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                 items: User.partLabels.entries
                     .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
                     .toList(),
-                onChanged: (v) => setState(() => _part = v ?? _part),
+                onChanged: (v) => setState(() {
+                  _part = v ?? _part;
+                  _leaderPart = _part;
+                }),
               ),
               const SizedBox(height: 16),
 
@@ -211,7 +291,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                   style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                   child: _saving
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('시작하기'),
+                      : Text(widget.isReapply ? '다시 신청' : '가입 신청'),
                 ),
               ),
               const SizedBox(height: 12),
@@ -236,5 +316,68 @@ class _Label extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(text, style: AppText.body(12, weight: FontWeight.w700, color: AppColors.onSurfaceVariant));
+  }
+}
+
+class _RoleOption extends StatelessWidget {
+  final String value;
+  final String groupValue;
+  final String label;
+  final String desc;
+  final IconData icon;
+  final ValueChanged<String> onChanged;
+  const _RoleOption({
+    required this.value,
+    required this.groupValue,
+    required this.label,
+    required this.desc,
+    required this.icon,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = value == groupValue;
+    return InkWell(
+      onTap: () => onChanged(value),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primarySoft : AppColors.surfaceLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.border.withValues(alpha: 0.3),
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : AppColors.card,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: selected ? Colors.white : AppColors.muted, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: AppText.body(15, weight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(desc, style: AppText.body(12, color: AppColors.muted)),
+              ],
+            ),
+          ),
+          Radio<String>(
+            value: value,
+            groupValue: groupValue,
+            onChanged: (v) => onChanged(v ?? value),
+          ),
+        ]),
+      ),
+    );
   }
 }

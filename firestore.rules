@@ -1,10 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users can read/write their own profile
+    // Users: 본인 문서 create만 허용, role/approvalStatus는 관리자만 수정
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // 본인 최초 생성 (신청 상태 pending, role=null)
+      allow create: if request.auth != null && request.auth.uid == userId;
+      // 본인 업데이트: 민감한 필드(role, approvalStatus, partLeaderFor, rejectionReason) 변경 불가
+      // 단, approvalStatus를 rejected → pending으로 재신청하는 것은 허용
+      allow update: if request.auth != null && request.auth.uid == userId &&
+        (!(request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'partLeaderFor', 'rejectionReason'])) &&
+         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus']) ||
+          (resource.data.approvalStatus == 'rejected' &&
+           request.resource.data.approvalStatus == 'pending')));
+      // 관리자는 모든 필드 변경 가능
+      allow update: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
     // Attendance sessions - anyone can read, admin can write
     match /attendance_sessions/{docId} {

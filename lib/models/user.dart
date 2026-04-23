@@ -10,6 +10,11 @@ class User {
   final String? profileImageUrl;
   final String? partLeaderFor;
   final bool profileCompleted;
+  // ── Approval workflow ──
+  final String? requestedRole;     // 'member' | 'part_leader' | 'admin' - 가입 시 희망 역할
+  final String? requestedPart;     // 파트장 신청 시 담당 파트
+  final String? approvalStatus;    // 'pending' | 'approved' | 'rejected'
+  final String? rejectionReason;   // 거절 사유
 
   User({
     required this.id,
@@ -23,6 +28,10 @@ class User {
     this.profileImageUrl,
     this.partLeaderFor,
     this.profileCompleted = false,
+    this.requestedRole,
+    this.requestedPart,
+    this.approvalStatus,
+    this.rejectionReason,
   });
 
   bool get isAdmin => role == 'admin';
@@ -32,11 +41,15 @@ class User {
   bool canActOnPart(String? targetPart) =>
       isAdmin || (isPartLeader && partLeaderFor == targetPart);
 
+  bool get isPending => approvalStatus == 'pending';
+  bool get isApproved => approvalStatus == 'approved';
+  bool get isRejected => approvalStatus == 'rejected';
+
   static const roleLabels = {
     'admin': '관리자',
     'officer': '임원',
     'part_leader': '파트장',
-    'member': '단원',
+    'member': '찬양대원',
   };
 
   String get roleLabel {
@@ -44,7 +57,15 @@ class User {
       final pLabel = partLabels[partLeaderFor] ?? partLeaderFor;
       return '$pLabel 파트장';
     }
-    return roleLabels[role] ?? '단원';
+    return roleLabels[role] ?? '찬양대원';
+  }
+
+  String get requestedRoleLabel {
+    if (requestedRole == 'part_leader' && requestedPart != null) {
+      final pLabel = partLabels[requestedPart] ?? requestedPart;
+      return '$pLabel 파트장';
+    }
+    return roleLabels[requestedRole] ?? '찬양대원';
   }
 
   /// "홍길동 (길동이)" 형식. 별칭 없으면 그냥 이름.
@@ -69,6 +90,10 @@ class User {
       profileImageUrl: map['profileImageUrl'] as String?,
       partLeaderFor: map['partLeaderFor'] as String?,
       profileCompleted: map['profileCompleted'] as bool? ?? false,
+      requestedRole: map['requestedRole'] as String?,
+      requestedPart: map['requestedPart'] as String?,
+      approvalStatus: map['approvalStatus'] as String?,
+      rejectionReason: map['rejectionReason'] as String?,
     );
   }
 

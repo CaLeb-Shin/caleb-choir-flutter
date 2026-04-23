@@ -6,6 +6,10 @@ import '../../widgets/interactive.dart';
 import '../../services/firebase_service.dart';
 import '../polls/polls_screen.dart';
 import '../seating/seating_screen.dart';
+import '../events/events_screen.dart';
+import '../admin/members_screen.dart';
+import '../admin/approvals_screen.dart';
+import '../../widgets/mini_action_tile.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -158,42 +162,16 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
 
-                // ── Quick Actions (3x2 grid)
-                Row(children: [
-                  Expanded(child: _ActionCard(
-                    icon: Icons.qr_code_rounded, title: 'QR 출석', desc: 'QR코드로 빠른 출석',
-                    isDark: true, onTap: () => ref.read(tabIndexProvider.notifier).state = 3,
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(child: _ActionCard(
-                    icon: Icons.how_to_vote_rounded, title: '참석 투표', desc: '주일 참석 여부',
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PollsScreen())),
-                  )),
-                ]),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(child: _ActionCard(
-                    icon: Icons.grid_view_rounded, title: '배치판', desc: '내 자리 확인',
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SeatingScreen())),
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(child: _ActionCard(
-                    icon: Icons.music_note_rounded, title: '악보 열람', desc: '파트별 악보 확인',
-                    isDark: true, onTap: () => ref.read(tabIndexProvider.notifier).state = 1,
-                  )),
-                ]),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(child: _ActionCard(
-                    icon: Icons.play_circle_rounded, title: '영상 보기', desc: '찬양 영상 감상',
-                    onTap: () => ref.read(tabIndexProvider.notifier).state = 2,
-                  )),
-                  const SizedBox(width: 10),
-                  Expanded(child: _ActionCard(
-                    icon: Icons.chat_bubble_rounded, title: '커뮤니티', desc: '소통하기',
-                    isDark: true, onTap: () => ref.read(tabIndexProvider.notifier).state = 4,
-                  )),
-                ]),
+                // ── Quick Actions (3x3 grid, 키즈노트 스타일)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+                  ),
+                  child: _buildActionGrid(context, ref, profile?.isAdmin ?? false),
+                ),
                 const SizedBox(height: 28),
 
                 // ── This Week's Uploads
@@ -329,6 +307,82 @@ class HomeScreen extends ConsumerWidget {
       if (diff.inDays < 7) return '${diff.inDays}일 전';
       return '${d.month}/${d.day}';
     } catch (_) { return ''; }
+  }
+
+  Widget _buildActionGrid(BuildContext context, WidgetRef ref, bool isAdmin) {
+    // 관리자 pending 개수 (가입 승인 대기)
+    final pendingCount = isAdmin
+        ? (ref.watch(pendingUsersProvider).valueOrNull?.length ?? 0)
+        : 0;
+
+    final items = <Widget>[
+      MiniActionTile(
+        icon: Icons.qr_code_rounded,
+        label: 'QR 출석',
+        onTap: () => ref.read(tabIndexProvider.notifier).state = 3,
+      ),
+      MiniActionTile(
+        icon: Icons.how_to_vote_rounded,
+        label: '참석 투표',
+        tone: 'secondary',
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PollsScreen())),
+      ),
+      MiniActionTile(
+        icon: Icons.grid_view_rounded,
+        label: '자리 배치판',
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SeatingScreen())),
+      ),
+      MiniActionTile(
+        icon: Icons.music_note_rounded,
+        label: '악보',
+        tone: 'secondary',
+        onTap: () => ref.read(tabIndexProvider.notifier).state = 1,
+      ),
+      MiniActionTile(
+        icon: Icons.play_circle_rounded,
+        label: '영상',
+        onTap: () => ref.read(tabIndexProvider.notifier).state = 2,
+      ),
+      MiniActionTile(
+        icon: Icons.campaign_rounded,
+        label: '공지',
+        tone: 'secondary',
+        onTap: () => ref.read(tabIndexProvider.notifier).state = 4,
+      ),
+      MiniActionTile(
+        icon: Icons.chat_bubble_rounded,
+        label: '커뮤니티',
+        onTap: () => ref.read(tabIndexProvider.notifier).state = 4,
+      ),
+      MiniActionTile(
+        icon: Icons.calendar_today_rounded,
+        label: '일정',
+        tone: 'secondary',
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EventsScreen())),
+      ),
+      MiniActionTile(
+        icon: Icons.people_rounded,
+        label: '단원 명부',
+        badgeCount: pendingCount > 0 ? pendingCount : null,
+        onTap: () {
+          if (isAdmin && pendingCount > 0) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const ApprovalsScreen()));
+          } else {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const MembersScreen()));
+          }
+        },
+      ),
+    ];
+
+    return Column(children: [
+      for (int row = 0; row < 3; row++) ...[
+        if (row > 0) const SizedBox(height: 18),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+          for (int col = 0; col < 3; col++)
+            Expanded(child: Center(child: items[row * 3 + col])),
+        ]),
+      ],
+    ]);
   }
 
   Widget _buildUpcomingEventsCard(List<Map<String, dynamic>> events, int attendanceCount, DateTime now) {
