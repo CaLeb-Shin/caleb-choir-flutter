@@ -11,7 +11,6 @@ import 'screens/login/login_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/approval/pending_approval_screen.dart';
 import 'screens/approval/rejected_screen.dart';
-import 'screens/platform_admin_notice_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/videos/videos_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
@@ -82,9 +81,8 @@ class CalebChoirApp extends ConsumerWidget {
             data: (profile) {
               // 1) Firestore users 문서가 아직 없음 → 최초 가입 경로
               if (profile == null) return const OnboardingScreen();
-              // 2) 플랫폼 관리자(sinbun001)가 Flutter로 로그인 → 안내 화면
-              if (profile.isPlatformAdmin) return const PlatformAdminNoticeScreen();
-              // 3) 교회 미선택 + 승인 스코프도 없음 → 가입 플로우 재진입
+              // 2) 교회 미선택 + 승인 스코프도 없음 → 가입 플로우 재진입
+              //    (플랫폼 관리자도 교회 소속/프로필 완성 후 앱 사용 가능)
               if (profile.needsChurchSelection) return const OnboardingScreen();
               // 4) 프로필이 미완성 상태 (에지) → 재선택 유도
               if (!profile.profileCompleted) return const OnboardingScreen();

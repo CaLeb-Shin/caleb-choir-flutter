@@ -864,15 +864,17 @@ class FirebaseService {
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final email = currentUser?.email;
+    final isWhitelisted = email != null && adminEmails.contains(email.toLowerCase());
     final batch = _db.batch();
     final churchRef = _db.collection('churches').doc();
     final churchData = <String, dynamic>{
       'name': name.trim(),
       'nameLower': name.trim().toLowerCase(),
-      'status': 'pending',
+      'status': isWhitelisted ? 'approved' : 'pending',
       'requestedBy': uid,
-      'adminUids': <String>[],
+      'adminUids': isWhitelisted ? <String>[uid!] : <String>[],
       'createdAt': FieldValue.serverTimestamp(),
+      if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),
     };
     if (address != null && address.trim().isNotEmpty) churchData['address'] = address.trim();
     if (contactPhone != null && contactPhone.trim().isNotEmpty) churchData['contactPhone'] = contactPhone.trim();
@@ -885,13 +887,15 @@ class FirebaseService {
       ...profileData,
       'email': email,
       'profileCompleted': true,
-      'churchId': null,
-      'approvalStatus': 'pending',
+      'churchId': isWhitelisted ? churchRef.id : null,
+      'approvalStatus': isWhitelisted ? 'approved' : 'pending',
       'approvalScope': 'platform',
       'requestedRole': 'church_admin',
+      if (isWhitelisted) 'role': 'admin',
       'requestedChurchId': churchRef.id,
       'rejectionReason': FieldValue.delete(),
       'createdAt': FieldValue.serverTimestamp(),
+      if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     await batch.commit();
@@ -908,17 +912,20 @@ class FirebaseService {
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final email = currentUser?.email;
+    final isWhitelisted = email != null && adminEmails.contains(email.toLowerCase());
     await _db.collection('users').doc(uid).set({
       ...profileData,
       'email': email,
       'profileCompleted': true,
       'churchId': churchId,
-      'approvalStatus': 'pending',
+      'approvalStatus': isWhitelisted ? 'approved' : 'pending',
       'approvalScope': 'church',
       'requestedRole': requestedRole,
+      if (isWhitelisted) 'role': 'admin',
       if (requestedPart != null && requestedPart.isNotEmpty) 'requestedPart': requestedPart,
       'rejectionReason': FieldValue.delete(),
       'createdAt': FieldValue.serverTimestamp(),
+      if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 }
