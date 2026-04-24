@@ -31,6 +31,21 @@
 
   <title>C.C</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Kakao JavaScript SDK (v2) — Web 로그인용 -->
+  <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"
+          integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"
+          crossorigin="anonymous"></script>
+  <script>
+    // 카카오 개발자 콘솔 > 내 애플리케이션 > 앱 키 > JavaScript 키로 교체하세요.
+    // 또한 콘솔 > 플랫폼 > Web 에 배포 도메인을 등록해야 합니다.
+    (function () {
+      var KAKAO_JS_KEY = 'YOUR_KAKAO_JAVASCRIPT_KEY';
+      if (window.Kakao && !window.Kakao.isInitialized() && KAKAO_JS_KEY && KAKAO_JS_KEY !== 'YOUR_KAKAO_JAVASCRIPT_KEY') {
+        window.Kakao.init(KAKAO_JS_KEY);
+      }
+    })();
+  </script>
 </head>
 <body>
   <!--

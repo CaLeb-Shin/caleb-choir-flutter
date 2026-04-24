@@ -277,7 +277,8 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
     _nicknameCtrl = TextEditingController(text: widget.profile.nickname ?? '');
     _phoneCtrl = TextEditingController(text: widget.profile.phone ?? '');
     _genCtrl = TextEditingController(text: widget.profile.generation ?? '');
-    _part = widget.profile.part ?? 'soprano';
+    final initialPart = widget.profile.part ?? 'soprano';
+    _part = User.selectableParts.contains(initialPart) ? initialPart : 'band';
     _imageUrl = widget.profile.profileImageUrl;
   }
 
@@ -396,7 +397,7 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
           DropdownButtonFormField<String>(
             value: _part,
             decoration: const InputDecoration(labelText: '파트'),
-            items: User.partLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+            items: User.selectableParts.map((k) => DropdownMenuItem(value: k, child: Text(User.partLabels[k] ?? k))).toList(),
             onChanged: (v) => setState(() => _part = v ?? _part),
           ),
           const SizedBox(height: 12),

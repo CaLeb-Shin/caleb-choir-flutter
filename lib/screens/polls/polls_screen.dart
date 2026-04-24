@@ -159,8 +159,8 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                 decoration: const InputDecoration(labelText: '대상 범위'),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('전체')),
-                  ...User.partLabels.entries.map((e) =>
-                      DropdownMenuItem(value: e.key, child: Text(e.value))),
+                  ...User.selectableParts.map((k) =>
+                      DropdownMenuItem(value: k, child: Text(User.partLabels[k] ?? k))),
                 ],
                 onChanged: (v) => setDialogState(() => scopePart = v),
               ),

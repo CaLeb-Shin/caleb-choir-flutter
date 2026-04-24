@@ -1,95 +1,199 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Users: 본인 문서 create만 허용, role/approvalStatus는 관리자만 수정
+
+    // ── Helpers ──
+    function isSignedIn() { return request.auth != null; }
+    function hasProfile() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    function myData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isPlatformAdmin() {
+      return hasProfile() && myData().get('isPlatformAdmin', false) == true;
+    }
+    function myRole() {
+      return hasProfile() ? myData().get('role', '') : '';
+    }
+    function hasChurch() {
+      return hasProfile() && myData().keys().hasAll(['churchId']) && myData().churchId != null;
+    }
+    function sameChurch(cid) {
+      return hasChurch() && cid != null && myData().churchId == cid;
+    }
+    function isChurchAdminOf(cid) {
+      return sameChurch(cid) && (myRole() == 'admin' || myRole() == 'church_admin');
+    }
+    function isBootstrapAdminEmail() {
+      return isSignedIn() && request.auth.token.email == 'sinbun001@gmail.com';
+    }
+
+    // ── Churches ──
+    match /churches/{churchId} {
+      // 읽기: approved 교회는 검색용으로 로그인 사용자 누구나. pending/rejected는 platform admin 또는 신청자 본인.
+      allow read: if isSignedIn() && (
+        resource.data.status == 'approved' ||
+        isPlatformAdmin() ||
+        resource.data.requestedBy == request.auth.uid
+      );
+      // 생성: 본인이 신청자, pending 상태, adminUids는 비어있어야
+      allow create: if isSignedIn()
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.adminUids.size() == 0;
+      // 업데이트: platform admin 전권 / church admin은 메타만(status/admin 변경 금지)
+      allow update: if isPlatformAdmin() ||
+        (isChurchAdminOf(churchId) &&
+         !request.resource.data.diff(resource.data).affectedKeys()
+           .hasAny(['status', 'requestedBy', 'adminUids', 'rejectionReason']));
+      allow delete: if isPlatformAdmin();
+    }
+
+    // ── Users ──
     match /users/{userId} {
-      allow read: if request.auth != null;
-      // 본인 최초 생성 (신청 상태 pending, role=null)
-      allow create: if request.auth != null && request.auth.uid == userId;
-      // 본인 업데이트: 민감한 필드(role, approvalStatus, partLeaderFor, rejectionReason) 변경 불가
-      // 단, approvalStatus를 rejected → pending으로 재신청하는 것은 허용
-      allow update: if request.auth != null && request.auth.uid == userId &&
-        (!(request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['role', 'partLeaderFor', 'rejectionReason'])) &&
-         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['approvalStatus']) ||
-          (resource.data.approvalStatus == 'rejected' &&
-           request.resource.data.approvalStatus == 'pending')));
-      // 관리자는 모든 필드 변경 가능
-      allow update: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // 읽기: 본인 / platform admin / 같은 교회 단원
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        isPlatformAdmin() ||
+        (resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId))
+      );
+      // 생성: 본인 uid, approvalStatus=pending. isPlatformAdmin=true는 부트스트랩 이메일만 허용
+      allow create: if isSignedIn() && request.auth.uid == userId && (
+        request.resource.data.get('isPlatformAdmin', false) == false
+          ? request.resource.data.get('approvalStatus', '') == 'pending'
+          : isBootstrapAdminEmail()
+      );
+      // 본인 업데이트 (일반): 민감 필드 금지 + approvalStatus 불변
+      allow update: if isSignedIn() && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'partLeaderFor', 'rejectionReason', 'isPlatformAdmin', 'approvalStatus']);
+      // 본인 업데이트 (재신청): rejected → pending 전환 시 rejectionReason 리셋 허용. role 등은 여전히 금지
+      allow update: if isSignedIn() && request.auth.uid == userId &&
+        resource.data.get('approvalStatus', '') == 'rejected' &&
+        request.resource.data.get('approvalStatus', '') == 'pending' &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'partLeaderFor', 'isPlatformAdmin']);
+      // 교회 관리자: 같은 교회 단원의 승인/역할 필드 수정 가능. churchId 변경은 금지.
+      allow update: if resource.data.keys().hasAll(['churchId']) &&
+        isChurchAdminOf(resource.data.churchId) &&
+        request.resource.data.get('churchId', '') == resource.data.churchId;
+      // Platform admin: 무엇이든
+      allow update: if isPlatformAdmin();
     }
-    // Attendance sessions - anyone can read, admin can write
-    match /attendance_sessions/{docId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    // Attendance records
-    match /attendance/{docId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null;
-    }
-    // Posts - anyone can read, author can write
-    match /posts/{docId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
-    }
-    // Comments
-    match /comments/{docId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow delete: if request.auth != null && request.auth.uid == resource.data.userId;
-    }
-    // Announcements - admin only write
+
+    // ── Domain collections (churchId 격리) ──
     match /announcements/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(request.resource.data.churchId);
+      allow update, delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
     }
-    // Videos - admin write, all read
-    match /videos/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+    match /attendance_sessions/{docId} {
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(request.resource.data.churchId);
+      allow update, delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
     }
-    // Sheet music
+
+    match /attendance/{docId} {
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['churchId'])
+        && sameChurch(request.resource.data.churchId);
+    }
+
+    match /posts/{docId} {
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.keys().hasAll(['churchId'])
+        && sameChurch(request.resource.data.churchId);
+      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.userId;
+
+      // 서브컬렉션: posts/{postId}/comments
+      match /comments/{commentId} {
+        allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+        allow create: if isSignedIn()
+          && request.auth.uid == request.resource.data.userId
+          && request.resource.data.keys().hasAll(['churchId'])
+          && sameChurch(request.resource.data.churchId);
+        allow delete: if isSignedIn() && request.auth.uid == resource.data.userId;
+      }
+    }
+
+    // collectionGroup 쿼리용 — 모든 comments 경로(top-level 및 서브컬렉션) 매칭
+    match /{path=**}/comments/{commentId} {
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+    }
+
     match /sheet_music/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(request.resource.data.churchId);
+      allow update, delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
     }
-    // Events
+
     match /events/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(request.resource.data.churchId);
+      allow update, delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
     }
-    // Polls
+
+    match /videos/{docId} {
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(request.resource.data.churchId);
+      allow update, delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
+    }
+
     match /polls/{docId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'part_leader'];
-      allow update: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'part_leader'];
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && sameChurch(request.resource.data.churchId)
+        && (myRole() in ['admin', 'church_admin', 'part_leader']);
+      allow update: if resource.data.keys().hasAll(['churchId'])
+        && sameChurch(resource.data.churchId)
+        && (myRole() in ['admin', 'church_admin', 'part_leader']);
     }
-    // Poll votes
+
     match /poll_votes/{docId} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create, update: if request.resource.data.keys().hasAll(['churchId'])
+        && sameChurch(request.resource.data.churchId);
     }
-    // Seating charts
+
     match /seating_charts/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(request.resource.data.churchId);
+      allow update, delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
     }
-    // Seat assignments
+
     match /seat_assignments/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'part_leader'];
+      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow create, update: if request.resource.data.keys().hasAll(['churchId'])
+        && sameChurch(request.resource.data.churchId)
+        && (myRole() in ['admin', 'church_admin', 'part_leader']);
+      allow delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
+    }
+
+    match /notifications/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.get('toUserId', '') == request.auth.uid ||
+        (resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId))
+      );
+      allow create: if isSignedIn();
     }
   }
 }

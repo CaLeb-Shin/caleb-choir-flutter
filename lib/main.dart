@@ -8,9 +8,10 @@ import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'providers/app_providers.dart';
 import 'screens/login/login_screen.dart';
-import 'screens/profile_setup/profile_setup_screen.dart';
+import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/approval/pending_approval_screen.dart';
 import 'screens/approval/rejected_screen.dart';
+import 'screens/platform_admin_notice_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/videos/videos_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
@@ -77,18 +78,21 @@ class CalebChoirApp extends ConsumerWidget {
           final myProfileStream = ref.watch(myProfileStreamProvider);
           return myProfileStream.when(
             loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-            error: (_, __) => const ProfileSetupScreen(),
+            error: (_, __) => const OnboardingScreen(),
             data: (profile) {
-              if (profile == null || !profile.profileCompleted) {
-                return const ProfileSetupScreen();
-              }
-              if (profile.isRejected) {
-                return const RejectedScreen();
-              }
-              if (profile.isPending) {
-                return const PendingApprovalScreen();
-              }
-              // approvalStatus가 null이거나 'approved'면 메인
+              // 1) Firestore users 문서가 아직 없음 → 최초 가입 경로
+              if (profile == null) return const OnboardingScreen();
+              // 2) 플랫폼 관리자(sinbun001)가 Flutter로 로그인 → 안내 화면
+              if (profile.isPlatformAdmin) return const PlatformAdminNoticeScreen();
+              // 3) 교회 미선택 + 승인 스코프도 없음 → 가입 플로우 재진입
+              if (profile.needsChurchSelection) return const OnboardingScreen();
+              // 4) 프로필이 미완성 상태 (에지) → 재선택 유도
+              if (!profile.profileCompleted) return const OnboardingScreen();
+              // 5) 거부됨
+              if (profile.isRejected) return const RejectedScreen();
+              // 6) 승인 대기 (church/platform scope 둘 다)
+              if (profile.isPending) return const PendingApprovalScreen();
+              // 7) 승인 완료 (또는 approvalStatus null인 레거시) → 메인
               return const MainShell();
             },
           );

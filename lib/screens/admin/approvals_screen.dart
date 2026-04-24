@@ -135,8 +135,8 @@ class _PendingList extends ConsumerWidget {
               DropdownButtonFormField<String>(
                 value: part,
                 decoration: const InputDecoration(labelText: '담당 파트'),
-                items: User.partLabels.entries
-                    .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                items: User.selectableParts
+                    .map((k) => DropdownMenuItem(value: k, child: Text(User.partLabels[k] ?? k)))
                     .toList(),
                 onChanged: (v) => setDialogState(() => part = v ?? part),
               ),

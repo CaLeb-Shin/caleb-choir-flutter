@@ -11,10 +11,15 @@ class User {
   final String? partLeaderFor;
   final bool profileCompleted;
   // ── Approval workflow ──
-  final String? requestedRole;     // 'member' | 'part_leader' | 'admin' - 가입 시 희망 역할
-  final String? requestedPart;     // 파트장 신청 시 담당 파트
+  final String? requestedRole;     // 'member' | 'part_leader' | 'church_admin'
+  final String? requestedPart;
   final String? approvalStatus;    // 'pending' | 'approved' | 'rejected'
-  final String? rejectionReason;   // 거절 사유
+  final String? rejectionReason;
+  // ── Multi-tenant ──
+  final String? churchId;          // 승인 전엔 null
+  final String? approvalScope;     // 'church' | 'platform' | null
+  final String? requestedChurchId; // platform scope일 때 churches doc 참조
+  final bool isPlatformAdmin;
 
   User({
     required this.id,
@@ -32,9 +37,14 @@ class User {
     this.requestedPart,
     this.approvalStatus,
     this.rejectionReason,
+    this.churchId,
+    this.approvalScope,
+    this.requestedChurchId,
+    this.isPlatformAdmin = false,
   });
 
-  bool get isAdmin => role == 'admin';
+  bool get isAdmin => role == 'admin' || role == 'church_admin';
+  bool get isChurchAdmin => role == 'admin' || role == 'church_admin';
   bool get isOfficer => role == 'officer';
   bool get isPartLeader => role == 'part_leader';
   bool get hasManagePermission => isAdmin || isOfficer || isPartLeader;
@@ -44,9 +54,11 @@ class User {
   bool get isPending => approvalStatus == 'pending';
   bool get isApproved => approvalStatus == 'approved';
   bool get isRejected => approvalStatus == 'rejected';
+  bool get needsChurchSelection => churchId == null && approvalScope == null;
 
   static const roleLabels = {
-    'admin': '관리자',
+    'admin': '교회 관리자',
+    'church_admin': '교회 관리자',
     'officer': '임원',
     'part_leader': '파트장',
     'member': '찬양대원',
@@ -94,6 +106,10 @@ class User {
       requestedPart: map['requestedPart'] as String?,
       approvalStatus: map['approvalStatus'] as String?,
       rejectionReason: map['rejectionReason'] as String?,
+      churchId: map['churchId'] as String?,
+      approvalScope: map['approvalScope'] as String?,
+      requestedChurchId: map['requestedChurchId'] as String?,
+      isPlatformAdmin: map['isPlatformAdmin'] as bool? ?? false,
     );
   }
 
@@ -104,12 +120,29 @@ class User {
     'alto': '알토',
     'tenor': '테너',
     'bass': '베이스',
-    'guitar': '기타',
-    'bass_guitar': '베이스기타',
-    'drum': '드럼',
-    'keyboard': '건반',
-    'etc': '기타(악기)',
+    'band': '밴드',
+    'orchestra': '오케스트라',
+    'band_master': '밴드마스터',
+    'officer_part': '임원',
+    // legacy — 기존 데이터 호환용. '밴드'로 통합 표시.
+    'guitar': '밴드',
+    'bass_guitar': '밴드',
+    'drum': '밴드',
+    'keyboard': '밴드',
+    'etc': '밴드',
   };
+
+  /// 가입/승인 UI 드롭다운에서 선택 가능한 파트 목록 (legacy 키 제외).
+  static const selectableParts = [
+    'soprano',
+    'alto',
+    'tenor',
+    'bass',
+    'band',
+    'orchestra',
+    'band_master',
+    'officer_part',
+  ];
 
   String get partLabel => partLabels[part] ?? part ?? '';
   String get partInitial => partLabel.isNotEmpty ? partLabel[0] : '?';

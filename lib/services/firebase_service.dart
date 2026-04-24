@@ -11,6 +11,22 @@ class FirebaseService {
   /// 자동 관리자 이메일 화이트리스트
   static const adminEmails = {'sinbun001@gmail.com'};
 
+  /// 현재 로그인 유저의 churchId 캐시. myProfileStreamProvider에서 업데이트.
+  static String? _currentChurchIdCache;
+  static String? get currentChurchId => _currentChurchIdCache;
+  static void setCurrentChurchId(String? id) {
+    _currentChurchIdCache = id;
+  }
+
+  /// 도메인 메서드용 — churchId가 없으면 명시적 에러.
+  static String _requireChurchId() {
+    final id = _currentChurchIdCache;
+    if (id == null) {
+      throw Exception('교회가 선택되지 않았거나 승인 대기 중입니다');
+    }
+    return id;
+  }
+
   // ============ Auth ============
   static fb.User? get currentUser => _auth.currentUser;
   static String? get uid => _auth.currentUser?.uid;
@@ -21,6 +37,7 @@ class FirebaseService {
     try {
       await kakao.UserApi.instance.logout();
     } catch (_) {}
+    _currentChurchIdCache = null;
     await _auth.signOut();
   }
 
@@ -68,19 +85,22 @@ class FirebaseService {
     });
   }
 
-  /// 관리자 이메일이면 기존 프로필도 admin으로 승격 (로그인 시 자동 실행)
-  static Future<void> ensureAdminRole() async {
+  /// 부트스트랩 이메일이면 platform admin 플래그를 보장.
+  /// users 문서가 없으면 isPlatformAdmin=true로 생성. 있으면 건드리지 않음
+  /// (Firestore rules에 의해 self update로 isPlatformAdmin 변경은 불가능함).
+  /// Phase 2부터 role/churchId는 건드리지 않음 — 교회 소속은 별도 플로우로 관리.
+  static Future<void> ensurePlatformAdminRole() async {
     final email = currentUser?.email?.toLowerCase();
     if (email == null || !adminEmails.contains(email) || uid == null) return;
     final doc = await _db.collection('users').doc(uid).get();
-    if (!doc.exists) return;
-    final data = doc.data()!;
-    final updates = <String, dynamic>{};
-    if (data['role'] != 'admin') updates['role'] = 'admin';
-    if (data['approvalStatus'] != 'approved') updates['approvalStatus'] = 'approved';
-    if (updates.isNotEmpty) {
-      await _db.collection('users').doc(uid).update(updates);
-    }
+    if (doc.exists) return;
+    await _db.collection('users').doc(uid).set({
+      'email': email,
+      'name': currentUser?.displayName,
+      'isPlatformAdmin': true,
+      'profileCompleted': false,
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   /// 관리자 전용: 다른 사용자 등급 변경
@@ -91,6 +111,7 @@ class FirebaseService {
   // ============ Approval Workflow ============
   static Future<List<Map<String, dynamic>>> getPendingUsers() async {
     final snapshot = await _db.collection('users')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('approvalStatus', isEqualTo: 'pending')
         .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
@@ -98,6 +119,7 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getRejectedUsers() async {
     final snapshot = await _db.collection('users')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('approvalStatus', isEqualTo: 'rejected')
         .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
@@ -150,10 +172,9 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getAllMembers() async {
     final snapshot = await _db.collection('users')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('profileCompleted', isEqualTo: true)
         .get();
-    // 승인된 유저만 반환 (pending/rejected 제외)
-    // approvalStatus가 없는 기존 유저는 포함 (하위 호환성)
     return snapshot.docs
         .map((d) => {'id': d.id, ...d.data()})
         .where((m) => m['approvalStatus'] == null || m['approvalStatus'] == 'approved')
@@ -163,6 +184,7 @@ class FirebaseService {
   // ============ Attendance Sessions ============
   static Future<Map<String, dynamic>?> getActiveSession() async {
     final snapshot = await _db.collection('attendance_sessions')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('isOpen', isEqualTo: true)
         .limit(1)
         .get();
@@ -173,6 +195,7 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getRecentSessions({int limit = 20}) async {
     final snapshot = await _db.collection('attendance_sessions')
+        .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('openedAt', descending: true)
         .limit(limit)
         .get();
@@ -181,6 +204,7 @@ class FirebaseService {
 
   static Future<void> openSession(String title) async {
     await _db.collection('attendance_sessions').add({
+      'churchId': _requireChurchId(),
       'title': title,
       'openedBy': uid,
       'isOpen': true,
@@ -199,9 +223,11 @@ class FirebaseService {
   // ============ Attendance Check-in ============
   static Future<Map<String, dynamic>> checkIn(String sessionId) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
+    final churchId = _requireChurchId();
 
     // Check if already checked in
     final existing = await _db.collection('attendance')
+        .where('churchId', isEqualTo: churchId)
         .where('userId', isEqualTo: uid)
         .where('sessionId', isEqualTo: sessionId)
         .limit(1)
@@ -212,6 +238,7 @@ class FirebaseService {
     }
 
     await _db.collection('attendance').add({
+      'churchId': churchId,
       'userId': uid,
       'sessionId': sessionId,
       'checkedInAt': FieldValue.serverTimestamp(),
@@ -223,6 +250,7 @@ class FirebaseService {
   static Future<List<Map<String, dynamic>>> getMyHistory() async {
     if (uid == null) return [];
     final snapshot = await _db.collection('attendance')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('userId', isEqualTo: uid)
         .orderBy('checkedInAt', descending: true)
         .get();
@@ -230,7 +258,6 @@ class FirebaseService {
     final records = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      // Get session title
       final sessionDoc = await _db.collection('attendance_sessions').doc(data['sessionId']).get();
       records.add({
         'id': doc.id,
@@ -243,6 +270,7 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getSessionAttendees(String sessionId) async {
     final snapshot = await _db.collection('attendance')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('sessionId', isEqualTo: sessionId)
         .get();
 
@@ -262,7 +290,10 @@ class FirebaseService {
 
   // ============ Videos ============
   static Future<List<Map<String, dynamic>>> getVideos() async {
-    final snapshot = await _db.collection('videos').orderBy('createdAt', descending: true).get();
+    final snapshot = await _db.collection('videos')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
+        .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
@@ -271,6 +302,7 @@ class FirebaseService {
   static Future<List<Map<String, dynamic>>> getPostsSince(DateTime since) async {
     final snapshot = await _db
         .collection('posts')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
         .orderBy('createdAt', descending: true)
         .get();
@@ -289,6 +321,7 @@ class FirebaseService {
   static Future<List<Map<String, dynamic>>> getAttendanceSince(DateTime since) async {
     final snapshot = await _db
         .collection('attendance')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('checkedInAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
         .get();
     return snapshot.docs.map((d) {
@@ -306,6 +339,7 @@ class FirebaseService {
   static Future<List<Map<String, dynamic>>> getSessionsSince(DateTime since) async {
     final snapshot = await _db
         .collection('attendance_sessions')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('openedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
         .get();
     return snapshot.docs.map((d) {
@@ -321,6 +355,7 @@ class FirebaseService {
   static Future<List<Map<String, dynamic>>> getCommentsSince(DateTime since) async {
     final snapshot = await _db
         .collectionGroup('comments')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
         .get();
     return snapshot.docs.map((d) {
@@ -335,7 +370,11 @@ class FirebaseService {
 
   // ============ Posts ============
   static Future<List<Map<String, dynamic>>> getPosts() async {
-    final snapshot = await _db.collection('posts').orderBy('createdAt', descending: true).limit(50).get();
+    final snapshot = await _db.collection('posts')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
+        .limit(50)
+        .get();
     final posts = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
@@ -384,6 +423,7 @@ class FirebaseService {
     String? imageUrl,
   }) async {
     final docRef = await _db.collection('posts').add({
+      'churchId': _requireChurchId(),
       'userId': uid,
       'title': title,
       'content': content,
@@ -446,6 +486,8 @@ class FirebaseService {
     if (uid == null) return;
     final postRef = _db.collection('posts').doc(postId);
     await postRef.collection('comments').add({
+      'churchId': _requireChurchId(),
+      'postId': postId,
       'userId': uid,
       'content': content,
       'createdAt': FieldValue.serverTimestamp(),
@@ -461,7 +503,10 @@ class FirebaseService {
 
   // ============ Announcements ============
   static Future<List<Map<String, dynamic>>> getAnnouncements() async {
-    final snapshot = await _db.collection('announcements').orderBy('createdAt', descending: true).get();
+    final snapshot = await _db.collection('announcements')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
+        .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data(),
       'createdAt': (d.data()['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
     }).toList();
@@ -469,19 +514,26 @@ class FirebaseService {
 
   // ============ Sheet Music ============
   static Future<List<Map<String, dynamic>>> getSheetMusic() async {
-    final snapshot = await _db.collection('sheet_music').orderBy('createdAt', descending: true).get();
+    final snapshot = await _db.collection('sheet_music')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
+        .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
   // ============ Events ============
   static Future<List<Map<String, dynamic>>> getEvents() async {
-    final snapshot = await _db.collection('events').orderBy('createdAt', descending: true).get();
+    final snapshot = await _db.collection('events')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
+        .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
   // ============ Admin: Announcements ============
   static Future<void> createAnnouncement(String title, {String? content}) async {
     await _db.collection('announcements').add({
+      'churchId': _requireChurchId(),
       'title': title,
       'content': content,
       'createdBy': uid,
@@ -496,6 +548,7 @@ class FirebaseService {
   // ============ Admin: Videos ============
   static Future<void> addVideo(String title, String youtubeUrl, {String? description}) async {
     await _db.collection('videos').add({
+      'churchId': _requireChurchId(),
       'title': title,
       'youtubeUrl': youtubeUrl,
       'description': description,
@@ -511,6 +564,7 @@ class FirebaseService {
   // ============ Admin: Sheet Music ============
   static Future<void> addSheetMusic(String title, {String? composer, String? fileUrl}) async {
     await _db.collection('sheet_music').add({
+      'churchId': _requireChurchId(),
       'title': title,
       'composer': composer,
       'fileUrl': fileUrl,
@@ -540,6 +594,7 @@ class FirebaseService {
 
   // ============ Admin QR Check-in ============
   static Future<Map<String, dynamic>> adminCheckIn(String userId) async {
+    final churchId = _requireChurchId();
     final session = await getActiveSession();
     if (session == null) throw Exception('열린 출석 세션이 없습니다');
 
@@ -547,6 +602,7 @@ class FirebaseService {
     if (!userDoc.exists) throw Exception('해당 단원을 찾을 수 없습니다');
 
     final existing = await _db.collection('attendance')
+        .where('churchId', isEqualTo: churchId)
         .where('userId', isEqualTo: userId)
         .where('sessionId', isEqualTo: session['id'])
         .limit(1)
@@ -557,6 +613,7 @@ class FirebaseService {
     }
 
     await _db.collection('attendance').add({
+      'churchId': churchId,
       'userId': userId,
       'sessionId': session['id'],
       'checkedInAt': FieldValue.serverTimestamp(),
@@ -572,6 +629,7 @@ class FirebaseService {
     String? scopePart,
   }) async {
     final docRef = await _db.collection('polls').add({
+      'churchId': _requireChurchId(),
       'title': title,
       'targetDate': targetDate,
       'createdBy': uid,
@@ -594,6 +652,7 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getPolls() async {
     final snapshot = await _db.collection('polls')
+        .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
@@ -601,7 +660,9 @@ class FirebaseService {
 
   static Future<void> vote(String pollId, String choice) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
+    final churchId = _requireChurchId();
     final existing = await _db.collection('poll_votes')
+        .where('churchId', isEqualTo: churchId)
         .where('pollId', isEqualTo: pollId)
         .where('userId', isEqualTo: uid)
         .limit(1)
@@ -614,6 +675,7 @@ class FirebaseService {
       });
     } else {
       await _db.collection('poll_votes').add({
+        'churchId': churchId,
         'pollId': pollId,
         'userId': uid,
         'choice': choice,
@@ -624,6 +686,7 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getPollVotes(String pollId) async {
     final snapshot = await _db.collection('poll_votes')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('pollId', isEqualTo: pollId)
         .get();
     final votes = <Map<String, dynamic>>[];
@@ -646,6 +709,7 @@ class FirebaseService {
     required String eventDate,
   }) async {
     final docRef = await _db.collection('seating_charts').add({
+      'churchId': _requireChurchId(),
       'label': label,
       'eventDate': eventDate,
       'createdBy': uid,
@@ -661,6 +725,7 @@ class FirebaseService {
 
   static Future<void> deleteSeatingChart(String chartId) async {
     final assignments = await _db.collection('seat_assignments')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('chartId', isEqualTo: chartId).get();
     for (final doc in assignments.docs) {
       await doc.reference.delete();
@@ -670,6 +735,7 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getSeatingCharts({bool publishedOnly = false}) async {
     Query<Map<String, dynamic>> query = _db.collection('seating_charts')
+        .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true);
     if (publishedOnly) {
       query = query.where('isPublished', isEqualTo: true);
@@ -680,6 +746,7 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getSeatAssignments(String chartId) async {
     final snapshot = await _db.collection('seat_assignments')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('chartId', isEqualTo: chartId)
         .get();
     final assignments = <Map<String, dynamic>>[];
@@ -703,16 +770,17 @@ class FirebaseService {
     required int col,
     required String userId,
   }) async {
-    // Remove any existing seat for this user in this chart
+    final churchId = _requireChurchId();
     final existingUser = await _db.collection('seat_assignments')
+        .where('churchId', isEqualTo: churchId)
         .where('chartId', isEqualTo: chartId)
         .where('userId', isEqualTo: userId)
         .get();
     for (final doc in existingUser.docs) {
       await doc.reference.delete();
     }
-    // Remove any existing seat at this cell
     final existingCell = await _db.collection('seat_assignments')
+        .where('churchId', isEqualTo: churchId)
         .where('chartId', isEqualTo: chartId)
         .where('part', isEqualTo: part)
         .where('row', isEqualTo: row)
@@ -722,6 +790,7 @@ class FirebaseService {
       await doc.reference.delete();
     }
     await _db.collection('seat_assignments').add({
+      'churchId': churchId,
       'chartId': chartId,
       'part': part,
       'row': row,
@@ -739,6 +808,7 @@ class FirebaseService {
     required int col,
   }) async {
     final existing = await _db.collection('seat_assignments')
+        .where('churchId', isEqualTo: _requireChurchId())
         .where('chartId', isEqualTo: chartId)
         .where('part', isEqualTo: part)
         .where('row', isEqualTo: row)
@@ -747,5 +817,108 @@ class FirebaseService {
     for (final doc in existing.docs) {
       await doc.reference.delete();
     }
+  }
+
+  // ============ Church (Multi-tenant) ============
+
+  /// 승인된 교회를 이름(nameLower) prefix로 검색. query가 비어있으면 상위 20건.
+  static Future<List<Map<String, dynamic>>> searchApprovedChurches(String query) async {
+    final q = query.trim().toLowerCase();
+    Query<Map<String, dynamic>> ref = _db.collection('churches')
+        .where('status', isEqualTo: 'approved')
+        .orderBy('nameLower');
+    if (q.isNotEmpty) {
+      ref = ref.startAt([q]).endAt(['$q']);
+    }
+    final snap = await ref.limit(20).get();
+    return snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
+  /// 교회 단건 조회
+  static Future<Map<String, dynamic>?> getChurch(String id) async {
+    final doc = await _db.collection('churches').doc(id).get();
+    return doc.exists ? {'id': id, ...doc.data()!} : null;
+  }
+
+  /// 교회명 중복 체크 (pending/approved 상태에 동일 nameLower 존재하면 true)
+  static Future<bool> isChurchNameTaken(String name) async {
+    final nameLower = name.trim().toLowerCase();
+    if (nameLower.isEmpty) return false;
+    final snap = await _db.collection('churches')
+        .where('nameLower', isEqualTo: nameLower)
+        .where('status', whereIn: ['pending', 'approved'])
+        .limit(1)
+        .get();
+    return snap.docs.isNotEmpty;
+  }
+
+  /// 새 교회 등록 신청 (+ 동시에 유저 프로필 생성). 플랫폼 관리자 승인 대기 상태가 됨.
+  /// 승인 시 어드민이 해당 유저를 이 교회의 admin으로 승격시킴.
+  /// 반환값: 생성된 churchId
+  static Future<String> requestChurchRegistration({
+    required String name,
+    String? address,
+    String? contactPhone,
+    String? contactEmail,
+    required Map<String, dynamic> profileData,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final email = currentUser?.email;
+    final batch = _db.batch();
+    final churchRef = _db.collection('churches').doc();
+    final churchData = <String, dynamic>{
+      'name': name.trim(),
+      'nameLower': name.trim().toLowerCase(),
+      'status': 'pending',
+      'requestedBy': uid,
+      'adminUids': <String>[],
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+    if (address != null && address.trim().isNotEmpty) churchData['address'] = address.trim();
+    if (contactPhone != null && contactPhone.trim().isNotEmpty) churchData['contactPhone'] = contactPhone.trim();
+    if (contactEmail != null && contactEmail.trim().isNotEmpty) churchData['contactEmail'] = contactEmail.trim();
+    batch.set(churchRef, churchData);
+
+    final userRef = _db.collection('users').doc(uid);
+    // 신규 필드는 set으로, rejectionReason 삭제는 update로 별도 처리 (merge set에서는 delete 무시됨)
+    batch.set(userRef, {
+      ...profileData,
+      'email': email,
+      'profileCompleted': true,
+      'churchId': null,
+      'approvalStatus': 'pending',
+      'approvalScope': 'platform',
+      'requestedRole': 'church_admin',
+      'requestedChurchId': churchRef.id,
+      'rejectionReason': FieldValue.delete(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+    return churchRef.id;
+  }
+
+  /// 기존 승인된 교회에 가입 신청 (찬양대원 또는 파트장)
+  /// [requestedRole]: 'member' | 'part_leader'
+  static Future<void> requestChurchJoin({
+    required String churchId,
+    required String requestedRole,
+    String? requestedPart,
+    required Map<String, dynamic> profileData,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final email = currentUser?.email;
+    await _db.collection('users').doc(uid).set({
+      ...profileData,
+      'email': email,
+      'profileCompleted': true,
+      'churchId': churchId,
+      'approvalStatus': 'pending',
+      'approvalScope': 'church',
+      'requestedRole': requestedRole,
+      if (requestedPart != null && requestedPart.isNotEmpty) 'requestedPart': requestedPart,
+      'rejectionReason': FieldValue.delete(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 }

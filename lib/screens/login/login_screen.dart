@@ -50,10 +50,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _handleKakaoSignIn() async {
-    if (kIsWeb) {
-      setState(() => _error = '카카오 로그인은 모바일 앱에서만 지원됩니다.');
-      return;
-    }
     setState(() { _error = null; _loading = true; _loadingProvider = 'kakao'; });
     try {
       final accessToken = await kakao_helper.signInWithKakao();
@@ -141,34 +137,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     style: const TextStyle(color: AppColors.error, fontSize: 13, height: 1.4)),
                 ),
 
-              // Kakao (mobile only)
-              if (!kIsWeb)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _loading ? null : _handleKakaoSignIn,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFEE500),
-                        foregroundColor: const Color(0xFF191919),
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                      child: _loading && _loadingProvider == 'kakao'
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF191919)))
-                          : const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.chat_bubble, size: 18),
-                                SizedBox(width: 8),
-                                Text('카카오로 시작하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                              ],
-                            ),
+              // Kakao
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _loading ? null : _handleKakaoSignIn,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFEE500),
+                      foregroundColor: const Color(0xFF191919),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
+                    child: _loading && _loadingProvider == 'kakao'
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF191919)))
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.chat_bubble, size: 18),
+                              SizedBox(width: 8),
+                              Text('카카오로 시작하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                            ],
+                          ),
                   ),
                 ),
+              ),
 
               // Google
               SizedBox(

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import '../services/firebase_service.dart';
 import '../models/user.dart';
+import '../models/church.dart';
 
 // ─── Navigation ───
 final tabIndexProvider = StateProvider<int>((ref) => 0);
@@ -40,23 +41,51 @@ final profileProvider = FutureProvider<User?>((ref) async {
   final fbUser = authState.valueOrNull;
   if (fbUser == null) return null;
   // 관리자 이메일이면 자동 admin 권한 부여
-  await FirebaseService.ensureAdminRole();
+  await FirebaseService.ensurePlatformAdminRole();
   final data = await FirebaseService.getProfile();
   if (data == null) return null;
   return User.fromMap(data);
 });
 
 /// 실시간 프로필 스트림 (관리자 승인 시 UI 자동 전환용)
+/// 추가로 FirebaseService.currentChurchId 캐시도 동기화 — 도메인 메서드가 동기 접근하기 위함.
 final myProfileStreamProvider = StreamProvider<User?>((ref) {
   final authState = ref.watch(authStateProvider);
   final fbUser = authState.valueOrNull;
-  if (fbUser == null) return Stream.value(null);
-  // 로그인 시 한 번 admin 자동 승격 실행
-  FirebaseService.ensureAdminRole();
+  if (fbUser == null) {
+    FirebaseService.setCurrentChurchId(null);
+    return Stream.value(null);
+  }
+  // 로그인 시 한 번 platform admin 자동 부트스트랩 실행
+  FirebaseService.ensurePlatformAdminRole();
   return FirebaseService.watchMyProfile().map((data) {
-    if (data == null) return null;
+    if (data == null) {
+      FirebaseService.setCurrentChurchId(null);
+      return null;
+    }
+    FirebaseService.setCurrentChurchId(data['churchId'] as String?);
     return User.fromMap(data);
   });
+});
+
+// ─── Multi-tenant (Church) ───
+/// 현재 로그인 유저의 churchId. 미소속/신청 전이면 null.
+final currentChurchIdProvider = Provider<String?>((ref) {
+  return ref.watch(myProfileStreamProvider).valueOrNull?.churchId;
+});
+
+/// 현재 유저가 속한 교회 정보. churchId가 null이면 null.
+final currentChurchProvider = FutureProvider<Church?>((ref) async {
+  final id = ref.watch(currentChurchIdProvider);
+  if (id == null) return null;
+  final data = await FirebaseService.getChurch(id);
+  return data == null ? null : Church.fromMap(data);
+});
+
+/// 승인된 교회 검색 (ChurchSearchScreen용). query 변경 시 자동 재조회.
+final churchSearchProvider = FutureProvider.family<List<Church>, String>((ref, query) async {
+  final list = await FirebaseService.searchApprovedChurches(query);
+  return list.map((m) => Church.fromMap(m)).toList();
 });
 
 // ─── Admin: Pending Approvals ───
