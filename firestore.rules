@@ -40,6 +40,9 @@ service cloud.firestore {
         isListedChurchAdminOf(cid) ||
         (sameChurch(cid) && (myRole() == 'admin' || myRole() == 'church_admin'));
     }
+    function canReadChurchContent(cid) {
+      return sameChurch(cid) || isChurchAdminOf(cid);
+    }
 
     // ── Churches ──
     match /churches/{churchId} {
@@ -96,7 +99,8 @@ service cloud.firestore {
 
     // ── Domain collections (churchId 격리) ──
     match /announcements/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if request.resource.data.keys().hasAll(['churchId'])
         && isChurchAdminOf(request.resource.data.churchId);
       allow update, delete: if resource.data.keys().hasAll(['churchId'])
@@ -104,7 +108,8 @@ service cloud.firestore {
     }
 
     match /attendance_sessions/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if request.resource.data.keys().hasAll(['churchId'])
         && isChurchAdminOf(request.resource.data.churchId);
       allow update, delete: if resource.data.keys().hasAll(['churchId'])
@@ -112,7 +117,8 @@ service cloud.firestore {
     }
 
     match /attendance/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if isSignedIn()
         && request.resource.data.keys().hasAll(['churchId'])
         && (
@@ -125,7 +131,8 @@ service cloud.firestore {
     }
 
     match /posts/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if isSignedIn()
         && request.auth.uid == request.resource.data.userId
         && request.resource.data.keys().hasAll(['churchId'])
@@ -134,7 +141,8 @@ service cloud.firestore {
 
       // 서브컬렉션: posts/{postId}/comments
       match /comments/{commentId} {
-        allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+        allow read: if resource.data.keys().hasAll(['churchId'])
+          && canReadChurchContent(resource.data.churchId);
         allow create: if isSignedIn()
           && request.auth.uid == request.resource.data.userId
           && request.resource.data.keys().hasAll(['churchId'])
@@ -145,11 +153,13 @@ service cloud.firestore {
 
     // collectionGroup 쿼리용 — 모든 comments 경로(top-level 및 서브컬렉션) 매칭
     match /{path=**}/comments/{commentId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
     }
 
     match /sheet_music/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if request.resource.data.keys().hasAll(['churchId'])
         && isChurchAdminOf(request.resource.data.churchId);
       allow update, delete: if resource.data.keys().hasAll(['churchId'])
@@ -157,7 +167,8 @@ service cloud.firestore {
     }
 
     match /events/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if request.resource.data.keys().hasAll(['churchId'])
         && isChurchAdminOf(request.resource.data.churchId);
       allow update, delete: if resource.data.keys().hasAll(['churchId'])
@@ -165,7 +176,8 @@ service cloud.firestore {
     }
 
     match /videos/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if request.resource.data.keys().hasAll(['churchId'])
         && isChurchAdminOf(request.resource.data.churchId);
       allow update, delete: if resource.data.keys().hasAll(['churchId'])
@@ -173,7 +185,8 @@ service cloud.firestore {
     }
 
     match /polls/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if request.resource.data.keys().hasAll(['churchId'])
         && sameChurch(request.resource.data.churchId)
         && (myRole() in ['admin', 'church_admin', 'part_leader']);
@@ -183,13 +196,15 @@ service cloud.firestore {
     }
 
     match /poll_votes/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create, update: if request.resource.data.keys().hasAll(['churchId'])
         && sameChurch(request.resource.data.churchId);
     }
 
     match /seating_charts/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create: if request.resource.data.keys().hasAll(['churchId'])
         && isChurchAdminOf(request.resource.data.churchId);
       allow update, delete: if resource.data.keys().hasAll(['churchId'])
@@ -197,7 +212,8 @@ service cloud.firestore {
     }
 
     match /seat_assignments/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadChurchContent(resource.data.churchId);
       allow create, update: if request.resource.data.keys().hasAll(['churchId'])
         && sameChurch(request.resource.data.churchId)
         && (myRole() in ['admin', 'church_admin', 'part_leader']);
@@ -208,7 +224,7 @@ service cloud.firestore {
     match /notifications/{docId} {
       allow read: if isSignedIn() && (
         resource.data.get('toUserId', '') == request.auth.uid ||
-        (resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId))
+        (resource.data.keys().hasAll(['churchId']) && canReadChurchContent(resource.data.churchId))
       );
       allow create: if isSignedIn();
     }
