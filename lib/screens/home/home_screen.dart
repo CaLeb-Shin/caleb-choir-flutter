@@ -28,6 +28,7 @@ class HomeScreen extends ConsumerWidget {
     final historyAsync = ref.watch(myHistoryProvider);
     final sessionAsync = ref.watch(activeSessionProvider);
     final eventsAsync = ref.watch(eventsProvider);
+    final currentChurch = ref.watch(currentChurchProvider).valueOrNull;
     final recentSheets = ref.watch(recentSheetMusicProvider).valueOrNull ?? [];
     final recentVids = ref.watch(recentVideosProvider).valueOrNull ?? [];
     final seatingCharts = ref.watch(seatingChartsProvider).valueOrNull ?? [];
@@ -78,6 +79,7 @@ class HomeScreen extends ConsumerWidget {
             ref.invalidate(myHistoryProvider);
             ref.invalidate(activeSessionProvider);
             ref.invalidate(eventsProvider);
+            ref.invalidate(currentChurchProvider);
             ref.invalidate(recentSheetMusicProvider);
             ref.invalidate(recentVideosProvider);
             ref.invalidate(seatingChartsProvider);
@@ -131,7 +133,36 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 18),
 
                 // ── Welcome
-                Text('환영합니다', style: AppText.label()),
+                Row(
+                  children: [
+                    Text('환영합니다', style: AppText.label()),
+                    if (currentChurch != null) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySoft,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            currentChurch.displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.body(
+                              11,
+                              weight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 6),
                 Text(
                   '${profile.name ?? "멤버"}님, 오늘도 함께 찬양해요',
