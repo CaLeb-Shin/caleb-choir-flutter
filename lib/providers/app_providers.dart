@@ -114,12 +114,36 @@ const _previewPollId = 'preview-poll-sunday';
 const _previewSheetMusic = [
   {
     'id': 'preview-sheet-1',
-    'title': '주만 바라볼지라',
+    'title': '[소프라노] 2026.05.05 / 주만 바라볼지라',
+    'songTitle': '주만 바라볼지라',
+    'sheetPart': 'soprano',
+    'sheetDate': '2026-05-05',
     'composer': '미리보기 악보&음원',
     'fileUrl':
         'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
     'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     'audioFileName': '파트연습.mp3',
+    'createdAt': '2026-04-28T09:00:00',
+  },
+  {
+    'id': 'preview-sheet-2',
+    'title': '[알토] 2026.05.05 / 주만 바라볼지라',
+    'songTitle': '주만 바라볼지라',
+    'sheetPart': 'alto',
+    'sheetDate': '2026-05-05',
+    'composer': '미리보기 악보&음원',
+    'fileUrl':
+        'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    'createdAt': '2026-04-28T09:00:00',
+  },
+  {
+    'id': 'preview-sheet-3',
+    'title': '[테너] 2026.05.05 / 주만 바라볼지라',
+    'songTitle': '주만 바라볼지라',
+    'sheetPart': 'tenor',
+    'sheetDate': '2026-05-05',
+    'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+    'audioFileName': '테너연습.mp3',
     'createdAt': '2026-04-28T09:00:00',
   },
 ];
