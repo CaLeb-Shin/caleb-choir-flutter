@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
-import '../../providers/awards_provider.dart';
 import '../../models/user.dart';
 import '../../services/firebase_service.dart';
 import '../../services/notification_service.dart';
 import '../../widgets/interactive.dart';
-import '../../widgets/user_badges.dart';
 import 'post_detail_screen.dart';
 
 class CommunityScreen extends ConsumerWidget {
@@ -20,31 +18,38 @@ class CommunityScreen extends ConsumerWidget {
     final announcementsAsync = ref.watch(announcementsProvider);
     final announcements = announcementsAsync.valueOrNull ?? [];
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
-    final awardsAsync = ref.watch(awardsProvider);
-    final members = ref.watch(membersProvider).valueOrNull ?? [];
-    Map<String, dynamic>? memberById(String? uid) {
-      if (uid == null) return null;
-      for (final m in members) {
-        if (m['id'] == uid) return m;
-      }
-      return null;
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-          child: Row(children: [
-            Expanded(child: Text('커뮤니티', style: AppText.headline(28))),
-            // 관리자: 공지 작성 버튼
-            if (isAdmin)
-              IconButton(
-                onPressed: () => _showAnnouncementDialog(context, ref),
-                icon: const Icon(Icons.campaign_rounded, color: AppColors.secondary),
-                tooltip: '공지 작성',
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('커뮤니티', style: AppText.headline(28)),
+                    const SizedBox(height: 2),
+                    Text(
+                      '재미있는 사진과 짧은 영상을 올리고 하트로 응원해요',
+                      style: AppText.body(12, color: AppColors.muted),
+                    ),
+                  ],
+                ),
               ),
-          ]),
+              if (isAdmin)
+                IconButton(
+                  onPressed: () => _showAnnouncementDialog(context, ref),
+                  icon: const Icon(
+                    Icons.campaign_rounded,
+                    color: AppColors.secondary,
+                  ),
+                  tooltip: '공지 작성',
+                ),
+            ],
+          ),
         ),
 
         if (announcements.isNotEmpty)
@@ -54,86 +59,133 @@ class CommunityScreen extends ConsumerWidget {
               onTap: () {},
               borderRadius: BorderRadius.circular(12),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(children: [
-                  const Icon(Icons.campaign_rounded, size: 16, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(
-                    announcements.first['title'] ?? '',
-                    style: AppText.body(13, weight: FontWeight.w600, color: AppColors.primary),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                  )),
-                ]),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.campaign_rounded,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        announcements.first['title'] ?? '',
+                        style: AppText.body(
+                          13,
+                          weight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
 
-        // 명예의 전당: 이주의 갈렙 + 이달의 갈렙
-        awardsAsync.maybeWhen(
-          data: (awards) {
-            final hasAny = awards.currentWeeklyCalebUid != null || awards.currentMonthlyCalebUid != null;
-            if (!hasAny) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: Row(children: [
-                Expanded(
-                  child: _CalebAwardCard(
-                    label: '이주의 갈렙',
-                    member: memberById(awards.currentWeeklyCalebUid),
-                    likes: awards.currentWeeklyCalebLikes,
-                    bg: const Color(0xFFFEF3C7),
-                    fg: const Color(0xFFB45309),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _CalebAwardCard(
-                    label: '이달의 갈렙',
-                    member: memberById(awards.currentMonthlyCalebUid),
-                    likes: awards.currentMonthlyCalebLikes,
-                    bg: const Color(0xFFFCE7F3),
-                    fg: const Color(0xFFBE185D),
-                  ),
-                ),
-              ]),
-            );
-          },
-          orElse: () => const SizedBox.shrink(),
-        ),
-
         Expanded(
           child: postsAsync.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (_, __) => const Center(child: Text('게시물을 불러올 수 없습니다')),
+            error: (error, stackTrace) =>
+                const Center(child: Text('게시물을 불러올 수 없습니다')),
             data: (posts) {
+              final weeklyTop = _weeklyTopPosts(posts);
               if (posts.isEmpty) {
-                return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.chat_bubble_outline_rounded, size: 40, color: AppColors.subtle),
-                  const SizedBox(height: 12),
-                  Text('아직 게시물이 없습니다', style: AppText.body(16, weight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Text('첫 번째 게시물을 작성해보세요!', style: AppText.body(13, color: AppColors.muted)),
-                ]));
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.photo_camera_outlined,
+                        size: 40,
+                        color: AppColors.subtle,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '아직 올라온 게시물이 없습니다',
+                        style: AppText.body(16, weight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '첫 번째 사진이나 영상을 올려보세요!',
+                        style: AppText.body(13, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                );
               }
               return RefreshIndicator(
                 onRefresh: () async {
                   ref.invalidate(postsProvider);
                   ref.invalidate(announcementsProvider);
                 },
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
-                  itemCount: posts.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 14),
-                  itemBuilder: (context, i) => _PostCard(
-                    post: posts[i],
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PostDetailScreen(postId: posts[i]['id']),
-                    )),
-                  ),
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    if (weeklyTop.isNotEmpty)
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+                          child: _WeeklyCalebShowcase(posts: weeklyTop),
+                        ),
+                      ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
+                        child: Row(
+                          children: [
+                            Text(
+                              '사진/영상 피드',
+                              style: AppText.body(15, weight: FontWeight.w800),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${posts.length}',
+                              style: AppText.body(
+                                12,
+                                weight: FontWeight.w800,
+                                color: AppColors.secondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                      sliver: SliverGrid(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 10,
+                              mainAxisSpacing: 10,
+                              childAspectRatio: 0.78,
+                            ),
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) => _PhotoPostTile(
+                            post: posts[i],
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    PostDetailScreen(postId: posts[i]['id']),
+                              ),
+                            ),
+                          ),
+                          childCount: posts.length,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -146,25 +198,50 @@ class CommunityScreen extends ConsumerWidget {
   void _showAnnouncementDialog(BuildContext context, WidgetRef ref) {
     final titleCtrl = TextEditingController();
     final contentCtrl = TextEditingController();
-    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
-      title: const Text('공지 작성'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: titleCtrl, decoration: const InputDecoration(hintText: '제목')),
-        const SizedBox(height: 10),
-        TextField(controller: contentCtrl, decoration: const InputDecoration(hintText: '내용 (선택)'), maxLines: 3),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('취소')),
-        TextButton(onPressed: () async {
-          Navigator.pop(dialogCtx);
-          if (titleCtrl.text.trim().isNotEmpty) {
-            await FirebaseService.createAnnouncement(titleCtrl.text.trim(), content: contentCtrl.text.trim());
-            await NotificationService.sendToAll(titleCtrl.text.trim(), contentCtrl.text.trim());
-            ref.invalidate(announcementsProvider);
-          }
-        }, child: const Text('작성')),
-      ],
-    ));
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('공지 작성'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              decoration: const InputDecoration(hintText: '제목'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: contentCtrl,
+              decoration: const InputDecoration(hintText: '내용 (선택)'),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              if (titleCtrl.text.trim().isNotEmpty) {
+                await FirebaseService.createAnnouncement(
+                  titleCtrl.text.trim(),
+                  content: contentCtrl.text.trim(),
+                );
+                await NotificationService.sendToAll(
+                  titleCtrl.text.trim(),
+                  contentCtrl.text.trim(),
+                );
+                ref.invalidate(announcementsProvider);
+              }
+            },
+            child: const Text('작성'),
+          ),
+        ],
+      ),
+    );
   }
 
   static String _timeAgo(dynamic dateStr) {
@@ -177,160 +254,501 @@ class CommunityScreen extends ConsumerWidget {
       if (diff.inHours < 24) return '${diff.inHours}시간 전';
       if (diff.inDays < 7) return '${diff.inDays}일 전';
       return '${d.month}/${d.day}';
-    } catch (_) { return ''; }
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static List<Map<String, dynamic>> _weeklyTopPosts(
+    List<Map<String, dynamic>> posts,
+  ) {
+    final ranked = [...posts]
+      ..sort((a, b) => _heartCount(b).compareTo(_heartCount(a)));
+    final liked = ranked
+        .where((post) => _heartCount(post) > 0)
+        .take(2)
+        .toList();
+    return liked.isNotEmpty ? liked : ranked.take(2).toList();
+  }
+
+  static int _heartCount(Map<String, dynamic> post) {
+    final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
+    return ((reactions['like'] as List<dynamic>?) ?? []).length;
   }
 }
 
-class _PostCard extends StatelessWidget {
-  final Map<String, dynamic> post;
-  final VoidCallback onTap;
-  const _PostCard({required this.post, required this.onTap});
+class _WeeklyCalebShowcase extends StatelessWidget {
+  final List<Map<String, dynamic>> posts;
+  const _WeeklyCalebShowcase({required this.posts});
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = post['imageUrl'] as String?;
-    final title = (post['title'] as String?) ?? '';
-    final content = (post['content'] as String?) ?? '';
-    final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
-    final commentCount = (post['commentCount'] as int?) ?? 0;
-    final likeCount = ((reactions['like'] as List<dynamic>?) ?? []).length;
-    final sadCount = ((reactions['sad'] as List<dynamic>?) ?? []).length;
-    final prayCount = ((reactions['pray'] as List<dynamic>?) ?? []).length;
-
-    return Tappable(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (imageUrl != null && imageUrl.isNotEmpty)
-            AspectRatio(
-              aspectRatio: 4 / 3,
-              child: CachedNetworkImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: AppColors.surfaceLow),
-                errorWidget: (_, __, ___) => Container(
-                  color: AppColors.surfaceLow,
-                  child: const Icon(Icons.broken_image_outlined, color: AppColors.muted),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.12),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.favorite_rounded,
+                  size: 17,
+                  color: AppColors.secondaryContainer,
                 ),
               ),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (title.isNotEmpty)
-                Text(title, style: AppText.headline(17), maxLines: 2, overflow: TextOverflow.ellipsis),
-              if (content.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(content, style: AppText.body(13, color: AppColors.muted), maxLines: 2, overflow: TextOverflow.ellipsis),
-              ],
-              const SizedBox(height: 12),
-              Row(children: [
-                CircleAvatar(
-                  radius: 12,
-                  backgroundColor: AppColors.primarySoft,
-                  child: Text(
-                    User.partLabels[post['userPart']]?[0] ?? '?',
-                    style: AppText.body(10, weight: FontWeight.w700, color: AppColors.primary),
-                  ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '이주의 갈렙',
+                      style: AppText.body(
+                        15,
+                        weight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      '하트를 가장 많이 받은 게시물 1위와 2위',
+                      style: AppText.body(
+                        11,
+                        color: Colors.white.withValues(alpha: 0.68),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Flexible(child: Text(
-                  '${post['userName'] ?? ''} · ${CommunityScreen._timeAgo(post['createdAt'])}',
-                  style: AppText.body(11, color: AppColors.muted),
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                )),
-                const SizedBox(width: 6),
-                Flexible(child: UserBadges(userId: post['userId'] as String?)),
-              ]),
-              const SizedBox(height: 10),
-              Wrap(spacing: 10, runSpacing: 4, children: [
-                _MiniStat(emoji: '❤️', count: likeCount),
-                _MiniStat(emoji: '😢', count: sadCount),
-                _MiniStat(emoji: '🙏', count: prayCount),
-                _MiniStat(emoji: '💬', count: commentCount),
-              ]),
-            ]),
+              ),
+            ],
           ),
-        ]),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (var i = 0; i < 2; i++) ...[
+                Expanded(
+                  child: i < posts.length
+                      ? _WeeklyCalebCard(post: posts[i], rank: i + 1)
+                      : _WeeklyCalebEmpty(rank: i + 1),
+                ),
+                if (i == 0) const SizedBox(width: 10),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
-class _MiniStat extends StatelessWidget {
-  final String emoji;
-  final int count;
-  const _MiniStat({required this.emoji, required this.count});
+class _WeeklyCalebCard extends StatelessWidget {
+  final Map<String, dynamic> post;
+  final int rank;
+  const _WeeklyCalebCard({required this.post, required this.rank});
 
   @override
   Widget build(BuildContext context) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Text(emoji, style: const TextStyle(fontSize: 13)),
-      const SizedBox(width: 3),
-      Text('$count', style: AppText.body(12, weight: FontWeight.w600, color: AppColors.muted)),
-    ]);
+    final title = (post['title'] as String?) ?? '';
+    final part = User.partLabels[post['userPart']] ?? '파트';
+    final hearts = CommunityScreen._heartCount(post);
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AspectRatio(
+            aspectRatio: 1.16,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _PostMediaPreview(post: post),
+                Positioned(top: 8, left: 8, child: _RankBadge(rank: rank)),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppText.body(
+                    12,
+                    weight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${post['userName'] ?? ''} · $part',
+                        style: AppText.body(
+                          10,
+                          color: Colors.white.withValues(alpha: 0.66),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.favorite_rounded,
+                      size: 12,
+                      color: AppColors.secondaryContainer,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      '$hearts',
+                      style: AppText.body(
+                        10,
+                        weight: FontWeight.w900,
+                        color: AppColors.secondaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-class _CalebAwardCard extends StatelessWidget {
-  final String label;
-  final Map<String, dynamic>? member;
-  final int likes;
-  final Color bg;
-  final Color fg;
-  const _CalebAwardCard({
-    required this.label,
-    required this.member,
-    required this.likes,
-    required this.bg,
-    required this.fg,
-  });
+class _WeeklyCalebEmpty extends StatelessWidget {
+  final int rank;
+  const _WeeklyCalebEmpty({required this.rank});
 
   @override
   Widget build(BuildContext context) {
-    final name = member?['name'] as String? ?? '집계 중';
-    final part = member?['part'] as String?;
-    final imageUrl = member?['imageUrl'] as String?;
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Row(children: [
-          const Text('🏆', style: TextStyle(fontSize: 14)),
-          const SizedBox(width: 4),
-          Text(label, style: AppText.body(11, weight: FontWeight.w800, color: fg)),
-        ]),
-        const SizedBox(height: 10),
-        Row(children: [
-          if (imageUrl != null && imageUrl.isNotEmpty)
-            ClipOval(
-              child: CachedNetworkImage(
-                imageUrl: imageUrl,
-                width: 32, height: 32, fit: BoxFit.cover,
-                placeholder: (_, __) => Container(width: 32, height: 32, color: Colors.white),
-                errorWidget: (_, __, ___) => CircleAvatar(radius: 16, backgroundColor: Colors.white, child: Text(User.partLabels[part]?[0] ?? '?', style: AppText.body(12, weight: FontWeight.w700, color: fg))),
-              ),
-            )
-          else
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white,
-              child: Text(User.partLabels[part]?[0] ?? '?', style: AppText.body(12, weight: FontWeight.w700, color: fg)),
+      constraints: const BoxConstraints(minHeight: 144),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Text(
+        '$rank위 집계 중',
+        style: AppText.body(
+          12,
+          weight: FontWeight.w800,
+          color: Colors.white.withValues(alpha: 0.7),
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotoPostTile extends StatelessWidget {
+  final Map<String, dynamic> post;
+  final VoidCallback onTap;
+  const _PhotoPostTile({required this.post, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (post['title'] as String?) ?? '';
+    final content = (post['content'] as String?) ?? '';
+    final commentCount = (post['commentCount'] as int?) ?? 0;
+    final hearts = CommunityScreen._heartCount(post);
+
+    return Tappable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.35)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
             ),
-          const SizedBox(width: 8),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(name, style: AppText.body(13, weight: FontWeight.w800, color: fg), maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text('❤️ $likes', style: AppText.body(11, weight: FontWeight.w600, color: fg.withValues(alpha: 0.8))),
-          ])),
-        ]),
-      ]),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _PostMediaPreview(post: post),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.08),
+                      Colors.black.withValues(alpha: 0.72),
+                    ],
+                    stops: const [0.35, 0.62, 1],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.favorite_rounded,
+                      size: 13,
+                      color: AppColors.secondaryContainer,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      '$hearts',
+                      style: AppText.body(
+                        11,
+                        weight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 10,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: AppText.body(
+                      13,
+                      weight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (content.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      content,
+                      style: AppText.body(
+                        10,
+                        color: Colors.white.withValues(alpha: 0.78),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 7),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${post['userName'] ?? ''} · ${CommunityScreen._timeAgo(post['createdAt'])}',
+                          style: AppText.body(
+                            10,
+                            color: Colors.white.withValues(alpha: 0.66),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.mode_comment_rounded,
+                        size: 12,
+                        color: Colors.white70,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        '$commentCount',
+                        style: AppText.body(10, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NetworkPhoto extends StatelessWidget {
+  final String imageUrl;
+  const _NetworkPhoto({required this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrl.isEmpty) {
+      return const _PhotoFallback();
+    }
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      fit: BoxFit.cover,
+      placeholder: (context, url) => const _PhotoFallback(),
+      errorWidget: (context, url, error) => const _PhotoFallback(),
+    );
+  }
+}
+
+class _PostMediaPreview extends StatelessWidget {
+  final Map<String, dynamic> post;
+  const _PostMediaPreview({required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    final mediaType = (post['mediaType'] as String?) ?? 'photo';
+    if (mediaType == 'video') {
+      return _VideoPreview(
+        status: (post['videoStatus'] as String?) ?? 'processing',
+      );
+    }
+    return _NetworkPhoto(imageUrl: (post['imageUrl'] as String?) ?? '');
+  }
+}
+
+class _VideoPreview extends StatelessWidget {
+  final String status;
+  const _VideoPreview({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final isReady = status == 'ready';
+    final isFailed = status == 'failed';
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF061B33), Color(0xFF0A315F)],
+        ),
+      ),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isReady
+                    ? Icons.play_arrow_rounded
+                    : isFailed
+                    ? Icons.error_outline_rounded
+                    : Icons.hourglass_top_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                isReady
+                    ? '영상'
+                    : isFailed
+                    ? '처리 실패'
+                    : '압축 중',
+                style: AppText.body(
+                  11,
+                  weight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotoFallback extends StatelessWidget {
+  const _PhotoFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.primarySoft,
+      child: Center(
+        child: Icon(
+          Icons.photo_camera_outlined,
+          color: AppColors.primary.withValues(alpha: 0.32),
+          size: 30,
+        ),
+      ),
+    );
+  }
+}
+
+class _RankBadge extends StatelessWidget {
+  final int rank;
+  const _RankBadge({required this.rank});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: rank == 1 ? AppColors.secondaryContainer : Colors.white,
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Text(
+        '$rank위',
+        style: AppText.body(
+          11,
+          weight: FontWeight.w900,
+          color: AppColors.primary,
+        ),
+      ),
     );
   }
 }

@@ -1,17 +1,64 @@
-# caleb_choir
+# Caleb Choir Flutter
 
-A new Flutter project.
+갈렙 찬양대 모바일/웹 Flutter 앱입니다.
 
-## Getting Started
+## 개발 시작
 
-This project is a starting point for a Flutter application.
+```sh
+flutter pub get
+flutter run
+```
 
-A few resources to get you started if this is your first Flutter project:
+웹으로 확인할 때:
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```sh
+flutter run -d chrome
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 검증 명령
+
+Codex나 로컬 작업 후 기본으로 아래 명령을 확인합니다.
+
+```sh
+flutter analyze --no-fatal-infos
+flutter test
+flutter build web --release
+```
+
+Firebase Functions 의존성을 확인할 때:
+
+```sh
+npm --prefix functions ci
+```
+
+## 배포
+
+이 저장소는 GitHub `main` 브랜치에 push되면 Vercel이 `vercel.json` 설정으로 Flutter web을 빌드해 자동 배포합니다.
+
+- Build command: `flutter/bin/flutter build web --release`
+- Output directory: `build/web`
+- Production URL: https://caleb-choir-flutter.vercel.app
+
+기존 편의 스크립트도 사용할 수 있습니다.
+
+```sh
+./deploy.sh "chore: deploy"
+```
+
+## Firebase
+
+- Firebase project: `caleb-choir-2026`
+- Flutter Firebase options: `lib/firebase_options.dart`
+- Firestore rules: `firestore.rules`
+- Firestore indexes: `firestore.indexes.json`
+- Cloud Functions: `functions/`
+
+Firebase 앱 설정이 바뀌면 FlutterFire CLI로 다시 생성합니다.
+
+```sh
+flutterfire configure
+```
+
+## Codex 작업 메모
+
+Codex 작업 지침은 `AGENTS.md`에 정리되어 있습니다. 관리자 웹 프로젝트는 Flutter 앱 내부가 아니라 형제 폴더/별도 저장소로 관리하는 것을 기본으로 합니다.

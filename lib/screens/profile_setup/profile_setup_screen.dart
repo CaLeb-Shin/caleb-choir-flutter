@@ -6,22 +6,25 @@ import '../../theme/app_theme.dart';
 import '../../models/user.dart';
 import '../../services/firebase_service.dart';
 import '../../providers/app_providers.dart';
+import '../../widgets/app_logo_title.dart';
 
 /// ProfileSetupScreen의 3가지 진입 모드.
 enum ProfileSetupMode {
   /// 승인된 교회에 가입 신청 (찬양대원/파트장)
   joinChurch,
+
   /// 새 교회 등록 신청 (신청자는 해당 교회 admin이 될 예정)
   registerChurch,
+
   /// 거부 후 재신청
   reapply,
 }
 
 class ProfileSetupScreen extends ConsumerStatefulWidget {
   final ProfileSetupMode mode;
-  final String requestedRole;        // 'member' | 'part_leader' | 'church_admin'
-  final String? churchId;            // mode == joinChurch에서 필수
-  final String? churchName;          // 화면 상단 컨텍스트 표시용
+  final String requestedRole; // 'member' | 'part_leader' | 'church_admin'
+  final String? churchId; // mode == joinChurch에서 필수
+  final String? churchName; // 화면 상단 컨텍스트 표시용
   final Map<String, dynamic>? pendingChurchData; // mode == registerChurch에서 필수
 
   const ProfileSetupScreen({
@@ -41,6 +44,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   final _nameCtrl = TextEditingController();
   final _nicknameCtrl = TextEditingController();
   final _genCtrl = TextEditingController();
+  final _choirNameCtrl = TextEditingController();
+  final _churchPositionCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   String _part = 'soprano';
   String _leaderPart = 'soprano';
@@ -68,6 +73,8 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
     _nameCtrl.dispose();
     _nicknameCtrl.dispose();
     _genCtrl.dispose();
+    _choirNameCtrl.dispose();
+    _churchPositionCtrl.dispose();
     _phoneCtrl.dispose();
     super.dispose();
   }
@@ -82,11 +89,20 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
-      setState(() { _imageBytes = bytes; _uploading = true; });
+      setState(() {
+        _imageBytes = bytes;
+        _uploading = true;
+      });
       final url = await FirebaseService.uploadProfileImage(bytes);
-      setState(() { _uploadedImageUrl = url; _uploading = false; });
+      setState(() {
+        _uploadedImageUrl = url;
+        _uploading = false;
+      });
     } catch (e) {
-      setState(() { _uploading = false; _error = '사진 업로드 실패: $e'; });
+      setState(() {
+        _uploading = false;
+        _error = '사진 업로드 실패: $e';
+      });
     }
   }
 
@@ -95,12 +111,23 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       setState(() => _error = '이름을 입력해주세요');
       return;
     }
-    setState(() { _saving = true; _error = null; });
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       final data = <String, dynamic>{
         'name': _nameCtrl.text.trim(),
-        'nickname': _nicknameCtrl.text.trim().isEmpty ? null : _nicknameCtrl.text.trim(),
+        'nickname': _nicknameCtrl.text.trim().isEmpty
+            ? null
+            : _nicknameCtrl.text.trim(),
         'generation': _genCtrl.text.trim(),
+        'choirName': _choirNameCtrl.text.trim().isEmpty
+            ? null
+            : _choirNameCtrl.text.trim(),
+        'churchPosition': _churchPositionCtrl.text.trim().isEmpty
+            ? null
+            : _churchPositionCtrl.text.trim(),
         'part': _part,
         'phone': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
         'profileImageUrl': _uploadedImageUrl,
@@ -133,7 +160,10 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
       ref.invalidate(profileProvider);
       // main.dart의 myProfileStreamProvider가 자동으로 다음 화면으로 전환시킴
     } catch (e) {
-      setState(() { _saving = false; _error = '저장 실패: $e'; });
+      setState(() {
+        _saving = false;
+        _error = '저장 실패: $e';
+      });
     }
   }
 
@@ -157,12 +187,17 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      appBar: _isReapply ? null : AppBar(
-        backgroundColor: AppColors.bg,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.ink),
-        title: Text('프로필 작성', style: AppText.body(15, weight: FontWeight.w700)),
-      ),
+      appBar: _isReapply
+          ? null
+          : AppBar(
+              backgroundColor: AppColors.bg,
+              elevation: 0,
+              iconTheme: const IconThemeData(color: AppColors.ink),
+              title: AppLogoTitle(
+                title: '프로필 작성',
+                textStyle: AppText.body(15, weight: FontWeight.w700),
+              ),
+            ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: EdgeInsets.fromLTRB(24, _isReapply ? 32 : 12, 24, 40),
@@ -181,25 +216,38 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     color: AppColors.primarySoft,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Row(children: [
-                    Icon(
-                      widget.mode == ProfileSetupMode.registerChurch
-                          ? Icons.add_business_rounded
-                          : (_isPartLeader ? Icons.star_rounded : Icons.music_note_rounded),
-                      size: 18, color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(
-                      _contextBanner,
-                      style: AppText.body(13, weight: FontWeight.w700, color: AppColors.primary),
-                    )),
-                  ]),
+                  child: Row(
+                    children: [
+                      Icon(
+                        widget.mode == ProfileSetupMode.registerChurch
+                            ? Icons.add_business_rounded
+                            : (_isPartLeader
+                                  ? Icons.star_rounded
+                                  : Icons.music_note_rounded),
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _contextBanner,
+                          style: AppText.body(
+                            13,
+                            weight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
                 Text('프로필 작성', style: AppText.headline(26)),
                 const SizedBox(height: 8),
-                Text('함께 찬양할 멤버 정보를 알려주세요',
-                  style: AppText.body(14, color: AppColors.muted)),
+                Text(
+                  '함께 찬양할 멤버 정보를 알려주세요',
+                  style: AppText.body(14, color: AppColors.muted),
+                ),
                 const SizedBox(height: 24),
               ],
 
@@ -207,44 +255,73 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               Center(
                 child: GestureDetector(
                   onTap: _uploading ? null : _pickImage,
-                  child: Stack(children: [
-                    Container(
-                      width: 110, height: 110,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.primarySoft,
-                        image: _imageBytes != null
-                            ? DecorationImage(image: MemoryImage(_imageBytes!), fit: BoxFit.cover)
+                  child: Stack(
+                    children: [
+                      Container(
+                        width: 110,
+                        height: 110,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primarySoft,
+                          image: _imageBytes != null
+                              ? DecorationImage(
+                                  image: MemoryImage(_imageBytes!),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: _imageBytes == null
+                            ? Icon(
+                                Icons.person_rounded,
+                                size: 48,
+                                color: AppColors.primary.withValues(alpha: 0.4),
+                              )
                             : null,
                       ),
-                      child: _imageBytes == null
-                          ? Icon(Icons.person_rounded, size: 48, color: AppColors.primary.withValues(alpha: 0.4))
-                          : null,
-                    ),
-                    if (_uploading)
-                      Positioned.fill(
+                      if (_uploading)
+                        Positioned.fill(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black45,
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
                         child: Container(
-                          decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.black45),
-                          child: const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.bg, width: 3),
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
                         ),
                       ),
-                    Positioned(
-                      bottom: 0, right: 0,
-                      child: Container(
-                        width: 32, height: 32,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: AppColors.bg, width: 3),
-                        ),
-                        child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
-                      ),
-                    ),
-                  ]),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
-              Center(child: Text('사진 추가 (선택)', style: AppText.body(12, color: AppColors.muted))),
+              Center(
+                child: Text(
+                  '사진 추가 (선택)',
+                  style: AppText.body(12, color: AppColors.muted),
+                ),
+              ),
               const SizedBox(height: 28),
 
               // ── Role info (now fixed — comes from previous screen)
@@ -255,31 +332,48 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.surfaceLow,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-                ),
-                child: Row(children: [
-                  Icon(
-                    _isChurchAdminFlow ? Icons.admin_panel_settings_rounded
-                      : (_isPartLeader ? Icons.star_rounded : Icons.music_note_rounded),
-                    color: AppColors.primary, size: 20,
+                  border: Border.all(
+                    color: AppColors.border.withValues(alpha: 0.3),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(child: Text(
-                    User.roleLabels[widget.requestedRole] ?? widget.requestedRole,
-                    style: AppText.body(14, weight: FontWeight.w700),
-                  )),
-                ]),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _isChurchAdminFlow
+                          ? Icons.admin_panel_settings_rounded
+                          : (_isPartLeader
+                                ? Icons.star_rounded
+                                : Icons.music_note_rounded),
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        User.roleLabels[widget.requestedRole] ??
+                            widget.requestedRole,
+                        style: AppText.body(14, weight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
               ),
               if (_isPartLeader) ...[
                 const SizedBox(height: 12),
                 _Label(text: '담당 파트 *'),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
-                  value: _leaderPart,
+                  initialValue: _leaderPart,
                   items: User.selectableParts
-                      .map((k) => DropdownMenuItem(value: k, child: Text(User.partLabels[k] ?? k)))
+                      .map(
+                        (k) => DropdownMenuItem(
+                          value: k,
+                          child: Text(User.partLabels[k] ?? k),
+                        ),
+                      )
                       .toList(),
-                  onChanged: (v) => setState(() => _leaderPart = v ?? _leaderPart),
+                  onChanged: (v) =>
+                      setState(() => _leaderPart = v ?? _leaderPart),
                 ),
               ],
               const SizedBox(height: 20),
@@ -297,7 +391,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               const SizedBox(height: 6),
               TextField(
                 controller: _nicknameCtrl,
-                decoration: const InputDecoration(hintText: '예: 길동이 → "홍길동 (길동이)"로 표시됩니다'),
+                decoration: const InputDecoration(hintText: '별칭을 입력하세요'),
               ),
               const SizedBox(height: 16),
 
@@ -305,16 +399,37 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               const SizedBox(height: 6),
               TextField(
                 controller: _genCtrl,
-                decoration: const InputDecoration(hintText: '예: 91기, 23기'),
+                decoration: const InputDecoration(hintText: '기수를 입력하세요'),
+              ),
+              const SizedBox(height: 16),
+
+              _Label(text: '찬양대 이름 (선택)'),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _choirNameCtrl,
+                decoration: const InputDecoration(hintText: '찬양대 이름을 입력하세요'),
+              ),
+              const SizedBox(height: 16),
+
+              _Label(text: '교회 내 직분 (선택)'),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _churchPositionCtrl,
+                decoration: const InputDecoration(hintText: '직분을 입력하세요'),
               ),
               const SizedBox(height: 16),
 
               _Label(text: '파트'),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                value: _part,
+                initialValue: _part,
                 items: User.selectableParts
-                    .map((k) => DropdownMenuItem(value: k, child: Text(User.partLabels[k] ?? k)))
+                    .map(
+                      (k) => DropdownMenuItem(
+                        value: k,
+                        child: Text(User.partLabels[k] ?? k),
+                      ),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() {
                   _part = v ?? _part;
@@ -328,7 +443,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
               TextField(
                 controller: _phoneCtrl,
                 keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(hintText: '010-0000-0000'),
+                decoration: const InputDecoration(hintText: '전화번호를 입력하세요'),
               ),
               const SizedBox(height: 24),
 
@@ -341,25 +456,44 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                     color: AppColors.error.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(_error!, style: AppText.body(13, color: AppColors.error)),
+                  child: Text(
+                    _error!,
+                    style: AppText.body(13, color: AppColors.error),
+                  ),
                 ),
 
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _saving ? null : _save,
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
                   child: _saving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
                       : Text(_submitLabel),
                 ),
               ),
               if (_isReapply) ...[
                 const SizedBox(height: 12),
-                Center(child: TextButton(
-                  onPressed: () async { await FirebaseService.signOut(); },
-                  child: Text('다른 계정으로 로그인', style: AppText.body(13, color: AppColors.muted)),
-                )),
+                Center(
+                  child: TextButton(
+                    onPressed: () async {
+                      await FirebaseService.signOut();
+                    },
+                    child: Text(
+                      '다른 계정으로 로그인',
+                      style: AppText.body(13, color: AppColors.muted),
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -374,6 +508,13 @@ class _Label extends StatelessWidget {
   const _Label({required this.text});
   @override
   Widget build(BuildContext context) {
-    return Text(text, style: AppText.body(12, weight: FontWeight.w700, color: AppColors.onSurfaceVariant));
+    return Text(
+      text,
+      style: AppText.body(
+        12,
+        weight: FontWeight.w700,
+        color: AppColors.onSurfaceVariant,
+      ),
+    );
   }
 }

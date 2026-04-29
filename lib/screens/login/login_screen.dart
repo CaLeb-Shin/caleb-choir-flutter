@@ -9,7 +9,8 @@ import '../../widgets/google_logo.dart';
 import '../../providers/app_providers.dart';
 
 import 'kakao_sign_in_stub.dart'
-    if (dart.library.io) 'kakao_sign_in_mobile.dart' as kakao_helper;
+    if (dart.library.io) 'kakao_sign_in_mobile.dart'
+    as kakao_helper;
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -23,15 +24,52 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loading = false;
   String? _loadingProvider;
 
+  bool get _showLocalPreview {
+    if (!kIsWeb) return false;
+    return Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _completeGoogleRedirectSignIn();
+      });
+    }
+  }
+
+  Future<void> _completeGoogleRedirectSignIn() async {
+    try {
+      final result = await FirebaseAuth.instance.getRedirectResult();
+      if (result.user != null) {
+        debugPrint('Google redirect sign-in completed: ${result.user!.uid}');
+      }
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Google redirect sign-in error: $e');
+      if (!mounted) return;
+      setState(() => _error = 'Google 로그인에 실패했습니다.\n다시 시도해주세요.');
+    } catch (e) {
+      debugPrint('Google redirect result error: $e');
+    }
+  }
+
   Future<void> _handleGoogleSignIn() async {
-    setState(() { _error = null; _loading = true; _loadingProvider = 'google'; });
+    setState(() {
+      _error = null;
+      _loading = true;
+      _loadingProvider = 'google';
+    });
     try {
       if (kIsWeb) {
-        await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
+        await FirebaseAuth.instance.signInWithRedirect(GoogleAuthProvider());
       } else {
         final googleUser = await GoogleSignIn().signIn();
         if (googleUser == null) {
-          setState(() { _loading = false; _loadingProvider = null; });
+          setState(() {
+            _loading = false;
+            _loadingProvider = null;
+          });
           return;
         }
         final googleAuth = await googleUser.authentication;
@@ -41,31 +79,53 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
         await FirebaseAuth.instance.signInWithCredential(credential);
       }
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Google sign-in error: $e');
+      setState(() => _error = 'Google 로그인에 실패했습니다.\n다시 시도해주세요.');
     } catch (e) {
       debugPrint('Google sign-in error: $e');
       setState(() => _error = 'Google 로그인에 실패했습니다.\n다시 시도해주세요.');
     } finally {
-      if (mounted) setState(() { _loading = false; _loadingProvider = null; });
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
     }
   }
 
   Future<void> _handleKakaoSignIn() async {
-    setState(() { _error = null; _loading = true; _loadingProvider = 'kakao'; });
+    setState(() {
+      _error = null;
+      _loading = true;
+      _loadingProvider = 'kakao';
+    });
     try {
       final accessToken = await kakao_helper.signInWithKakao();
       if (accessToken == null) {
-        setState(() { _loading = false; _loadingProvider = null; });
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
         return;
       }
-      final callable = FirebaseFunctions.instance.httpsCallable('createKakaoCustomToken');
-      final result = await callable.call<Map<String, dynamic>>({'accessToken': accessToken});
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'createKakaoCustomToken',
+      );
+      final result = await callable.call<Map<String, dynamic>>({
+        'accessToken': accessToken,
+      });
       final customToken = result.data['token'] as String;
       await FirebaseAuth.instance.signInWithCustomToken(customToken);
     } catch (e) {
       debugPrint('Kakao sign-in error: $e');
       setState(() => _error = '카카오 로그인에 실패했습니다.\n다시 시도해주세요.');
     } finally {
-      if (mounted) setState(() { _loading = false; _loadingProvider = null; });
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
     }
   }
 
@@ -87,40 +147,79 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   decoration: BoxDecoration(
                     color: AppColors.success.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.success.withValues(alpha: 0.2)),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.check_circle_rounded, size: 18, color: AppColors.success),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text('로그아웃되었습니다',
-                      style: TextStyle(color: AppColors.success, fontSize: 13, fontWeight: FontWeight.w600))),
-                    GestureDetector(
-                      onTap: () => ref.read(loggedOutProvider.notifier).state = false,
-                      child: const Icon(Icons.close_rounded, size: 16, color: AppColors.success),
+                    border: Border.all(
+                      color: AppColors.success.withValues(alpha: 0.2),
                     ),
-                  ]),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        size: 18,
+                        color: AppColors.success,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '로그아웃되었습니다',
+                          style: TextStyle(
+                            color: AppColors.success,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () =>
+                            ref.read(loggedOutProvider.notifier).state = false,
+                        child: const Icon(
+                          Icons.close_rounded,
+                          size: 16,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               const Spacer(flex: 3),
               // Logo
               Container(
-                width: 100, height: 100,
+                width: 100,
+                height: 100,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
-                    BoxShadow(color: AppColors.accent.withValues(alpha: 0.15), blurRadius: 30, offset: const Offset(0, 10)),
+                    BoxShadow(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
                   ],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child: Image.asset('assets/images/icon.png', width: 100, height: 100),
+                  child: Image.asset(
+                    'assets/images/icon.png',
+                    width: 100,
+                    height: 100,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
-              const Text('갈렙찬양대',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.ink, letterSpacing: -0.5)),
+              const Text(
+                '갈렙찬양대',
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.ink,
+                  letterSpacing: -0.5,
+                ),
+              ),
               const SizedBox(height: 6),
-              const Text('함께 찬양하는 기쁨',
-                style: TextStyle(fontSize: 15, color: AppColors.muted)),
+              const Text(
+                '함께 찬양하는 기쁨',
+                style: TextStyle(fontSize: 15, color: AppColors.muted),
+              ),
               const Spacer(flex: 2),
 
               // Error
@@ -133,8 +232,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     color: AppColors.error.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Text(_error!, textAlign: TextAlign.center,
-                    style: const TextStyle(color: AppColors.error, fontSize: 13, height: 1.4)),
+                  child: Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: AppColors.error,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
                 ),
 
               // Kakao
@@ -149,16 +255,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       foregroundColor: const Color(0xFF191919),
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
                     child: _loading && _loadingProvider == 'kakao'
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF191919)))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF191919),
+                            ),
+                          )
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(Icons.chat_bubble, size: 18),
                               SizedBox(width: 8),
-                              Text('카카오로 시작하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                              Text(
+                                '카카오로 시작하기',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ],
                           ),
                   ),
@@ -175,23 +296,51 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     backgroundColor: AppColors.card,
                     side: const BorderSide(color: AppColors.border),
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     overlayColor: const Color(0xFF4285F4),
                   ),
                   child: _loading && _loadingProvider == 'google'
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             GoogleLogo(size: 20),
                             SizedBox(width: 10),
-                            Text('Google로 시작하기', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                            Text(
+                              'Google로 시작하기',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ],
                         ),
                 ),
               ),
+              if (_showLocalPreview) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () {
+                      ref.read(loginPreviewModeProvider.notifier).state = false;
+                      ref.read(localPreviewModeProvider.notifier).state = true;
+                    },
+                    child: const Text('인앱 미리보기로 보기'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
-              const Text('간편하게 로그인하고 참여하세요', style: TextStyle(fontSize: 13, color: AppColors.muted)),
+              const Text(
+                '간편하게 로그인하고 참여하세요',
+                style: TextStyle(fontSize: 13, color: AppColors.muted),
+              ),
               const SizedBox(height: 48),
             ],
           ),

@@ -1,10 +1,14 @@
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../theme/app_theme.dart';
+
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
+import '../../theme/app_theme.dart';
+
+enum _ComposeMediaType { photo, video }
 
 class PostComposeSheet extends ConsumerStatefulWidget {
   const PostComposeSheet({super.key});
@@ -16,7 +20,11 @@ class PostComposeSheet extends ConsumerStatefulWidget {
 class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
   final _titleCtrl = TextEditingController();
   final _contentCtrl = TextEditingController();
+  _ComposeMediaType _mediaType = _ComposeMediaType.photo;
   Uint8List? _imageBytes;
+  Uint8List? _videoBytes;
+  String? _videoName;
+  String _videoMimeType = 'video/mp4';
   bool _submitting = false;
 
   @override
@@ -36,39 +44,110 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
-      setState(() => _imageBytes = bytes);
+      setState(() {
+        _imageBytes = bytes;
+        _mediaType = _ComposeMediaType.photo;
+      });
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('이미지 선택 실패: $e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('이미지 선택 실패: $e')));
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickVideo(
+        source: ImageSource.gallery,
+        maxDuration: const Duration(seconds: 12),
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _videoBytes = bytes;
+        _videoName = picked.name;
+        _videoMimeType = picked.mimeType ?? 'video/mp4';
+        _mediaType = _ComposeMediaType.video;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('영상 선택 실패: $e')));
     }
   }
 
   Future<void> _submit() async {
     final title = _titleCtrl.text.trim();
     if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('제목을 입력해주세요')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('제목을 입력해주세요')));
       return;
     }
+    if (_mediaType == _ComposeMediaType.video && _videoBytes == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('업로드할 영상을 선택해주세요')));
+      return;
+    }
+
     setState(() => _submitting = true);
     try {
-      String? imageUrl;
-      if (_imageBytes != null) {
-        imageUrl = await FirebaseService.uploadPostImage(_imageBytes!);
+      final content = _contentCtrl.text.trim().isEmpty
+          ? null
+          : _contentCtrl.text.trim();
+      if (_mediaType == _ComposeMediaType.video) {
+        final postId = await FirebaseService.createPost(
+          title: title,
+          content: content,
+          mediaType: 'video',
+          videoStatus: 'uploading',
+          videoTrimStartSec: 0,
+          videoTrimEndSec: 12,
+        );
+        final sourcePath = await FirebaseService.uploadPostVideoSource(
+          _videoBytes!,
+          postId: postId,
+          trimStartSec: 0,
+          trimEndSec: 12,
+          contentType: _videoMimeType,
+          extension: _extensionFromName(_videoName ?? ''),
+        );
+        if (sourcePath == null) throw Exception('영상 업로드 권한이 없습니다');
+        await FirebaseService.markPostVideoProcessing(
+          postId,
+          sourcePath: sourcePath,
+        );
+      } else {
+        String? imageUrl;
+        if (_imageBytes != null) {
+          imageUrl = await FirebaseService.uploadPostImage(_imageBytes!);
+        }
+        await FirebaseService.createPost(
+          title: title,
+          content: content,
+          imageUrl: imageUrl,
+          mediaType: 'photo',
+        );
       }
-      await FirebaseService.createPost(
-        title: title,
-        content: _contentCtrl.text.trim().isEmpty ? null : _contentCtrl.text.trim(),
-        imageUrl: imageUrl,
-      );
       ref.invalidate(postsProvider);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       setState(() => _submitting = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('등록 실패: $e')));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('등록 실패: $e')));
     }
+  }
+
+  String _extensionFromName(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot == name.length - 1) return 'mp4';
+    return name.substring(dot + 1).toLowerCase();
   }
 
   @override
@@ -79,84 +158,582 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
       child: Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: AppColors.subtle, borderRadius: BorderRadius.circular(2)))),
-          const SizedBox(height: 16),
-          Row(children: [
-            Expanded(child: Text('새 게시물', style: AppText.headline(20))),
-            TextButton(
-              onPressed: _submitting ? null : _submit,
-              child: _submitting
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text('등록', style: AppText.body(15, weight: FontWeight.w700, color: AppColors.primary)),
-            ),
-          ]),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: _submitting ? null : _pickImage,
-            child: AspectRatio(
-              aspectRatio: 4 / 3,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceLow,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
+        padding: const EdgeInsets.fromLTRB(18, 10, 18, 22),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.subtle,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-                clipBehavior: Clip.antiAlias,
-                child: _imageBytes != null
-                    ? Stack(fit: StackFit.expand, children: [
-                        Image.memory(_imageBytes!, fit: BoxFit.cover),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Material(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(20),
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
-                              onTap: () => setState(() => _imageBytes = null),
-                              child: const Padding(
-                                padding: EdgeInsets.all(6),
-                                child: Icon(Icons.close_rounded, size: 18, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ])
-                    : Center(
-                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.add_a_photo_outlined, size: 36, color: AppColors.muted),
-                          const SizedBox(height: 8),
-                          Text('사진 추가', style: AppText.body(13, weight: FontWeight.w600, color: AppColors.muted)),
-                          Text('탭해서 갤러리에서 선택', style: AppText.body(11, color: AppColors.subtle)),
-                        ]),
+              ),
+              const SizedBox(height: 18),
+              _ComposeHeader(submitting: _submitting, onSubmit: _submit),
+              const SizedBox(height: 18),
+              _MediaTypeSwitch(
+                selected: _mediaType,
+                enabled: !_submitting,
+                onChanged: (value) => setState(() => _mediaType = value),
+              ),
+              const SizedBox(height: 14),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: _mediaType == _ComposeMediaType.photo
+                    ? _PhotoPicker(
+                        key: const ValueKey('photo-picker'),
+                        imageBytes: _imageBytes,
+                        submitting: _submitting,
+                        onPick: _pickImage,
+                        onClear: () => setState(() => _imageBytes = null),
+                      )
+                    : _VideoPicker(
+                        key: const ValueKey('video-picker'),
+                        videoName: _videoName,
+                        videoBytes: _videoBytes,
+                        submitting: _submitting,
+                        onPick: _pickVideo,
+                        onClear: () => setState(() {
+                          _videoBytes = null;
+                          _videoName = null;
+                          _videoMimeType = 'video/mp4';
+                        }),
                       ),
               ),
+              const SizedBox(height: 16),
+              _StyledTextField(
+                controller: _titleCtrl,
+                maxLength: 60,
+                hintText: _mediaType == _ComposeMediaType.photo
+                    ? '사진 제목'
+                    : '영상 제목',
+                icon: Icons.title_rounded,
+              ),
+              const SizedBox(height: 10),
+              _StyledTextField(
+                controller: _contentCtrl,
+                maxLines: 4,
+                hintText: _mediaType == _ComposeMediaType.photo
+                    ? '사진 설명이나 재미있는 한마디'
+                    : '영상 설명이나 재미있는 한마디',
+                icon: Icons.short_text_rounded,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ComposeHeader extends StatelessWidget {
+  final bool submitting;
+  final VoidCallback onSubmit;
+
+  const _ComposeHeader({required this.submitting, required this.onSubmit});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.18),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.add_comment_rounded,
+            color: Colors.white,
+            size: 21,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('게시물 올리기', style: AppText.headline(21)),
+              const SizedBox(height: 2),
+              Text(
+                '사진과 짧은 순간을 함께 나눠요',
+                style: AppText.body(12, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ),
+        FilledButton(
+          onPressed: submitting ? null : onSubmit,
+          style: FilledButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(62, 40),
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
             ),
           ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _titleCtrl,
-            maxLength: 60,
-            decoration: const InputDecoration(
-              hintText: '제목 (필수)',
-              border: OutlineInputBorder(),
-              counterText: '',
+          child: submitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Text(
+                  '등록',
+                  style: AppText.body(
+                    14,
+                    weight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MediaTypeSwitch extends StatelessWidget {
+  final _ComposeMediaType selected;
+  final bool enabled;
+  final ValueChanged<_ComposeMediaType> onChanged;
+
+  const _MediaTypeSwitch({
+    required this.selected,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _MediaTypeButton(
+              label: '사진',
+              icon: Icons.photo_camera_outlined,
+              selected: selected == _ComposeMediaType.photo,
+              enabled: enabled,
+              onTap: () => onChanged(_ComposeMediaType.photo),
             ),
           ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _contentCtrl,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              hintText: '내용 (선택)',
-              border: OutlineInputBorder(),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _MediaTypeButton(
+              label: '12초 영상',
+              icon: Icons.movie_creation_outlined,
+              selected: selected == _ComposeMediaType.video,
+              enabled: enabled,
+              onTap: () => onChanged(_ComposeMediaType.video),
             ),
           ),
-        ]),
+        ],
+      ),
+    );
+  }
+}
+
+class _MediaTypeButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _MediaTypeButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? Colors.white : Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(13),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 42,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 17,
+                color: selected ? AppColors.primary : AppColors.muted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppText.body(
+                  13,
+                  weight: FontWeight.w800,
+                  color: selected ? AppColors.primary : AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PhotoPicker extends StatelessWidget {
+  final Uint8List? imageBytes;
+  final bool submitting;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  const _PhotoPicker({
+    super.key,
+    required this.imageBytes,
+    required this.submitting,
+    required this.onPick,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: submitting ? null : onPick,
+      child: AspectRatio(
+        aspectRatio: 1.16,
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLow,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border.withValues(alpha: 0.45)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: imageBytes != null
+              ? Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.memory(imageBytes!, fit: BoxFit.cover),
+                    _ClearButton(onTap: onClear),
+                  ],
+                )
+              : const _PickerEmptyState(
+                  icon: Icons.add_photo_alternate_outlined,
+                  title: '사진 추가',
+                  subtitle: '갤러리에서 재미있는 순간을 골라주세요',
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoPicker extends StatelessWidget {
+  final String? videoName;
+  final Uint8List? videoBytes;
+  final bool submitting;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  const _VideoPicker({
+    super.key,
+    required this.videoName,
+    required this.videoBytes,
+    required this.submitting,
+    required this.onPick,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasVideo = videoBytes != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GestureDetector(
+          onTap: submitting ? null : onPick,
+          child: Container(
+            height: 174,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: hasVideo
+                    ? AppColors.primary.withValues(alpha: 0.35)
+                    : AppColors.border.withValues(alpha: 0.45),
+              ),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: hasVideo
+                    ? const [Color(0xFF061B33), Color(0xFF0A315F)]
+                    : [
+                        AppColors.primary.withValues(alpha: 0.045),
+                        AppColors.secondary.withValues(alpha: 0.08),
+                      ],
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                Center(
+                  child: hasVideo
+                      ? _SelectedVideoState(videoName: videoName)
+                      : const _PickerEmptyState(
+                          icon: Icons.video_library_outlined,
+                          title: '12초 이하 영상 선택',
+                          subtitle: '긴 영상은 휴대폰에서 먼저 잘라서 올려주세요',
+                        ),
+                ),
+                if (hasVideo) _ClearButton(onTap: onClear),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.secondaryContainer.withValues(alpha: 0.35),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AppColors.secondary.withValues(alpha: 0.18),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.cut_rounded,
+                size: 17,
+                color: AppColors.secondary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '지금은 앱 안에서 영상을 보며 자르는 기능은 준비 전이에요. 12초 이내로 편집한 영상만 선택해주세요.',
+                  style: AppText.body(
+                    12,
+                    height: 1.45,
+                    color: AppColors.primary,
+                    weight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SelectedVideoState extends StatelessWidget {
+  final String? videoName;
+
+  const _SelectedVideoState({required this.videoName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+            ),
+            child: const Icon(
+              Icons.movie_filter_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            videoName ?? '선택한 영상',
+            style: AppText.body(
+              14,
+              weight: FontWeight.w900,
+              color: Colors.white,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '업로드 후 서버에서 가볍게 압축됩니다',
+            style: AppText.body(
+              11,
+              color: Colors.white.withValues(alpha: 0.68),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PickerEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  const _PickerEmptyState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 38, color: AppColors.muted),
+        const SizedBox(height: 10),
+        Text(
+          title,
+          style: AppText.body(
+            14,
+            weight: FontWeight.w800,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: AppText.body(11, color: AppColors.subtle),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+class _ClearButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _ClearButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: 9,
+      right: 9,
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(999),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap,
+          child: const Padding(
+            padding: EdgeInsets.all(7),
+            child: Icon(Icons.close_rounded, size: 17, color: Colors.white),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StyledTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String hintText;
+  final IconData icon;
+  final int? maxLength;
+  final int maxLines;
+
+  const _StyledTextField({
+    required this.controller,
+    required this.hintText,
+    required this.icon,
+    this.maxLength,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      maxLength: maxLength,
+      maxLines: maxLines,
+      style: AppText.body(14, weight: FontWeight.w600),
+      decoration: InputDecoration(
+        hintText: hintText,
+        hintStyle: AppText.body(13, color: AppColors.subtle),
+        counterText: '',
+        filled: true,
+        fillColor: AppColors.surfaceLow,
+        prefixIcon: Padding(
+          padding: EdgeInsets.only(bottom: maxLines > 1 ? 58 : 0),
+          child: Icon(icon, size: 18, color: AppColors.muted),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 15,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide(
+            color: AppColors.border.withValues(alpha: 0.5),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide(
+            color: AppColors.border.withValues(alpha: 0.45),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+        ),
       ),
     );
   }

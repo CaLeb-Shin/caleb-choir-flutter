@@ -5,7 +5,6 @@ import 'package:share_plus/share_plus.dart' show Share;
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
-import '../../models/user.dart' show User;
 import '../qr_scan/qr_scan_screen.dart';
 
 class AttendanceScreen extends ConsumerWidget {
@@ -214,7 +213,9 @@ class AttendanceScreen extends ConsumerWidget {
               onPressed: () async {
                 final h = ref.read(myHistoryProvider).valueOrNull ?? [];
                 final csv = h.map((r) => '${r['sessionTitle']},${r['checkedInAt']}').join('\n');
-                if (csv.isNotEmpty) await Share.share(csv, subject: '갈렙찬양대 출석기록');
+                if (csv.isNotEmpty) {
+                  await Share.share(csv, subject: '갈렙찬양대 출석기록');
+                }
               },
               icon: const Icon(Icons.download_rounded, size: 18),
               label: const Text('출석 내보내기'),

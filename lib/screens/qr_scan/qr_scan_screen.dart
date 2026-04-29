@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/app_logo_title.dart';
 
 class QrScanScreen extends StatefulWidget {
   final void Function(String code) onScanned;
@@ -24,10 +26,14 @@ class _QrScanScreenState extends State<QrScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('QR 스캔'),
+        title: const AppLogoTitle(
+          title: 'QR 스캔',
+          textStyle: TextStyle(color: Colors.white),
+        ),
         backgroundColor: AppColors.primaryContainer,
         foregroundColor: Colors.white,
       ),
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 3),
       body: Stack(
         children: [
           MobileScanner(
@@ -45,9 +51,13 @@ class _QrScanScreenState extends State<QrScanScreen> {
           // Overlay
           Center(
             child: Container(
-              width: 250, height: 250,
+              width: 250,
+              height: 250,
               decoration: BoxDecoration(
-                border: Border.all(color: AppColors.secondaryContainer, width: 3),
+                border: Border.all(
+                  color: AppColors.secondaryContainer,
+                  width: 3,
+                ),
                 borderRadius: BorderRadius.circular(20),
               ),
             ),
@@ -55,17 +65,25 @@ class _QrScanScreenState extends State<QrScanScreen> {
           // Bottom instruction
           Positioned(
             bottom: 80,
-            left: 0, right: 0,
+            left: 0,
+            right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Text(
                   'QR 코드를 카메라에 비춰주세요',
-                  style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),

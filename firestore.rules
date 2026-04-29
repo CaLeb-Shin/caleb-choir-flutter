@@ -102,9 +102,14 @@ service cloud.firestore {
     match /attendance/{docId} {
       allow read: if resource.data.keys().hasAll(['churchId']) && sameChurch(resource.data.churchId);
       allow create: if isSignedIn()
-        && request.auth.uid == request.resource.data.userId
         && request.resource.data.keys().hasAll(['churchId'])
-        && sameChurch(request.resource.data.churchId);
+        && (
+          (request.auth.uid == request.resource.data.userId
+            && sameChurch(request.resource.data.churchId))
+          || isChurchAdminOf(request.resource.data.churchId)
+        );
+      allow delete: if resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
     }
 
     match /posts/{docId} {

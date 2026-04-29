@@ -5,19 +5,21 @@ class User {
   final String? email;
   final String? role;
   final String? generation;
+  final String? choirName;
+  final String? churchPosition;
   final String? part;
   final String? phone;
   final String? profileImageUrl;
   final String? partLeaderFor;
   final bool profileCompleted;
   // ── Approval workflow ──
-  final String? requestedRole;     // 'member' | 'part_leader' | 'church_admin'
+  final String? requestedRole; // 'member' | 'part_leader' | 'church_admin'
   final String? requestedPart;
-  final String? approvalStatus;    // 'pending' | 'approved' | 'rejected'
+  final String? approvalStatus; // 'pending' | 'approved' | 'rejected'
   final String? rejectionReason;
   // ── Multi-tenant ──
-  final String? churchId;          // 승인 전엔 null
-  final String? approvalScope;     // 'church' | 'platform' | null
+  final String? churchId; // 승인 전엔 null
+  final String? approvalScope; // 'church' | 'platform' | null
   final String? requestedChurchId; // platform scope일 때 churches doc 참조
   final bool isPlatformAdmin;
 
@@ -28,6 +30,8 @@ class User {
     this.email,
     this.role,
     this.generation,
+    this.choirName,
+    this.churchPosition,
     this.part,
     this.phone,
     this.profileImageUrl,
@@ -97,6 +101,8 @@ class User {
       email: map['email'] as String?,
       role: map['role'] as String?,
       generation: map['generation'] as String?,
+      choirName: map['choirName'] as String?,
+      churchPosition: map['churchPosition'] as String?,
       part: map['part'] as String?,
       phone: map['phone'] as String?,
       profileImageUrl: map['profileImageUrl'] as String?,

@@ -18,6 +18,8 @@ import 'screens/community/community_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
 import 'screens/community/post_compose_sheet.dart';
+import 'widgets/app_bottom_nav_bar.dart';
+import 'widgets/app_logo_title.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,7 +38,17 @@ class CalebChoirApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final localPreviewMode = ref.watch(localPreviewModeProvider);
+    final localLoginMode = ref.watch(loginPreviewModeProvider);
     final authState = ref.watch(authStateProvider);
+    final isLocalWeb =
+        kIsWeb &&
+        (Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1');
+    final loginPreviewMode =
+        localLoginMode ||
+        (isLocalWeb && Uri.base.queryParameters['login'] == '1');
+    final onboardingPreviewMode =
+        isLocalWeb && Uri.base.queryParameters['onboarding'] == '1';
 
     return MaterialApp(
       title: 'C.C',
@@ -54,13 +66,18 @@ class CalebChoirApp extends ConsumerWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(40),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 60),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    blurRadius: 60,
+                  ),
                 ],
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(40),
                 child: MediaQuery(
-                  data: MediaQuery.of(context).copyWith(size: const Size(430, 932)),
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(size: const Size(430, 932)),
                   child: child,
                 ),
               ),
@@ -68,34 +85,56 @@ class CalebChoirApp extends ConsumerWidget {
           ),
         );
       },
-      home: authState.when(
-        loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-        error: (_, __) => const LoginScreen(),
-        data: (user) {
-          if (user == null) return const LoginScreen();
-          // 승인 상태 실시간 스트림 (관리자 승인 시 자동 전환)
-          final myProfileStream = ref.watch(myProfileStreamProvider);
-          return myProfileStream.when(
-            loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-            error: (_, __) => const OnboardingScreen(),
-            data: (profile) {
-              // 1) Firestore users 문서가 아직 없음 → 최초 가입 경로
-              if (profile == null) return const OnboardingScreen();
-              // 2) 교회 미선택 + 승인 스코프도 없음 → 가입 플로우 재진입
-              //    (플랫폼 관리자도 교회 소속/프로필 완성 후 앱 사용 가능)
-              if (profile.needsChurchSelection) return const OnboardingScreen();
-              // 4) 프로필이 미완성 상태 (에지) → 재선택 유도
-              if (!profile.profileCompleted) return const OnboardingScreen();
-              // 5) 거부됨
-              if (profile.isRejected) return const RejectedScreen();
-              // 6) 승인 대기 (church/platform scope 둘 다)
-              if (profile.isPending) return const PendingApprovalScreen();
-              // 7) 승인 완료 (또는 approvalStatus null인 레거시) → 메인
-              return const MainShell();
-            },
-          );
-        },
-      ),
+      home: localPreviewMode
+          ? const MainShell()
+          : loginPreviewMode
+          ? const LoginScreen()
+          : onboardingPreviewMode
+          ? const OnboardingScreen()
+          : authState.when(
+              loading: () => const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              ),
+              error: (error, stackTrace) => const LoginScreen(),
+              data: (user) {
+                if (user == null) {
+                  return const LoginScreen();
+                }
+                // 승인 상태 실시간 스트림 (관리자 승인 시 자동 전환)
+                final myProfileStream = ref.watch(myProfileStreamProvider);
+                return myProfileStream.when(
+                  loading: () => const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  ),
+                  error: (error, stackTrace) => const OnboardingScreen(),
+                  data: (profile) {
+                    // 1) Firestore users 문서가 아직 없음 → 최초 가입 경로
+                    if (profile == null) {
+                      return const OnboardingScreen();
+                    }
+                    // 2) 교회 미선택 + 승인 스코프도 없음 → 가입 플로우 재진입
+                    //    (플랫폼 관리자도 교회 소속/프로필 완성 후 앱 사용 가능)
+                    if (profile.needsChurchSelection) {
+                      return const OnboardingScreen();
+                    }
+                    // 4) 프로필이 미완성 상태 (에지) → 재선택 유도
+                    if (!profile.profileCompleted) {
+                      return const OnboardingScreen();
+                    }
+                    // 5) 거부됨
+                    if (profile.isRejected) {
+                      return const RejectedScreen();
+                    }
+                    // 6) 승인 대기 (church/platform scope 둘 다)
+                    if (profile.isPending) {
+                      return const PendingApprovalScreen();
+                    }
+                    // 7) 승인 완료 (또는 approvalStatus null인 레거시) → 메인
+                    return const MainShell();
+                  },
+                );
+              },
+            ),
     );
   }
 }
@@ -117,77 +156,44 @@ class _MainShellState extends ConsumerState<MainShell> {
     ProfileScreen(),
   ];
 
-  static const _items = [
-    (Icons.home_rounded, '홈'),
-    (Icons.music_note_rounded, '악보'),
-    (Icons.play_circle_rounded, '영상'),
-    (Icons.calendar_today_rounded, '출석'),
-    (Icons.chat_bubble_rounded, '소통'),
-    (Icons.person_rounded, '마이'),
-  ];
+  static const _titles = ['홈', '악보', '영상', '출석', '소통', '마이'];
 
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(tabIndexProvider);
 
     return Scaffold(
-      body: SafeArea(child: _screens[index]),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          border: Border(top: BorderSide(color: AppColors.border.withValues(alpha: 0.3))),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(_items.length, (i) {
-                final active = index == i;
-                final (icon, label) = _items[i];
-                return MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () => ref.read(tabIndexProvider.notifier).state = i,
-                    behavior: HitTestBehavior.opaque,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 56,
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        AnimatedScale(
-                          scale: active ? 1.15 : 1.0,
-                          duration: const Duration(milliseconds: 200),
-                          child: Icon(icon, size: 24, color: active ? AppColors.primary : AppColors.muted),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                            color: active ? AppColors.primary : AppColors.muted,
-                          ),
-                        ),
-                        if (active) ...[
-                          const SizedBox(height: 3),
-                          Container(width: 4, height: 4, decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.secondaryContainer)),
-                        ],
-                      ]),
-                    ),
-                  ),
-                );
-              }),
+      appBar: index == 0
+          ? null
+          : AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                tooltip: '뒤로가기',
+                onPressed: () {
+                  if (Navigator.of(context).canPop()) {
+                    Navigator.of(context).maybePop();
+                  } else {
+                    ref.read(tabIndexProvider.notifier).state = 0;
+                  }
+                },
+              ),
+              title: AppLogoTitle(
+                title: _titles[index],
+                textStyle: AppText.headline(20),
+              ),
             ),
-          ),
-        ),
+      body: SafeArea(child: _screens[index]),
+      bottomNavigationBar: AppBottomNavBar(
+        currentIndex: index,
+        popToRootOnTap: false,
       ),
       floatingActionButton: index == 4
           ? FloatingActionButton(
               onPressed: () => _openComposeSheet(context),
               backgroundColor: AppColors.primaryContainer,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: const Icon(Icons.edit_rounded, color: Colors.white),
             )
           : null,

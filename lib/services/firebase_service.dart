@@ -33,12 +33,13 @@ class FirebaseService {
   static Stream<fb.User?> get authStateChanges => _auth.authStateChanges();
 
   static Future<void> signOut() async {
-    // 카카오 로그아웃 시도 (카카오로 로그인한 경우)
-    try {
-      await kakao.UserApi.instance.logout();
-    } catch (_) {}
     _currentChurchIdCache = null;
     await _auth.signOut();
+
+    // 카카오 로그아웃 시도 (카카오로 로그인한 경우)
+    try {
+      await kakao.UserApi.instance.logout().timeout(const Duration(seconds: 2));
+    } catch (_) {}
   }
 
   // ============ User Profile ============
@@ -52,14 +53,12 @@ class FirebaseService {
   static Future<void> createProfile(Map<String, dynamic> data) async {
     if (uid == null) return;
     final email = currentUser?.email;
-    final isWhitelisted = email != null && adminEmails.contains(email.toLowerCase());
+    final isWhitelisted =
+        email != null && adminEmails.contains(email.toLowerCase());
 
     // 관리자 화이트리스트 이메일은 자동 승인 + admin role
     final autoApproval = isWhitelisted
-        ? {
-            'role': 'admin',
-            'approvalStatus': 'approved',
-          }
+        ? {'role': 'admin', 'approvalStatus': 'approved'}
         : {
             'role': null, // 승인 후 관리자가 확정
             'approvalStatus': 'pending',
@@ -110,7 +109,8 @@ class FirebaseService {
 
   // ============ Approval Workflow ============
   static Future<List<Map<String, dynamic>>> getPendingUsers() async {
-    final snapshot = await _db.collection('users')
+    final snapshot = await _db
+        .collection('users')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('approvalStatus', isEqualTo: 'pending')
         .get();
@@ -118,14 +118,16 @@ class FirebaseService {
   }
 
   static Future<List<Map<String, dynamic>>> getRejectedUsers() async {
-    final snapshot = await _db.collection('users')
+    final snapshot = await _db
+        .collection('users')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('approvalStatus', isEqualTo: 'rejected')
         .get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
-  static Future<void> approveUser(String userId, {
+  static Future<void> approveUser(
+    String userId, {
     required String role,
     String? partLeaderFor,
   }) async {
@@ -163,27 +165,38 @@ class FirebaseService {
   }
 
   /// 프로필 이미지 업로드 → downloadUrl 반환
-  static Future<String?> uploadProfileImage(Uint8List bytes, {String contentType = 'image/jpeg'}) async {
+  static Future<String?> uploadProfileImage(
+    Uint8List bytes, {
+    String contentType = 'image/jpeg',
+  }) async {
     if (uid == null) return null;
-    final ref = FirebaseStorage.instance.ref().child('profile_images').child('$uid.jpg');
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('profile_images')
+        .child('$uid.jpg');
     await ref.putData(bytes, SettableMetadata(contentType: contentType));
     return await ref.getDownloadURL();
   }
 
   static Future<List<Map<String, dynamic>>> getAllMembers() async {
-    final snapshot = await _db.collection('users')
+    final snapshot = await _db
+        .collection('users')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('profileCompleted', isEqualTo: true)
         .get();
     return snapshot.docs
         .map((d) => {'id': d.id, ...d.data()})
-        .where((m) => m['approvalStatus'] == null || m['approvalStatus'] == 'approved')
+        .where(
+          (m) =>
+              m['approvalStatus'] == null || m['approvalStatus'] == 'approved',
+        )
         .toList();
   }
 
   // ============ Attendance Sessions ============
   static Future<Map<String, dynamic>?> getActiveSession() async {
-    final snapshot = await _db.collection('attendance_sessions')
+    final snapshot = await _db
+        .collection('attendance_sessions')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('isOpen', isEqualTo: true)
         .limit(1)
@@ -193,8 +206,11 @@ class FirebaseService {
     return {'id': doc.id, ...doc.data()};
   }
 
-  static Future<List<Map<String, dynamic>>> getRecentSessions({int limit = 20}) async {
-    final snapshot = await _db.collection('attendance_sessions')
+  static Future<List<Map<String, dynamic>>> getRecentSessions({
+    int limit = 20,
+  }) async {
+    final snapshot = await _db
+        .collection('attendance_sessions')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('openedAt', descending: true)
         .limit(limit)
@@ -226,7 +242,8 @@ class FirebaseService {
     final churchId = _requireChurchId();
 
     // Check if already checked in
-    final existing = await _db.collection('attendance')
+    final existing = await _db
+        .collection('attendance')
         .where('churchId', isEqualTo: churchId)
         .where('userId', isEqualTo: uid)
         .where('sessionId', isEqualTo: sessionId)
@@ -249,7 +266,8 @@ class FirebaseService {
 
   static Future<List<Map<String, dynamic>>> getMyHistory() async {
     if (uid == null) return [];
-    final snapshot = await _db.collection('attendance')
+    final snapshot = await _db
+        .collection('attendance')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('userId', isEqualTo: uid)
         .orderBy('checkedInAt', descending: true)
@@ -258,18 +276,26 @@ class FirebaseService {
     final records = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      final sessionDoc = await _db.collection('attendance_sessions').doc(data['sessionId']).get();
+      final sessionDoc = await _db
+          .collection('attendance_sessions')
+          .doc(data['sessionId'])
+          .get();
       records.add({
         'id': doc.id,
         'sessionTitle': sessionDoc.data()?['title'] ?? '',
-        'checkedInAt': (data['checkedInAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+        'checkedInAt':
+            (data['checkedInAt'] as Timestamp?)?.toDate().toIso8601String() ??
+            '',
       });
     }
     return records;
   }
 
-  static Future<List<Map<String, dynamic>>> getSessionAttendees(String sessionId) async {
-    final snapshot = await _db.collection('attendance')
+  static Future<List<Map<String, dynamic>>> getSessionAttendees(
+    String sessionId,
+  ) async {
+    final snapshot = await _db
+        .collection('attendance')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('sessionId', isEqualTo: sessionId)
         .get();
@@ -282,7 +308,9 @@ class FirebaseService {
         'id': doc.id,
         'userName': userDoc.data()?['name'] ?? '',
         'userPart': userDoc.data()?['part'] ?? '',
-        'checkedInAt': (data['checkedInAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+        'checkedInAt':
+            (data['checkedInAt'] as Timestamp?)?.toDate().toIso8601String() ??
+            '',
       });
     }
     return attendees;
@@ -290,7 +318,8 @@ class FirebaseService {
 
   // ============ Videos ============
   static Future<List<Map<String, dynamic>>> getVideos() async {
-    final snapshot = await _db.collection('videos')
+    final snapshot = await _db
+        .collection('videos')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .get();
@@ -299,7 +328,9 @@ class FirebaseService {
 
   // ============ Awards data ============
   /// Posts created on/after [since], with userId+reactions intact (light shape).
-  static Future<List<Map<String, dynamic>>> getPostsSince(DateTime since) async {
+  static Future<List<Map<String, dynamic>>> getPostsSince(
+    DateTime since,
+  ) async {
     final snapshot = await _db
         .collection('posts')
         .where('churchId', isEqualTo: _requireChurchId())
@@ -318,7 +349,9 @@ class FirebaseService {
   }
 
   /// Attendance records on/after [since].
-  static Future<List<Map<String, dynamic>>> getAttendanceSince(DateTime since) async {
+  static Future<List<Map<String, dynamic>>> getAttendanceSince(
+    DateTime since,
+  ) async {
     final snapshot = await _db
         .collection('attendance')
         .where('churchId', isEqualTo: _requireChurchId())
@@ -336,7 +369,9 @@ class FirebaseService {
   }
 
   /// Attendance sessions opened on/after [since].
-  static Future<List<Map<String, dynamic>>> getSessionsSince(DateTime since) async {
+  static Future<List<Map<String, dynamic>>> getSessionsSince(
+    DateTime since,
+  ) async {
     final snapshot = await _db
         .collection('attendance_sessions')
         .where('churchId', isEqualTo: _requireChurchId())
@@ -352,7 +387,9 @@ class FirebaseService {
   }
 
   /// All comments authored on/after [since], across every post.
-  static Future<List<Map<String, dynamic>>> getCommentsSince(DateTime since) async {
+  static Future<List<Map<String, dynamic>>> getCommentsSince(
+    DateTime since,
+  ) async {
     final snapshot = await _db
         .collectionGroup('comments')
         .where('churchId', isEqualTo: _requireChurchId())
@@ -370,7 +407,8 @@ class FirebaseService {
 
   // ============ Posts ============
   static Future<List<Map<String, dynamic>>> getPosts() async {
-    final snapshot = await _db.collection('posts')
+    final snapshot = await _db
+        .collection('posts')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .limit(50)
@@ -386,7 +424,8 @@ class FirebaseService {
         'userPart': userDoc.data()?['part'] ?? '',
         'userGeneration': userDoc.data()?['generation'] ?? '',
         'userImageUrl': userDoc.data()?['imageUrl'],
-        'createdAt': (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+        'createdAt':
+            (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
       });
     }
     return posts;
@@ -404,23 +443,69 @@ class FirebaseService {
       'userPart': userDoc.data()?['part'] ?? '',
       'userGeneration': userDoc.data()?['generation'] ?? '',
       'userImageUrl': userDoc.data()?['imageUrl'],
-      'createdAt': (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+      'createdAt':
+          (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
     };
   }
 
   /// 게시물 이미지 업로드 → downloadUrl 반환
-  static Future<String?> uploadPostImage(Uint8List bytes, {String contentType = 'image/jpeg'}) async {
+  static Future<String?> uploadPostImage(
+    Uint8List bytes, {
+    String contentType = 'image/jpeg',
+  }) async {
     if (uid == null) return null;
     final filename = '${DateTime.now().millisecondsSinceEpoch}_$uid.jpg';
-    final ref = FirebaseStorage.instance.ref().child('post_images').child(filename);
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('post_images')
+        .child(filename);
     await ref.putData(bytes, SettableMetadata(contentType: contentType));
     return await ref.getDownloadURL();
+  }
+
+  /// 게시물 영상 원본 업로드 → 서버 압축 함수가 처리할 Storage path 반환
+  static Future<String?> uploadPostVideoSource(
+    Uint8List bytes, {
+    required String postId,
+    required int trimStartSec,
+    required int trimEndSec,
+    String contentType = 'video/mp4',
+    String extension = 'mp4',
+  }) async {
+    if (uid == null) return null;
+    final safeExtension = extension.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final filename =
+        '${postId}_${DateTime.now().millisecondsSinceEpoch}_$uid.${safeExtension.isEmpty ? 'mp4' : safeExtension}';
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('post_videos')
+        .child('source')
+        .child(filename);
+    await ref.putData(
+      bytes,
+      SettableMetadata(
+        contentType: contentType,
+        customMetadata: {
+          'postId': postId,
+          'churchId': _requireChurchId(),
+          'userId': uid!,
+          'trimStartSec': '$trimStartSec',
+          'trimEndSec': '$trimEndSec',
+        },
+      ),
+    );
+    return ref.fullPath;
   }
 
   static Future<String> createPost({
     required String title,
     String? content,
     String? imageUrl,
+    String mediaType = 'photo',
+    String? videoStatus,
+    String? videoSourcePath,
+    int? videoTrimStartSec,
+    int? videoTrimEndSec,
   }) async {
     final docRef = await _db.collection('posts').add({
       'churchId': _requireChurchId(),
@@ -428,15 +513,27 @@ class FirebaseService {
       'title': title,
       'content': content,
       'imageUrl': imageUrl,
-      'reactions': <String, List<String>>{
-        'like': [],
-        'sad': [],
-        'pray': [],
-      },
+      'mediaType': mediaType,
+      if (videoStatus != null) 'videoStatus': videoStatus,
+      if (videoSourcePath != null) 'videoSourcePath': videoSourcePath,
+      if (videoTrimStartSec != null) 'videoTrimStartSec': videoTrimStartSec,
+      if (videoTrimEndSec != null) 'videoTrimEndSec': videoTrimEndSec,
+      'reactions': <String, List<String>>{'like': [], 'sad': [], 'pray': []},
       'commentCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
     });
     return docRef.id;
+  }
+
+  static Future<void> markPostVideoProcessing(
+    String postId, {
+    required String sourcePath,
+  }) async {
+    await _db.collection('posts').doc(postId).update({
+      'videoSourcePath': sourcePath,
+      'videoStatus': 'processing',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   static Future<void> deletePost(String postId) async {
@@ -450,8 +547,11 @@ class FirebaseService {
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) return;
-      final reactionsRaw = (snap.data()?['reactions'] as Map<String, dynamic>?) ?? {};
-      final list = List<String>.from((reactionsRaw[type] as List<dynamic>?) ?? []);
+      final reactionsRaw =
+          (snap.data()?['reactions'] as Map<String, dynamic>?) ?? {};
+      final list = List<String>.from(
+        (reactionsRaw[type] as List<dynamic>?) ?? [],
+      );
       if (list.contains(uid)) {
         list.remove(uid);
       } else {
@@ -464,8 +564,11 @@ class FirebaseService {
   // ============ Post Comments ============
   static Future<List<Map<String, dynamic>>> getComments(String postId) async {
     final snapshot = await _db
-        .collection('posts').doc(postId)
-        .collection('comments').orderBy('createdAt', descending: false).get();
+        .collection('posts')
+        .doc(postId)
+        .collection('comments')
+        .orderBy('createdAt', descending: false)
+        .get();
     final comments = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
@@ -476,7 +579,8 @@ class FirebaseService {
         'userName': userDoc.data()?['name'] ?? '',
         'userPart': userDoc.data()?['part'] ?? '',
         'userImageUrl': userDoc.data()?['imageUrl'],
-        'createdAt': (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+        'createdAt':
+            (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
       });
     }
     return comments;
@@ -503,18 +607,30 @@ class FirebaseService {
 
   // ============ Announcements ============
   static Future<List<Map<String, dynamic>>> getAnnouncements() async {
-    final snapshot = await _db.collection('announcements')
+    final snapshot = await _db
+        .collection('announcements')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data(),
-      'createdAt': (d.data()['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
-    }).toList();
+    return snapshot.docs
+        .map(
+          (d) => {
+            'id': d.id,
+            ...d.data(),
+            'createdAt':
+                (d.data()['createdAt'] as Timestamp?)
+                    ?.toDate()
+                    .toIso8601String() ??
+                '',
+          },
+        )
+        .toList();
   }
 
   // ============ Sheet Music ============
   static Future<List<Map<String, dynamic>>> getSheetMusic() async {
-    final snapshot = await _db.collection('sheet_music')
+    final snapshot = await _db
+        .collection('sheet_music')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .get();
@@ -523,7 +639,8 @@ class FirebaseService {
 
   // ============ Events ============
   static Future<List<Map<String, dynamic>>> getEvents() async {
-    final snapshot = await _db.collection('events')
+    final snapshot = await _db
+        .collection('events')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .get();
@@ -531,7 +648,10 @@ class FirebaseService {
   }
 
   // ============ Admin: Announcements ============
-  static Future<void> createAnnouncement(String title, {String? content}) async {
+  static Future<void> createAnnouncement(
+    String title, {
+    String? content,
+  }) async {
     await _db.collection('announcements').add({
       'churchId': _requireChurchId(),
       'title': title,
@@ -546,7 +666,11 @@ class FirebaseService {
   }
 
   // ============ Admin: Videos ============
-  static Future<void> addVideo(String title, String youtubeUrl, {String? description}) async {
+  static Future<void> addVideo(
+    String title,
+    String youtubeUrl, {
+    String? description,
+  }) async {
     await _db.collection('videos').add({
       'churchId': _requireChurchId(),
       'title': title,
@@ -562,7 +686,11 @@ class FirebaseService {
   }
 
   // ============ Admin: Sheet Music ============
-  static Future<void> addSheetMusic(String title, {String? composer, String? fileUrl}) async {
+  static Future<void> addSheetMusic(
+    String title, {
+    String? composer,
+    String? fileUrl,
+  }) async {
     await _db.collection('sheet_music').add({
       'churchId': _requireChurchId(),
       'title': title,
@@ -601,7 +729,8 @@ class FirebaseService {
     final userDoc = await _db.collection('users').doc(userId).get();
     if (!userDoc.exists) throw Exception('해당 단원을 찾을 수 없습니다');
 
-    final existing = await _db.collection('attendance')
+    final existing = await _db
+        .collection('attendance')
         .where('churchId', isEqualTo: churchId)
         .where('userId', isEqualTo: userId)
         .where('sessionId', isEqualTo: session['id'])
@@ -609,7 +738,10 @@ class FirebaseService {
         .get();
 
     if (existing.docs.isNotEmpty) {
-      return {'alreadyCheckedIn': true, 'userName': userDoc.data()?['name'] ?? ''};
+      return {
+        'alreadyCheckedIn': true,
+        'userName': userDoc.data()?['name'] ?? '',
+      };
     }
 
     await _db.collection('attendance').add({
@@ -619,7 +751,10 @@ class FirebaseService {
       'checkedInAt': FieldValue.serverTimestamp(),
     });
 
-    return {'alreadyCheckedIn': false, 'userName': userDoc.data()?['name'] ?? ''};
+    return {
+      'alreadyCheckedIn': false,
+      'userName': userDoc.data()?['name'] ?? '',
+    };
   }
 
   // ============ Polls (참석 투표) ============
@@ -651,7 +786,8 @@ class FirebaseService {
   }
 
   static Future<List<Map<String, dynamic>>> getPolls() async {
-    final snapshot = await _db.collection('polls')
+    final snapshot = await _db
+        .collection('polls')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .get();
@@ -661,7 +797,8 @@ class FirebaseService {
   static Future<void> vote(String pollId, String choice) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final churchId = _requireChurchId();
-    final existing = await _db.collection('poll_votes')
+    final existing = await _db
+        .collection('poll_votes')
         .where('churchId', isEqualTo: churchId)
         .where('pollId', isEqualTo: pollId)
         .where('userId', isEqualTo: uid)
@@ -685,7 +822,8 @@ class FirebaseService {
   }
 
   static Future<List<Map<String, dynamic>>> getPollVotes(String pollId) async {
-    final snapshot = await _db.collection('poll_votes')
+    final snapshot = await _db
+        .collection('poll_votes')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('pollId', isEqualTo: pollId)
         .get();
@@ -707,11 +845,15 @@ class FirebaseService {
   static Future<String> createSeatingChart({
     required String label,
     required String eventDate,
+    String? sourcePollId,
+    String? sourcePollTitle,
   }) async {
     final docRef = await _db.collection('seating_charts').add({
       'churchId': _requireChurchId(),
       'label': label,
       'eventDate': eventDate,
+      'sourcePollId': sourcePollId,
+      'sourcePollTitle': sourcePollTitle,
       'createdBy': uid,
       'isPublished': false,
       'createdAt': FieldValue.serverTimestamp(),
@@ -719,22 +861,32 @@ class FirebaseService {
     return docRef.id;
   }
 
-  static Future<void> publishSeatingChart(String chartId, bool isPublished) async {
-    await _db.collection('seating_charts').doc(chartId).update({'isPublished': isPublished});
+  static Future<void> publishSeatingChart(
+    String chartId,
+    bool isPublished,
+  ) async {
+    await _db.collection('seating_charts').doc(chartId).update({
+      'isPublished': isPublished,
+    });
   }
 
   static Future<void> deleteSeatingChart(String chartId) async {
-    final assignments = await _db.collection('seat_assignments')
+    final assignments = await _db
+        .collection('seat_assignments')
         .where('churchId', isEqualTo: _requireChurchId())
-        .where('chartId', isEqualTo: chartId).get();
+        .where('chartId', isEqualTo: chartId)
+        .get();
     for (final doc in assignments.docs) {
       await doc.reference.delete();
     }
     await _db.collection('seating_charts').doc(chartId).delete();
   }
 
-  static Future<List<Map<String, dynamic>>> getSeatingCharts({bool publishedOnly = false}) async {
-    Query<Map<String, dynamic>> query = _db.collection('seating_charts')
+  static Future<List<Map<String, dynamic>>> getSeatingCharts({
+    bool publishedOnly = false,
+  }) async {
+    Query<Map<String, dynamic>> query = _db
+        .collection('seating_charts')
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true);
     if (publishedOnly) {
@@ -744,8 +896,11 @@ class FirebaseService {
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
-  static Future<List<Map<String, dynamic>>> getSeatAssignments(String chartId) async {
-    final snapshot = await _db.collection('seat_assignments')
+  static Future<List<Map<String, dynamic>>> getSeatAssignments(
+    String chartId,
+  ) async {
+    final snapshot = await _db
+        .collection('seat_assignments')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('chartId', isEqualTo: chartId)
         .get();
@@ -771,7 +926,8 @@ class FirebaseService {
     required String userId,
   }) async {
     final churchId = _requireChurchId();
-    final existingUser = await _db.collection('seat_assignments')
+    final existingUser = await _db
+        .collection('seat_assignments')
         .where('churchId', isEqualTo: churchId)
         .where('chartId', isEqualTo: chartId)
         .where('userId', isEqualTo: userId)
@@ -779,7 +935,8 @@ class FirebaseService {
     for (final doc in existingUser.docs) {
       await doc.reference.delete();
     }
-    final existingCell = await _db.collection('seat_assignments')
+    final existingCell = await _db
+        .collection('seat_assignments')
         .where('churchId', isEqualTo: churchId)
         .where('chartId', isEqualTo: chartId)
         .where('part', isEqualTo: part)
@@ -807,7 +964,8 @@ class FirebaseService {
     required int row,
     required int col,
   }) async {
-    final existing = await _db.collection('seat_assignments')
+    final existing = await _db
+        .collection('seat_assignments')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('chartId', isEqualTo: chartId)
         .where('part', isEqualTo: part)
@@ -819,12 +977,90 @@ class FirebaseService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> getSeatingPresets() async {
+    final snapshot = await _db
+        .collection('seating_presets')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
+        .get();
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+  }
+
+  static Future<String> saveSeatingPreset({
+    required String label,
+    required List<Map<String, dynamic>> assignments,
+  }) async {
+    final sanitized = assignments
+        .map(
+          (seat) => {
+            'part': seat['part'],
+            'row': seat['row'],
+            'col': seat['col'],
+            'userId': seat['userId'],
+          },
+        )
+        .toList();
+    final docRef = await _db.collection('seating_presets').add({
+      'churchId': _requireChurchId(),
+      'label': label,
+      'assignments': sanitized,
+      'createdBy': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
+  }
+
+  static Future<void> applySeatingPreset({
+    required String chartId,
+    required String presetId,
+    required Set<String> attendingUserIds,
+  }) async {
+    final churchId = _requireChurchId();
+    final presetDoc = await _db
+        .collection('seating_presets')
+        .doc(presetId)
+        .get();
+    final preset = presetDoc.data();
+    if (preset == null) return;
+
+    final current = await _db
+        .collection('seat_assignments')
+        .where('churchId', isEqualTo: churchId)
+        .where('chartId', isEqualTo: chartId)
+        .get();
+    for (final doc in current.docs) {
+      await doc.reference.delete();
+    }
+
+    final assignments = (preset['assignments'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((seat) => Map<String, dynamic>.from(seat))
+        .toList();
+    for (final seat in assignments) {
+      final userId = seat['userId']?.toString();
+      if (userId == null || !attendingUserIds.contains(userId)) continue;
+      await _db.collection('seat_assignments').add({
+        'churchId': churchId,
+        'chartId': chartId,
+        'part': seat['part'],
+        'row': seat['row'],
+        'col': seat['col'],
+        'userId': userId,
+        'assignedBy': uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
   // ============ Church (Multi-tenant) ============
 
   /// 승인된 교회를 이름(nameLower) prefix로 검색. query가 비어있으면 상위 20건.
-  static Future<List<Map<String, dynamic>>> searchApprovedChurches(String query) async {
+  static Future<List<Map<String, dynamic>>> searchApprovedChurches(
+    String query,
+  ) async {
     final q = query.trim().toLowerCase();
-    Query<Map<String, dynamic>> ref = _db.collection('churches')
+    Query<Map<String, dynamic>> ref = _db
+        .collection('churches')
         .where('status', isEqualTo: 'approved')
         .orderBy('nameLower');
     if (q.isNotEmpty) {
@@ -844,7 +1080,8 @@ class FirebaseService {
   static Future<bool> isChurchNameTaken(String name) async {
     final nameLower = name.trim().toLowerCase();
     if (nameLower.isEmpty) return false;
-    final snap = await _db.collection('churches')
+    final snap = await _db
+        .collection('churches')
         .where('nameLower', isEqualTo: nameLower)
         .where('status', whereIn: ['pending', 'approved'])
         .limit(1)
@@ -864,7 +1101,8 @@ class FirebaseService {
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final email = currentUser?.email;
-    final isWhitelisted = email != null && adminEmails.contains(email.toLowerCase());
+    final isWhitelisted =
+        email != null && adminEmails.contains(email.toLowerCase());
     final batch = _db.batch();
     final churchRef = _db.collection('churches').doc();
     final churchData = <String, dynamic>{
@@ -876,9 +1114,15 @@ class FirebaseService {
       'createdAt': FieldValue.serverTimestamp(),
       if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),
     };
-    if (address != null && address.trim().isNotEmpty) churchData['address'] = address.trim();
-    if (contactPhone != null && contactPhone.trim().isNotEmpty) churchData['contactPhone'] = contactPhone.trim();
-    if (contactEmail != null && contactEmail.trim().isNotEmpty) churchData['contactEmail'] = contactEmail.trim();
+    if (address != null && address.trim().isNotEmpty) {
+      churchData['address'] = address.trim();
+    }
+    if (contactPhone != null && contactPhone.trim().isNotEmpty) {
+      churchData['contactPhone'] = contactPhone.trim();
+    }
+    if (contactEmail != null && contactEmail.trim().isNotEmpty) {
+      churchData['contactEmail'] = contactEmail.trim();
+    }
     batch.set(churchRef, churchData);
 
     final userRef = _db.collection('users').doc(uid);
@@ -912,7 +1156,8 @@ class FirebaseService {
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final email = currentUser?.email;
-    final isWhitelisted = email != null && adminEmails.contains(email.toLowerCase());
+    final isWhitelisted =
+        email != null && adminEmails.contains(email.toLowerCase());
     await _db.collection('users').doc(uid).set({
       ...profileData,
       'email': email,
@@ -922,7 +1167,8 @@ class FirebaseService {
       'approvalScope': 'church',
       'requestedRole': requestedRole,
       if (isWhitelisted) 'role': 'admin',
-      if (requestedPart != null && requestedPart.isNotEmpty) 'requestedPart': requestedPart,
+      if (requestedPart != null && requestedPart.isNotEmpty)
+        'requestedPart': requestedPart,
       'rejectionReason': FieldValue.delete(),
       'createdAt': FieldValue.serverTimestamp(),
       if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),

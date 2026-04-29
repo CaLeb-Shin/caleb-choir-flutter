@@ -5,6 +5,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
+import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/app_logo_title.dart';
 
 class MyQrScreen extends ConsumerWidget {
   const MyQrScreen({super.key});
@@ -20,9 +22,13 @@ class MyQrScreen extends ConsumerWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.white,
-        title: Text('내 출석 QR', style: AppText.headline(18, color: Colors.white)),
+        title: AppLogoTitle(
+          title: '내 출석 QR',
+          textStyle: AppText.headline(18, color: Colors.white),
+        ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
       ),
+      bottomNavigationBar: const AppBottomNavBar(currentIndex: 5),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -94,8 +100,13 @@ class MyQrScreen extends ConsumerWidget {
                           return Column(
                             children: [
                               Text(
-                                profile.displayName.isEmpty ? '멤버' : profile.displayName,
-                                style: AppText.headline(20, color: AppColors.primary),
+                                profile.displayName.isEmpty
+                                    ? '멤버'
+                                    : profile.displayName,
+                                style: AppText.headline(
+                                  20,
+                                  color: AppColors.primary,
+                                ),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -111,7 +122,10 @@ class MyQrScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 24),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(12),
@@ -119,7 +133,11 @@ class MyQrScreen extends ConsumerWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.lightbulb_outline_rounded, size: 16, color: Colors.white70),
+                      Icon(
+                        Icons.lightbulb_outline_rounded,
+                        size: 16,
+                        color: Colors.white70,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '화면 밝기를 최대로 올려주세요',

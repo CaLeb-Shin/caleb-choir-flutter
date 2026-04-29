@@ -4,6 +4,8 @@ import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
 import '../../models/user.dart';
+import '../../widgets/app_bottom_nav_bar.dart';
+import '../../widgets/app_logo_title.dart';
 import '../../widgets/interactive.dart';
 
 class MembersScreen extends ConsumerWidget {
@@ -16,7 +18,8 @@ class MembersScreen extends ConsumerWidget {
     final myUid = FirebaseService.uid;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('단원 관리')),
+      appBar: AppBar(title: const AppLogoTitle(title: '단원 관리')),
+      bottomNavigationBar: const AppBottomNavBar(),
       body: membersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('불러오기 실패: $e')),
@@ -28,7 +31,12 @@ class MembersScreen extends ConsumerWidget {
           });
 
           if (members.isEmpty) {
-            return Center(child: Text('등록된 단원이 없습니다', style: AppText.body(14, color: AppColors.muted)));
+            return Center(
+              child: Text(
+                '등록된 단원이 없습니다',
+                style: AppText.body(14, color: AppColors.muted),
+              ),
+            );
           }
 
           return ListView.separated(
@@ -50,44 +58,82 @@ class MembersScreen extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: AppColors.card,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: AppColors.border.withValues(alpha: 0.3),
+                    ),
                   ),
-                  child: Row(children: [
-                    // Avatar
-                    Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.primarySoft,
-                        image: m['profileImageUrl'] != null
-                            ? DecorationImage(image: NetworkImage(m['profileImageUrl']), fit: BoxFit.cover)
+                  child: Row(
+                    children: [
+                      // Avatar
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primarySoft,
+                          image: m['profileImageUrl'] != null
+                              ? DecorationImage(
+                                  image: NetworkImage(m['profileImageUrl']),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: m['profileImageUrl'] == null
+                            ? Center(
+                                child: Text(
+                                  memberUser.partInitial,
+                                  style: AppText.body(
+                                    16,
+                                    weight: FontWeight.w800,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              )
                             : null,
                       ),
-                      child: m['profileImageUrl'] == null
-                          ? Center(child: Text(memberUser.partInitial,
-                              style: AppText.body(16, weight: FontWeight.w800, color: AppColors.primary)))
-                          : null,
-                    ),
-                    const SizedBox(width: 12),
-                    // Info
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Flexible(
-                          child: Text(memberUser.displayName.isEmpty ? '이름 없음' : memberUser.displayName,
-                            style: AppText.body(15, weight: FontWeight.w700),
-                            overflow: TextOverflow.ellipsis),
+                      const SizedBox(width: 12),
+                      // Info
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    memberUser.displayName.isEmpty
+                                        ? '이름 없음'
+                                        : memberUser.displayName,
+                                    style: AppText.body(
+                                      15,
+                                      weight: FontWeight.w700,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (isMe) ...[
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '(나)',
+                                    style: AppText.body(
+                                      11,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            Text(
+                              '${memberUser.generation ?? ''} · ${memberUser.partLabel}',
+                              style: AppText.body(12, color: AppColors.muted),
+                            ),
+                          ],
                         ),
-                        if (isMe) ...[
-                          const SizedBox(width: 6),
-                          Text('(나)', style: AppText.body(11, color: AppColors.muted)),
-                        ],
-                      ]),
-                      Text('${memberUser.generation ?? ''} · ${memberUser.partLabel}',
-                        style: AppText.body(12, color: AppColors.muted)),
-                    ])),
-                    // Role chip
-                    _RoleChip(role: m['role'] ?? 'member'),
-                  ]),
+                      ),
+                      // Role chip
+                      _RoleChip(role: m['role'] ?? 'member'),
+                    ],
+                  ),
                 ),
               );
             },
@@ -97,23 +143,35 @@ class MembersScreen extends ConsumerWidget {
     );
   }
 
-  void _showRoleDialog(BuildContext context, WidgetRef ref, Map<String, dynamic> member) {
-    showDialog(context: context, builder: (dialogCtx) => AlertDialog(
-      title: Text('${member['name'] ?? ''}님의 등급'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        for (final entry in User.roleLabels.entries)
-          ListTile(
-            leading: _RoleChip(role: entry.key),
-            title: Text(entry.value),
-            trailing: member['role'] == entry.key ? const Icon(Icons.check_rounded, color: AppColors.primary) : null,
-            onTap: () async {
-              Navigator.pop(dialogCtx);
-              await FirebaseService.updateUserRole(member['id'], entry.key);
-              ref.invalidate(membersProvider);
-            },
-          ),
-      ]),
-    ));
+  void _showRoleDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> member,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('${member['name'] ?? ''}님의 등급'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final entry in User.roleLabels.entries)
+              ListTile(
+                leading: _RoleChip(role: entry.key),
+                title: Text(entry.value),
+                trailing: member['role'] == entry.key
+                    ? const Icon(Icons.check_rounded, color: AppColors.primary)
+                    : null,
+                onTap: () async {
+                  Navigator.pop(dialogCtx);
+                  await FirebaseService.updateUserRole(member['id'], entry.key);
+                  ref.invalidate(membersProvider);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -130,8 +188,14 @@ class _RoleChip extends StatelessWidget {
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-      child: Text(label, style: AppText.body(11, weight: FontWeight.w700, color: fg)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: AppText.body(11, weight: FontWeight.w700, color: fg),
+      ),
     );
   }
 }

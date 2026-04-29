@@ -45,7 +45,11 @@ class AppColors {
 // ─── Typography Helpers ───
 class AppText {
   /// Noto Serif KR — 헤드라인, 제목
-  static TextStyle headline(double size, {FontWeight weight = FontWeight.w700, Color? color}) {
+  static TextStyle headline(
+    double size, {
+    FontWeight weight = FontWeight.w700,
+    Color? color,
+  }) {
     return GoogleFonts.notoSerifKr(
       fontSize: size,
       fontWeight: weight,
@@ -53,9 +57,14 @@ class AppText {
     );
   }
 
-  /// Manrope — 본문, 라벨
-  static TextStyle body(double size, {FontWeight weight = FontWeight.w400, Color? color, double? height}) {
-    return GoogleFonts.manrope(
+  /// Noto Sans KR — Korean-first body text
+  static TextStyle body(
+    double size, {
+    FontWeight weight = FontWeight.w400,
+    Color? color,
+    double? height,
+  }) {
+    return GoogleFonts.notoSansKr(
       fontSize: size,
       fontWeight: weight,
       color: color ?? AppColors.ink,
@@ -65,10 +74,9 @@ class AppText {
 
   /// 라벨 — 대문자 트래킹
   static TextStyle label({Color? color}) {
-    return GoogleFonts.manrope(
+    return GoogleFonts.notoSansKr(
       fontSize: 11,
       fontWeight: FontWeight.w700,
-      letterSpacing: 2,
       color: color ?? AppColors.secondary,
     );
   }
@@ -77,7 +85,7 @@ class AppText {
 // ─── Theme ───
 class AppTheme {
   static ThemeData get light {
-    final textTheme = GoogleFonts.manropeTextTheme();
+    final textTheme = GoogleFonts.notoSansKrTextTheme();
 
     return ThemeData(
       useMaterial3: true,
@@ -97,7 +105,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.manrope(
+        titleTextStyle: GoogleFonts.notoSansKr(
           color: AppColors.ink,
           fontSize: 20,
           fontWeight: FontWeight.w700,
@@ -117,8 +125,13 @@ class AppTheme {
           foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: GoogleFonts.notoSansKr(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -126,17 +139,43 @@ class AppTheme {
           foregroundColor: AppColors.ink,
           side: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: GoogleFonts.manrope(fontSize: 15, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: GoogleFonts.notoSansKr(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.card,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        hintStyle: GoogleFonts.notoSansKr(
+          color: AppColors.muted,
+          fontWeight: FontWeight.w400,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(
+            color: AppColors.border.withValues(alpha: 0.8),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(
+            color: AppColors.primaryContainer,
+            width: 1.4,
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 15,
+        ),
       ),
     );
   }
