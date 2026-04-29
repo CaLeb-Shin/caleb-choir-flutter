@@ -361,6 +361,8 @@ final loginPreviewModeProvider = StateProvider<bool>((ref) {
   return Uri.base.queryParameters['login'] == '1';
 });
 
+final onboardingPreviewDismissedProvider = StateProvider<bool>((ref) => false);
+
 final previewPersonaProvider = StateProvider<PreviewPersona>(
   (ref) => PreviewPersona.admin,
 );

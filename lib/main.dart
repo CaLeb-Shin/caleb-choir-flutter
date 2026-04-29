@@ -40,6 +40,9 @@ class CalebChoirApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final localPreviewMode = ref.watch(localPreviewModeProvider);
     final localLoginMode = ref.watch(loginPreviewModeProvider);
+    final onboardingPreviewDismissed = ref.watch(
+      onboardingPreviewDismissedProvider,
+    );
     final authState = ref.watch(authStateProvider);
     final isLocalWeb =
         kIsWeb &&
@@ -48,7 +51,9 @@ class CalebChoirApp extends ConsumerWidget {
         localLoginMode ||
         (isLocalWeb && Uri.base.queryParameters['login'] == '1');
     final onboardingPreviewMode =
-        isLocalWeb && Uri.base.queryParameters['onboarding'] == '1';
+        isLocalWeb &&
+        Uri.base.queryParameters['onboarding'] == '1' &&
+        !onboardingPreviewDismissed;
 
     return MaterialApp(
       title: 'C.C',

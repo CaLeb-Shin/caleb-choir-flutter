@@ -328,7 +328,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           profileData: profileData,
         );
       }
+      ref.read(onboardingPreviewDismissedProvider.notifier).state = true;
       ref.invalidate(profileProvider);
+      ref.invalidate(myProfileStreamProvider);
       // main.dart의 myProfileStreamProvider가 승인 대기 화면으로 자동 전환
     } catch (e) {
       setState(() {
