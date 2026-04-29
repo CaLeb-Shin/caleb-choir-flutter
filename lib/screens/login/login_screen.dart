@@ -7,6 +7,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/google_logo.dart';
 import '../../providers/app_providers.dart';
+import '../../services/firebase_service.dart';
 
 import 'kakao_sign_in_stub.dart'
     if (dart.library.io) 'kakao_sign_in_mobile.dart'
@@ -44,14 +45,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final result = await FirebaseAuth.instance.getRedirectResult();
       if (result.user != null) {
         debugPrint('Google redirect sign-in completed: ${result.user!.uid}');
+        await _afterSuccessfulSignIn();
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('Google redirect sign-in error: $e');
       if (!mounted) return;
-      setState(() => _error = 'Google 로그인에 실패했습니다.\n다시 시도해주세요.');
+      setState(() => _error = _googleErrorMessage(e));
     } catch (e) {
       debugPrint('Google redirect result error: $e');
     }
+  }
+
+  Future<void> _afterSuccessfulSignIn() async {
+    await FirebaseService.ensurePlatformAdminRole();
+    if (!mounted) return;
+    ref.invalidate(authStateProvider);
+    ref.invalidate(profileProvider);
+    ref.invalidate(myProfileStreamProvider);
   }
 
   Future<void> _handleGoogleSignIn() async {
@@ -62,7 +72,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     try {
       if (kIsWeb) {
-        await FirebaseAuth.instance.signInWithRedirect(GoogleAuthProvider());
+        try {
+          final result = await FirebaseAuth.instance.signInWithPopup(
+            GoogleAuthProvider(),
+          );
+          if (result.user != null) {
+            await _afterSuccessfulSignIn();
+          }
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'popup-blocked' ||
+              e.code == 'popup-closed-by-user' ||
+              e.code == 'cancelled-popup-request') {
+            await FirebaseAuth.instance.signInWithRedirect(
+              GoogleAuthProvider(),
+            );
+            return;
+          }
+          rethrow;
+        }
       } else {
         final googleUser = await GoogleSignIn().signIn();
         if (googleUser == null) {
@@ -78,19 +105,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           idToken: googleAuth.idToken,
         );
         await FirebaseAuth.instance.signInWithCredential(credential);
+        await _afterSuccessfulSignIn();
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('Google sign-in error: $e');
-      setState(() => _error = 'Google 로그인에 실패했습니다.\n다시 시도해주세요.');
+      setState(() => _error = _googleErrorMessage(e));
     } catch (e) {
       debugPrint('Google sign-in error: $e');
       setState(() => _error = 'Google 로그인에 실패했습니다.\n다시 시도해주세요.');
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _loadingProvider = null;
         });
+      }
     }
   }
 
@@ -121,12 +150,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       debugPrint('Kakao sign-in error: $e');
       setState(() => _error = '카카오 로그인에 실패했습니다.\n다시 시도해주세요.');
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _loading = false;
           _loadingProvider = null;
         });
+      }
     }
+  }
+
+  String _googleErrorMessage(FirebaseAuthException e) {
+    if (e.code == 'unauthorized-domain') {
+      return '현재 주소가 Firebase 로그인 허용 도메인에 없습니다.\nFirebase Auth에 이 도메인을 추가해주세요.';
+    }
+    if (e.code == 'popup-closed-by-user') {
+      return 'Google 로그인 창이 닫혔습니다.\n다시 시도해주세요.';
+    }
+    return 'Google 로그인에 실패했습니다.\n다시 시도해주세요.';
   }
 
   @override
