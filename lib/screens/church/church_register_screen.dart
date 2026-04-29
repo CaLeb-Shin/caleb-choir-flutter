@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_logo_title.dart';
+import '../../services/address_search/address_search.dart';
 import '../../services/firebase_service.dart';
 import '../profile_setup/profile_setup_screen.dart';
 
@@ -35,6 +36,10 @@ class _ChurchRegisterScreenState extends ConsumerState<ChurchRegisterScreen> {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       setState(() => _error = '교회명을 입력해주세요');
+      return;
+    }
+    if (_addressCtrl.text.trim().isEmpty) {
+      setState(() => _error = '공식 주소검색으로 교회 주소를 입력해주세요');
       return;
     }
     setState(() {
@@ -74,6 +79,20 @@ class _ChurchRegisterScreenState extends ConsumerState<ChurchRegisterScreen> {
         _error = '확인 실패: $e';
       });
     }
+  }
+
+  Future<void> _openAddressSearch() async {
+    final selected = await openOfficialAddressSearch();
+    if (!mounted) return;
+    if (selected != null && selected.trim().isEmpty) return;
+    if (selected == null) {
+      setState(() => _error = '주소검색 창을 열 수 없습니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    setState(() {
+      _addressCtrl.text = selected.trim();
+      _error = null;
+    });
   }
 
   @override
@@ -133,11 +152,20 @@ class _ChurchRegisterScreenState extends ConsumerState<ChurchRegisterScreen> {
               ),
               const SizedBox(height: 16),
 
-              _Label(text: '주소 (선택)'),
+              _Label(text: '공식 주소 *'),
               const SizedBox(height: 6),
               TextField(
                 controller: _addressCtrl,
-                decoration: const InputDecoration(hintText: '예: 서울시 강남구'),
+                readOnly: true,
+                onTap: _openAddressSearch,
+                decoration: InputDecoration(
+                  hintText: '주소검색으로 입력해주세요',
+                  suffixIcon: IconButton(
+                    onPressed: _openAddressSearch,
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    tooltip: '주소검색',
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
 

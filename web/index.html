@@ -46,6 +46,126 @@
       }
     })();
   </script>
+
+  <!-- Daum/Kakao 우편번호 서비스 — 기본 주소검색은 별도 앱 키 없이 사용합니다. -->
+  <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+  <script>
+    window.CalebAddressSearch = {
+      open: function (callback) {
+        var completed = false;
+
+        function finish(value) {
+          if (completed) return;
+          completed = true;
+          callback(value);
+        }
+
+        function removeLayer(layer) {
+          if (layer && layer.parentNode) {
+            layer.parentNode.removeChild(layer);
+          }
+        }
+
+        if (!window.daum || !window.daum.Postcode) {
+          finish(null);
+          return;
+        }
+
+        var layer = document.createElement('div');
+        layer.style.position = 'fixed';
+        layer.style.inset = '0';
+        layer.style.zIndex = '2147483647';
+        layer.style.background = 'rgba(0, 10, 30, 0.56)';
+        layer.style.display = 'flex';
+        layer.style.alignItems = 'center';
+        layer.style.justifyContent = 'center';
+        layer.style.padding = '20px';
+
+        var panel = document.createElement('div');
+        panel.style.width = 'min(520px, 100%)';
+        panel.style.height = 'min(560px, 84vh)';
+        panel.style.background = '#fff';
+        panel.style.borderRadius = '22px';
+        panel.style.overflow = 'hidden';
+        panel.style.boxShadow = '0 24px 80px rgba(0, 0, 0, 0.32)';
+        panel.style.position = 'relative';
+
+        var close = document.createElement('button');
+        close.type = 'button';
+        close.setAttribute('aria-label', '주소검색 닫기');
+        close.textContent = '×';
+        close.style.position = 'absolute';
+        close.style.top = '10px';
+        close.style.right = '12px';
+        close.style.zIndex = '2';
+        close.style.width = '34px';
+        close.style.height = '34px';
+        close.style.border = '0';
+        close.style.borderRadius = '999px';
+        close.style.background = 'rgba(0, 30, 70, 0.08)';
+        close.style.color = '#001f3f';
+        close.style.fontSize = '24px';
+        close.style.lineHeight = '32px';
+        close.style.cursor = 'pointer';
+        close.onclick = function () {
+          removeLayer(layer);
+          finish('');
+        };
+
+        var container = document.createElement('div');
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.position = 'relative';
+        container.style.zIndex = '1';
+
+        var loading = document.createElement('div');
+        loading.textContent = '주소검색을 불러오는 중입니다...';
+        loading.style.position = 'absolute';
+        loading.style.inset = '0';
+        loading.style.display = 'flex';
+        loading.style.alignItems = 'center';
+        loading.style.justifyContent = 'center';
+        loading.style.color = '#5f6b7a';
+        loading.style.fontFamily = '-apple-system, BlinkMacSystemFont, sans-serif';
+        loading.style.fontSize = '15px';
+        loading.style.fontWeight = '700';
+        loading.style.background = '#fff';
+        loading.style.zIndex = '0';
+
+        container.appendChild(loading);
+
+        panel.appendChild(close);
+        panel.appendChild(container);
+        layer.appendChild(panel);
+        document.body.appendChild(layer);
+
+        new window.daum.Postcode({
+          oncomplete: function (data) {
+            var roadAddress = data.roadAddress || '';
+            var jibunAddress = data.jibunAddress || data.autoJibunAddress || '';
+            var address = roadAddress || jibunAddress;
+            var extra = '';
+
+            if (roadAddress) {
+              if (data.bname && /[동|로|가]$/g.test(data.bname)) {
+                extra += data.bname;
+              }
+              if (data.buildingName && data.apartment === 'Y') {
+                extra += extra ? ', ' + data.buildingName : data.buildingName;
+              }
+              if (extra) address += ' (' + extra + ')';
+            }
+
+            removeLayer(layer);
+            finish(address);
+          },
+          width: '100%',
+          height: '100%',
+          maxSuggestItems: 5
+        }).embed(container);
+      }
+    };
+  </script>
 </head>
 <body>
   <!--

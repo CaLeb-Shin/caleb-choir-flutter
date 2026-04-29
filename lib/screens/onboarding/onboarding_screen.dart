@@ -9,6 +9,7 @@ import '../../theme/app_theme.dart';
 import '../../models/church.dart';
 import '../../models/user.dart';
 import '../../providers/app_providers.dart';
+import '../../services/address_search/address_search.dart';
 import '../../services/firebase_service.dart';
 
 /// 로그인 직후 통합 온보딩 화면 — 가입 유형 선택과 프로필 입력을 한 페이지에서 처리.
@@ -149,14 +150,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Future<void> _openAddressSearchDialog() async {
-    final selected = await showDialog<String>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.54),
-      builder: (context) =>
-          _AddressSearchDialog(initialQuery: _churchAddressCtrl.text.trim()),
+    final officialAddress = await openOfficialAddressSearch();
+    if (officialAddress != null &&
+        officialAddress.trim().isNotEmpty &&
+        mounted) {
+      setState(() => _churchAddressCtrl.text = officialAddress.trim());
+      return;
+    }
+
+    if (officialAddress != null) return;
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('카카오/다음 주소검색을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.')),
     );
-    if (selected == null || selected.trim().isEmpty || !mounted) return;
-    setState(() => _churchAddressCtrl.text = selected.trim());
   }
 
   Future<void> _pickImage() async {
