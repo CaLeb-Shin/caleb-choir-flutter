@@ -186,14 +186,22 @@ class _PendingApprovalScreenState extends ConsumerState<PendingApprovalScreen> {
 
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton(
+                  child: ElevatedButton.icon(
                     onPressed: () async {
+                      ref.read(loggedOutProvider.notifier).state = true;
+                      ref.read(localPreviewModeProvider.notifier).state = false;
+                      ref.read(loginPreviewModeProvider.notifier).state = true;
+                      ref
+                              .read(onboardingPreviewDismissedProvider.notifier)
+                              .state =
+                          true;
                       await FirebaseService.signOut();
                     },
-                    style: OutlinedButton.styleFrom(
+                    icon: const Icon(Icons.login_rounded, size: 18),
+                    style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('로그아웃'),
+                    label: const Text('로그인 화면으로 돌아가기'),
                   ),
                 ),
               ],
