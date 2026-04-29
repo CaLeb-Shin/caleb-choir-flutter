@@ -1,0 +1,46 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasProfile() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid));
+    }
+
+    function myData() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function sameChurch(churchId) {
+      return hasProfile() && myData().churchId == churchId;
+    }
+
+    function isPlatformAdmin() {
+      return hasProfile() && myData().get('isPlatformAdmin', false) == true;
+    }
+
+    function isChurchAdminOf(churchId) {
+      return isPlatformAdmin() || sameChurch(churchId)
+        && (myData().role in ['admin', 'church_admin']);
+    }
+
+    match /churches/{churchId}/sheet_music/{fileName} {
+      allow read: if isPlatformAdmin() || sameChurch(churchId);
+      allow create, update: if isChurchAdminOf(churchId)
+        && request.resource.size < 30 * 1024 * 1024
+        && request.resource.contentType.matches('(application/pdf|image/.*)');
+      allow delete: if isChurchAdminOf(churchId);
+    }
+
+    match /churches/{churchId}/sheet_audio/{fileName} {
+      allow read: if isPlatformAdmin() || sameChurch(churchId);
+      allow create, update: if isChurchAdminOf(churchId)
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
+      allow delete: if isChurchAdminOf(churchId);
+    }
+  }
+}
