@@ -22,11 +22,23 @@ service cloud.firestore {
     function sameChurch(cid) {
       return hasChurch() && cid != null && myData().churchId == cid;
     }
-    function isChurchAdminOf(cid) {
-      return sameChurch(cid) && (myRole() == 'admin' || myRole() == 'church_admin');
-    }
     function isBootstrapAdminEmail() {
       return isSignedIn() && request.auth.token.email == 'sinbun001@gmail.com';
+    }
+    function churchData(cid) {
+      return get(/databases/$(database)/documents/churches/$(cid)).data;
+    }
+    function isListedChurchAdminOf(cid) {
+      return isSignedIn()
+        && cid != null
+        && exists(/databases/$(database)/documents/churches/$(cid))
+        && churchData(cid).get('adminUids', []).hasAny([request.auth.uid]);
+    }
+    function isChurchAdminOf(cid) {
+      return isPlatformAdmin() ||
+        isBootstrapAdminEmail() ||
+        isListedChurchAdminOf(cid) ||
+        (sameChurch(cid) && (myRole() == 'admin' || myRole() == 'church_admin'));
     }
 
     // ── Churches ──
