@@ -195,9 +195,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   Future<void> _signOutAndReturnToLogin() async {
     ref.read(loggedOutProvider.notifier).state = true;
+    ref.read(onboardingPreviewDismissedProvider.notifier).state = true;
     ref.read(localPreviewModeProvider.notifier).state = false;
     ref.read(loginPreviewModeProvider.notifier).state = true;
-    unawaited(FirebaseService.signOut());
+    try {
+      await FirebaseService.signOut();
+    } catch (e) {
+      debugPrint('Sign out skipped: $e');
+    }
   }
 
   _ValidationIssue? _validate() {

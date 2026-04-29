@@ -63,6 +63,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       debugPrint('Platform admin bootstrap skipped: $e');
     }
     if (!mounted) return;
+    ref.read(loggedOutProvider.notifier).state = false;
     ref.invalidate(authStateProvider);
     ref.invalidate(profileProvider);
     ref.invalidate(myProfileStreamProvider);
@@ -151,6 +152,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       });
       final customToken = result.data['token'] as String;
       await FirebaseAuth.instance.signInWithCustomToken(customToken);
+      await _afterSuccessfulSignIn();
     } catch (e) {
       debugPrint('Kakao sign-in error: $e');
       setState(() => _error = '카카오 로그인에 실패했습니다.\n다시 시도해주세요.');
@@ -379,6 +381,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onPressed: () {
                       ref.read(loginPreviewModeProvider.notifier).state = false;
                       ref.read(localPreviewModeProvider.notifier).state = true;
+                      ref.read(loggedOutProvider.notifier).state = false;
                     },
                     child: const Text('인앱 미리보기로 보기'),
                   ),

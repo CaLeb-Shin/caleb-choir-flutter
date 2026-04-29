@@ -40,6 +40,7 @@ class CalebChoirApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final localPreviewMode = ref.watch(localPreviewModeProvider);
     final localLoginMode = ref.watch(loginPreviewModeProvider);
+    final loggedOut = ref.watch(loggedOutProvider);
     final onboardingPreviewDismissed = ref.watch(
       onboardingPreviewDismissedProvider,
     );
@@ -90,7 +91,9 @@ class CalebChoirApp extends ConsumerWidget {
           ),
         );
       },
-      home: localPreviewMode
+      home: loggedOut
+          ? const LoginScreen()
+          : localPreviewMode
           ? const MainShell()
           : loginPreviewMode
           ? const LoginScreen()
