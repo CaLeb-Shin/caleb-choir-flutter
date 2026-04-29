@@ -1784,7 +1784,7 @@ class _SelectedChurchTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  church.name,
+                  church.displayName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.body(15, weight: FontWeight.w700),
@@ -1932,7 +1932,7 @@ class _ChurchSearchResults extends ConsumerWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    c.name,
+                                    c.displayName,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: AppText.body(

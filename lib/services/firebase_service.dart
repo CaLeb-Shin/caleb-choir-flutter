@@ -1111,6 +1111,10 @@ class FirebaseService {
       'adminUids': <String>[],
       'createdAt': FieldValue.serverTimestamp(),
     };
+    final choirName = profileData['choirName']?.toString().trim();
+    if (choirName != null && choirName.isNotEmpty) {
+      churchData['choirName'] = choirName;
+    }
     if (address != null && address.trim().isNotEmpty) {
       churchData['address'] = address.trim();
     }

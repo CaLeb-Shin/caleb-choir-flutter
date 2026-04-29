@@ -49,7 +49,7 @@ class _PendingApprovalScreenState extends ConsumerState<PendingApprovalScreen> {
   Widget build(BuildContext context) {
     final profile = ref.watch(profileProvider).valueOrNull;
     final isPlatformScope = profile?.approvalScope == 'platform';
-    final churchName = _church?.name ?? '';
+    final churchName = _church?.displayName ?? '';
     final title = isPlatformScope ? '교회 등록 심사 중' : '가입 승인 대기 중';
     final message = isPlatformScope
         ? '새 교회 등록 신청이 접수되었습니다.\n플랫폼 관리자의 검토 후 승인됩니다.'
@@ -119,7 +119,7 @@ class _PendingApprovalScreenState extends ConsumerState<PendingApprovalScreen> {
                         Text('신청 정보', style: AppText.label()),
                         const SizedBox(height: 14),
                         if (_churchLoaded && churchName.isNotEmpty) ...[
-                          _InfoRow(label: '교회', value: churchName),
+                          _InfoRow(label: '교회/찬양대', value: churchName),
                           const SizedBox(height: 10),
                         ],
                         _InfoRow(label: '이름', value: profile.displayName),

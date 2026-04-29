@@ -43,7 +43,7 @@ class _ChurchSearchScreenState extends ConsumerState<ChurchSearchScreen> {
         builder: (_) => ProfileSetupScreen(
           mode: ProfileSetupMode.joinChurch,
           churchId: church.id,
-          churchName: church.name,
+          churchName: church.displayName,
           requestedRole: widget.requestedRole,
         ),
       ),
@@ -166,7 +166,7 @@ class _ChurchTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      church.name,
+                      church.displayName,
                       style: AppText.body(15, weight: FontWeight.w700),
                     ),
                     if (church.address != null &&

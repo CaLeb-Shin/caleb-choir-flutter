@@ -11,6 +11,7 @@ final _previewChurch = Church(
   id: 'preview-church',
   name: '갈렙교회',
   nameLower: '갈렙교회',
+  choirName: '갈렙찬양대',
   status: 'approved',
   requestedBy: _previewUserId,
   adminUids: const [_previewUserId],
