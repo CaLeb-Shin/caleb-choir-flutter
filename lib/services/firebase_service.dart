@@ -1101,18 +1101,15 @@ class FirebaseService {
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final email = currentUser?.email;
-    final isWhitelisted =
-        email != null && adminEmails.contains(email.toLowerCase());
     final batch = _db.batch();
     final churchRef = _db.collection('churches').doc();
     final churchData = <String, dynamic>{
       'name': name.trim(),
       'nameLower': name.trim().toLowerCase(),
-      'status': isWhitelisted ? 'approved' : 'pending',
+      'status': 'pending',
       'requestedBy': uid,
-      'adminUids': isWhitelisted ? <String>[uid!] : <String>[],
+      'adminUids': <String>[],
       'createdAt': FieldValue.serverTimestamp(),
-      if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),
     };
     if (address != null && address.trim().isNotEmpty) {
       churchData['address'] = address.trim();
@@ -1131,15 +1128,13 @@ class FirebaseService {
       ...profileData,
       'email': email,
       'profileCompleted': true,
-      'churchId': isWhitelisted ? churchRef.id : null,
-      'approvalStatus': isWhitelisted ? 'approved' : 'pending',
+      'churchId': null,
+      'approvalStatus': 'pending',
       'approvalScope': 'platform',
       'requestedRole': 'church_admin',
-      if (isWhitelisted) 'role': 'admin',
       'requestedChurchId': churchRef.id,
       'rejectionReason': FieldValue.delete(),
       'createdAt': FieldValue.serverTimestamp(),
-      if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     await batch.commit();
