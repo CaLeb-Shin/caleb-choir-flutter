@@ -1,7 +1,7 @@
-import 'dart:math';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-/// 공식 Google "G" 로고를 CustomPainter로 그리는 위젯
+/// Google sign-in button mark.
 class GoogleLogo extends StatelessWidget {
   final double size;
   const GoogleLogo({super.key, this.size = 20});
@@ -17,7 +17,6 @@ class GoogleLogo extends StatelessWidget {
 }
 
 class _GoogleLogoPainter extends CustomPainter {
-  // Google 공식 브랜드 컬러
   static const _blue = Color(0xFF4285F4);
   static const _red = Color(0xFFEA4335);
   static const _yellow = Color(0xFFFBBC05);
@@ -26,65 +25,59 @@ class _GoogleLogoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final strokeWidth = radius * 0.42;
-    final innerRadius = radius - strokeWidth / 2;
+    final shortest = math.min(size.width, size.height);
+    final strokeWidth = shortest * 0.17;
+    final radius = shortest * 0.36;
+    final rect = Rect.fromCircle(center: center, radius: radius);
 
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth
-      ..strokeCap = StrokeCap.butt;
+      ..strokeCap = StrokeCap.square;
 
-    // Blue arc (right side, -50° to 50°)
-    paint.color = _blue;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: innerRadius),
-      -50 * pi / 180,
-      100 * pi / 180,
-      false,
-      paint,
-    );
+    void arc(Color color, double startDegree, double sweepDegree) {
+      paint.color = color;
+      canvas.drawArc(
+        rect,
+        startDegree * math.pi / 180,
+        sweepDegree * math.pi / 180,
+        false,
+        paint,
+      );
+    }
 
-    // Green arc (bottom right, 50° to 120°)
-    paint.color = _green;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: innerRadius),
-      50 * pi / 180,
-      70 * pi / 180,
-      false,
-      paint,
-    );
+    arc(_red, 205, 95);
+    arc(_yellow, 135, 80);
+    arc(_green, 45, 100);
+    arc(_blue, -38, 84);
 
-    // Yellow arc (bottom left, 120° to 195°)
-    paint.color = _yellow;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: innerRadius),
-      120 * pi / 180,
-      75 * pi / 180,
-      false,
-      paint,
-    );
-
-    // Red arc (top, 195° to 310°)
-    paint.color = _red;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: innerRadius),
-      195 * pi / 180,
-      115 * pi / 180,
-      false,
-      paint,
-    );
-
-    // Blue horizontal bar (right middle)
     final barPaint = Paint()
       ..color = _blue
-      ..style = PaintingStyle.fill;
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.square;
+    final barStart = Offset(center.dx + shortest * 0.02, center.dy);
+    final barEnd = Offset(center.dx + shortest * 0.33, center.dy);
+    canvas.drawLine(barStart, barEnd, barPaint);
 
-    final barTop = center.dy - strokeWidth / 2;
-    final barLeft = center.dx - radius * 0.05;
-    canvas.drawRect(
-      Rect.fromLTWH(barLeft, barTop, radius * 0.55, strokeWidth),
-      barPaint,
+    final notchPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth * 1.08
+      ..strokeCap = StrokeCap.square;
+    canvas.drawLine(
+      Offset(center.dx + shortest * 0.24, center.dy - shortest * 0.14),
+      Offset(center.dx + shortest * 0.4, center.dy - shortest * 0.14),
+      notchPaint,
+    );
+
+    paint.color = _blue;
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -38 * math.pi / 180,
+      44 * math.pi / 180,
+      false,
+      paint,
     );
   }
 

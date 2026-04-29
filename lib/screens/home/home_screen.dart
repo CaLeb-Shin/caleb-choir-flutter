@@ -105,7 +105,9 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(child: Text('갈렙찬양대', style: AppText.headline(18))),
+                    Expanded(
+                      child: Text('C.C Note', style: AppText.headline(18)),
+                    ),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,

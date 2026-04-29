@@ -56,7 +56,7 @@ class CalebChoirApp extends ConsumerWidget {
         !onboardingPreviewDismissed;
 
     return MaterialApp(
-      title: 'C.C',
+      title: 'C.C Note',
       theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
       builder: (context, child) {

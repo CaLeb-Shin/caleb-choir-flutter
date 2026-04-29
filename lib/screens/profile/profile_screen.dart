@@ -384,7 +384,7 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 32),
               Center(
                 child: Text(
-                  '갈렙찬양대 v1.0.0',
+                  'C.C Note v1.0.0',
                   style: AppText.body(12, color: AppColors.subtle),
                 ),
               ),

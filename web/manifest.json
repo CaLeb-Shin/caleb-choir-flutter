@@ -1,11 +1,11 @@
 {
-    "name": "C.C",
-    "short_name": "C.C",
+    "name": "C.C Note",
+    "short_name": "C.C Note",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#000E24",
     "theme_color": "#000E24",
-    "description": "갈렙찬양대 (Caleb Choir)",
+    "description": "Church Choir Note",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

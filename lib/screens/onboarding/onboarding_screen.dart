@@ -1355,7 +1355,7 @@ class _OnboardingHero extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '갈렙찬양대 가입',
+                  'C.C Note 가입',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.headline(

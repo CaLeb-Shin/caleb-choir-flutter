@@ -214,7 +214,7 @@ class AttendanceScreen extends ConsumerWidget {
                 final h = ref.read(myHistoryProvider).valueOrNull ?? [];
                 final csv = h.map((r) => '${r['sessionTitle']},${r['checkedInAt']}').join('\n');
                 if (csv.isNotEmpty) {
-                  await Share.share(csv, subject: '갈렙찬양대 출석기록');
+                  await Share.share(csv, subject: 'C.C Note 출석기록');
                 }
               },
               icon: const Icon(Icons.download_rounded, size: 18),

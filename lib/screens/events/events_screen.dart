@@ -20,7 +20,7 @@ class EventsScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Hero
-          Text('갈렙 찬양대', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 2, color: AppColors.secondary)),
+          Text('C.C NOTE', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 2, color: AppColors.secondary)),
           const SizedBox(height: 8),
           const Text('이벤트 & 시상', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.primary)),
           const SizedBox(height: 8),

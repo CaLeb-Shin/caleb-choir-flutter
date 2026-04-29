@@ -4,7 +4,9 @@ import 'package:caleb_choir/main.dart';
 import 'package:caleb_choir/providers/app_providers.dart';
 
 void main() {
-  testWidgets('Logged-out app renders login screen', (WidgetTester tester) async {
+  testWidgets('Logged-out app renders login screen', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -15,7 +17,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('갈렙찬양대'), findsOneWidget);
+    expect(find.text('C.C Note'), findsOneWidget);
     expect(find.text('Google로 시작하기'), findsOneWidget);
   });
 }

@@ -57,7 +57,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _afterSuccessfulSignIn() async {
-    await FirebaseService.ensurePlatformAdminRole();
+    try {
+      await FirebaseService.ensurePlatformAdminRole();
+    } catch (e) {
+      debugPrint('Platform admin bootstrap skipped: $e');
+    }
     if (!mounted) return;
     ref.invalidate(authStateProvider);
     ref.invalidate(profileProvider);
@@ -72,6 +76,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     try {
       if (kIsWeb) {
+        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
         try {
           final result = await FirebaseAuth.instance.signInWithPopup(
             GoogleAuthProvider(),
@@ -247,18 +252,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ),
               const SizedBox(height: 24),
               const Text(
-                '갈렙찬양대',
+                'C.C Note',
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 30,
                   fontWeight: FontWeight.w800,
                   color: AppColors.ink,
-                  letterSpacing: -0.5,
                 ),
               ),
               const SizedBox(height: 6),
               const Text(
-                '함께 찬양하는 기쁨',
-                style: TextStyle(fontSize: 15, color: AppColors.muted),
+                '(Church Choir Note)',
+                style: TextStyle(
+                  fontSize: 15,
+                  color: AppColors.muted,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               const Spacer(flex: 2),
 
