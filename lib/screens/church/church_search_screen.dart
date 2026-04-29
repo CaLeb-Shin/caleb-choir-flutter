@@ -94,15 +94,19 @@ class _ChurchSearchScreenState extends ConsumerState<ChurchSearchScreen> {
             Expanded(
               child: result.when(
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      '검색 실패: $e',
-                      style: AppText.body(13, color: AppColors.error),
+                error: (e, _) {
+                  debugPrint('Church search failed: $e');
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        '교회 검색을 잠시 불러오지 못했어요. 다시 검색하거나 새 교회 등록을 이용해주세요.',
+                        style: AppText.body(13, color: AppColors.muted),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
                 data: (churches) => churches.isEmpty
                     ? _EmptyState(
                         onCreate: () => Navigator.pushReplacement(

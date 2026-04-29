@@ -1833,14 +1833,18 @@ class _ChurchSearchResults extends ConsumerWidget {
         padding: EdgeInsets.symmetric(vertical: 16),
         child: Center(child: CircularProgressIndicator()),
       ),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: _InlineNotice(
-          icon: Icons.lock_outline_rounded,
-          text: '교회 목록 권한 설정 후 검색할 수 있어요.',
-          tone: _NoticeTone.error,
-        ),
-      ),
+      error: (e, _) {
+        debugPrint('Church search failed: $e');
+        if (query.trim().isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: _InlineNotice(
+            icon: Icons.info_outline_rounded,
+            text: '교회 검색을 잠시 불러오지 못했어요. 다시 검색하거나 새 교회 등록 신청을 이용해주세요.',
+            tone: _NoticeTone.muted,
+          ),
+        );
+      },
       data: (churches) {
         if (churches.isEmpty && query.isNotEmpty) {
           return Padding(
