@@ -164,7 +164,7 @@ class _MainShellState extends ConsumerState<MainShell> {
     ProfileScreen(),
   ];
 
-  static const _titles = ['홈', '악보', '영상', '출석', '소통', '마이'];
+  static const _titles = ['홈', '악보&음원', '영상', '출석', '소통', '마이'];
 
   @override
   Widget build(BuildContext context) {

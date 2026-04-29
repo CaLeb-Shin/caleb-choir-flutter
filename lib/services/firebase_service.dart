@@ -690,12 +690,14 @@ class FirebaseService {
     String title, {
     String? composer,
     String? fileUrl,
+    String? audioUrl,
   }) async {
     await _db.collection('sheet_music').add({
       'churchId': _requireChurchId(),
       'title': title,
       'composer': composer,
       'fileUrl': fileUrl,
+      'audioUrl': audioUrl,
       'createdBy': uid,
       'createdAt': FieldValue.serverTimestamp(),
     });

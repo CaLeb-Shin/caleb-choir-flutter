@@ -115,7 +115,11 @@ const _previewSheetMusic = [
   {
     'id': 'preview-sheet-1',
     'title': '주만 바라볼지라',
-    'composer': '미리보기 악보',
+    'composer': '미리보기 악보&음원',
+    'fileUrl':
+        'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+    'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    'audioFileName': '파트연습.mp3',
     'createdAt': '2026-04-28T09:00:00',
   },
 ];
