@@ -79,11 +79,16 @@
         layer.style.display = 'flex';
         layer.style.alignItems = 'center';
         layer.style.justifyContent = 'center';
-        layer.style.padding = '20px';
+        layer.style.padding = '44px 20px 20px';
+
+        var shell = document.createElement('div');
+        shell.style.width = 'min(520px, 100%)';
+        shell.style.height = 'min(560px, 84vh)';
+        shell.style.position = 'relative';
 
         var panel = document.createElement('div');
-        panel.style.width = 'min(520px, 100%)';
-        panel.style.height = 'min(560px, 84vh)';
+        panel.style.width = '100%';
+        panel.style.height = '100%';
         panel.style.background = '#fff';
         panel.style.borderRadius = '22px';
         panel.style.overflow = 'hidden';
@@ -95,18 +100,19 @@
         close.setAttribute('aria-label', '주소검색 닫기');
         close.textContent = '×';
         close.style.position = 'absolute';
-        close.style.top = '10px';
-        close.style.right = '12px';
-        close.style.zIndex = '2';
+        close.style.top = '-18px';
+        close.style.right = '-12px';
+        close.style.zIndex = '3';
         close.style.width = '34px';
         close.style.height = '34px';
         close.style.border = '0';
         close.style.borderRadius = '999px';
-        close.style.background = 'rgba(0, 30, 70, 0.08)';
+        close.style.background = '#ffffff';
         close.style.color = '#001f3f';
         close.style.fontSize = '24px';
         close.style.lineHeight = '32px';
         close.style.cursor = 'pointer';
+        close.style.boxShadow = '0 8px 24px rgba(0, 20, 50, 0.22)';
         close.onclick = function () {
           removeLayer(layer);
           finish('');
@@ -134,9 +140,10 @@
 
         container.appendChild(loading);
 
-        panel.appendChild(close);
         panel.appendChild(container);
-        layer.appendChild(panel);
+        shell.appendChild(panel);
+        shell.appendChild(close);
+        layer.appendChild(shell);
         document.body.appendChild(layer);
 
         new window.daum.Postcode({
