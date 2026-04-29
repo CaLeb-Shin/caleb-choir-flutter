@@ -15,7 +15,7 @@ class AppBottomNavBar extends ConsumerWidget {
 
   static const _items = [
     (_NavGlyph.home, '홈'),
-    (_NavGlyph.score, '악보'),
+    (_NavGlyph.score, '악보&음원'),
     (_NavGlyph.video, '영상'),
     (_NavGlyph.attendance, '출석'),
     (_NavGlyph.community, '소통'),

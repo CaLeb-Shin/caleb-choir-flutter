@@ -590,11 +590,15 @@ class HomeScreen extends ConsumerWidget {
       ),
       MiniActionTile(
         icon: Icons.music_note_rounded,
-        label: '악보',
+        label: '악보&음원',
         tone: 'secondary',
         hasNew: hasNewSheetMusic,
-        onTap: () =>
-            _openSection(context, '악보', const SheetMusicScreen(), navIndex: 1),
+        onTap: () => _openSection(
+          context,
+          '악보&음원',
+          const SheetMusicScreen(),
+          navIndex: 1,
+        ),
       ),
       MiniActionTile(
         icon: Icons.play_circle_rounded,
