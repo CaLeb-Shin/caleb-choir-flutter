@@ -22,13 +22,29 @@ service firebase.storage {
       return hasProfile() && myData().get('isPlatformAdmin', false) == true;
     }
 
+    function isBootstrapAdminEmail() {
+      return isSignedIn() && request.auth.token.email == 'sinbun001@gmail.com';
+    }
+
+    function churchData(churchId) {
+      return firestore.get(/databases/(default)/documents/churches/$(churchId)).data;
+    }
+
+    function isListedChurchAdmin(churchId) {
+      return firestore.exists(/databases/(default)/documents/churches/$(churchId))
+        && churchData(churchId).get('adminUids', []).hasAny([request.auth.uid]);
+    }
+
     function isChurchAdminOf(churchId) {
-      return isPlatformAdmin() || sameChurch(churchId)
+      return isPlatformAdmin()
+        || isBootstrapAdminEmail()
+        || isListedChurchAdmin(churchId)
+        || sameChurch(churchId)
         && (myData().role in ['admin', 'church_admin']);
     }
 
     match /churches/{churchId}/sheet_music/{fileName} {
-      allow read: if isPlatformAdmin() || sameChurch(churchId);
+      allow read: if sameChurch(churchId) || isChurchAdminOf(churchId);
       allow create, update: if isChurchAdminOf(churchId)
         && request.resource.size < 30 * 1024 * 1024
         && request.resource.contentType.matches('(application/pdf|image/.*)');
@@ -36,7 +52,7 @@ service firebase.storage {
     }
 
     match /churches/{churchId}/sheet_audio/{fileName} {
-      allow read: if isPlatformAdmin() || sameChurch(churchId);
+      allow read: if sameChurch(churchId) || isChurchAdminOf(churchId);
       allow create, update: if isChurchAdminOf(churchId)
         && request.resource.size < 50 * 1024 * 1024
         && request.resource.contentType.matches('audio/.*');
