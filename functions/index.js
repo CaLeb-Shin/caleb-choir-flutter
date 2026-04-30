@@ -1,4 +1,5 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const axios = require("axios");
 const crypto = require("crypto");
@@ -13,6 +14,9 @@ const { onObjectFinalized } = require("firebase-functions/v2/storage");
 
 admin.initializeApp();
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+
+const NAVER_CLIENT_ID = defineSecret("NAVER_CLIENT_ID");
+const NAVER_CLIENT_SECRET = defineSecret("NAVER_CLIENT_SECRET");
 
 /**
  * 카카오 액세스 토큰을 검증하고 Firebase Custom Token을 생성하는 Cloud Function
@@ -77,6 +81,85 @@ exports.createKakaoCustomToken = onCall(async (request) => {
 });
 
 /**
+ * 네이버 OAuth authorization code를 검증하고 Firebase Custom Token을 생성한다.
+ * NAVER_CLIENT_ID / NAVER_CLIENT_SECRET Firebase Secret Manager 값이 필요하다.
+ */
+exports.createNaverCustomToken = onCall(
+  { secrets: [NAVER_CLIENT_ID, NAVER_CLIENT_SECRET] },
+  async (request) => {
+  const { code, state, redirectUri } = request.data || {};
+  const clientId = NAVER_CLIENT_ID.value();
+  const clientSecret = NAVER_CLIENT_SECRET.value();
+
+  if (!clientId || !clientSecret) {
+    throw new HttpsError(
+      "failed-precondition",
+      "네이버 로그인 환경변수가 설정되지 않았습니다.",
+    );
+  }
+  if (!code || !state || !redirectUri) {
+    throw new HttpsError("invalid-argument", "네이버 인증 코드가 필요합니다.");
+  }
+
+  try {
+    const tokenResponse = await axios.get("https://nid.naver.com/oauth2.0/token", {
+      params: {
+        grant_type: "authorization_code",
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        state,
+      },
+    });
+
+    const accessToken = tokenResponse.data?.access_token;
+    if (!accessToken) {
+      throw new HttpsError("unauthenticated", "네이버 액세스 토큰을 받을 수 없습니다.");
+    }
+
+    const profileResponse = await axios.get("https://openapi.naver.com/v1/nid/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const naverProfile = profileResponse.data?.response;
+    if (!naverProfile?.id) {
+      throw new HttpsError("unauthenticated", "네이버 사용자 정보를 확인할 수 없습니다.");
+    }
+
+    const naverUid = `naver:${naverProfile.id}`;
+    const email = naverProfile.email || null;
+    const nickname = naverProfile.nickname || naverProfile.name || null;
+    const profileImage = naverProfile.profile_image || null;
+
+    try {
+      await admin.auth().getUser(naverUid);
+      await admin.auth().updateUser(naverUid, {
+        ...(nickname && { displayName: nickname }),
+        ...(profileImage && { photoURL: profileImage }),
+      });
+    } catch (error) {
+      if (error.code === "auth/user-not-found") {
+        await admin.auth().createUser({
+          uid: naverUid,
+          ...(email && { email }),
+          ...(nickname && { displayName: nickname }),
+          ...(profileImage && { photoURL: profileImage }),
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    const customToken = await admin.auth().createCustomToken(naverUid);
+    return { token: customToken };
+  } catch (error) {
+    console.error("Naver auth error:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", "네이버 인증 처리 중 오류가 발생했습니다.");
+  }
+});
+
+/**
  * notifications 컬렉션에 새 문서 생성 시 전체 멤버에게 푸시 알림 전송
  */
 exports.sendPushNotification = onDocumentCreated("notifications/{notificationId}", async (event) => {
@@ -116,7 +199,7 @@ exports.sendPushNotification = onDocumentCreated("notifications/{notificationId}
  * 커뮤니티 영상 원본 업로드 시 12초 이하 MP4로 서버 압축
  */
 exports.compressCommunityVideo = onObjectFinalized(
-  { memory: "1GiB", timeoutSeconds: 540 },
+  { region: "us-east1", memory: "1GiB", timeoutSeconds: 540 },
   async (event) => {
     const object = event.data;
     const filePath = object.name || "";

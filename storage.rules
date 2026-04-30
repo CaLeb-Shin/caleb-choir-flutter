@@ -58,5 +58,21 @@ service firebase.storage {
         && request.resource.contentType.matches('audio/.*');
       allow delete: if isChurchAdminOf(churchId);
     }
+
+    match /churches/{churchId}/post_images/{fileName} {
+      allow read: if sameChurch(churchId) || isChurchAdminOf(churchId);
+      allow create, update: if isChurchAdminOf(churchId)
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isChurchAdminOf(churchId);
+    }
+
+    match /post_images/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn();
+    }
   }
 }

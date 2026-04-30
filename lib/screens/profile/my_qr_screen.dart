@@ -15,6 +15,21 @@ class MyQrScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final uid = FirebaseService.uid;
     final profileAsync = ref.watch(profileProvider);
+    final session = ref.watch(activeSessionProvider).valueOrNull;
+    final profile = profileAsync.valueOrNull;
+    final qrTitle = session != null
+        ? '${_dateLabel(session['attendanceDate'] ?? session['openedAt'])} 출석 QR'
+        : '출석 QR';
+    final qrSubtitle = session != null
+        ? (session['title'] ?? '열린 출석')
+        : '관리자가 출석을 열면 오늘 QR로 갱신됩니다';
+    final qrData = uid == null
+        ? ''
+        : profile != null && session != null
+        ? 'ccnote:attendance:${profile.churchId ?? ''}:${session['id']}:$uid'
+        : profile != null
+        ? 'ccnote:member:${profile.churchId ?? ''}:$uid'
+        : uid;
 
     return Scaffold(
       backgroundColor: AppColors.primary,
@@ -23,7 +38,7 @@ class MyQrScreen extends ConsumerWidget {
         elevation: 0,
         foregroundColor: Colors.white,
         title: AppLogoTitle(
-          title: '내 출석 QR',
+          title: qrTitle,
           textStyle: AppText.headline(18, color: Colors.white),
         ),
         systemOverlayStyle: SystemUiOverlayStyle.light,
@@ -36,14 +51,12 @@ class MyQrScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  '관리자에게 이 QR 을 보여주세요',
-                  style: AppText.body(14, color: Colors.white70),
-                ),
+                Text(qrTitle, style: AppText.body(14, color: Colors.white70)),
                 const SizedBox(height: 4),
                 Text(
-                  '출석 체크 시 사용됩니다',
+                  qrSubtitle,
                   style: AppText.body(12, color: Colors.white38),
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
                 Container(
@@ -63,7 +76,7 @@ class MyQrScreen extends ConsumerWidget {
                     children: [
                       if (uid != null)
                         QrImageView(
-                          data: uid,
+                          data: qrData,
                           version: QrVersions.auto,
                           size: 260,
                           backgroundColor: Colors.white,
@@ -152,5 +165,15 @@ class MyQrScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  static String _dateLabel(dynamic value) {
+    if (value == null) return '오늘';
+    try {
+      final date = DateTime.parse(value.toString());
+      return '${date.month}월 ${date.day}일';
+    } catch (_) {
+      return value.toString();
+    }
   }
 }

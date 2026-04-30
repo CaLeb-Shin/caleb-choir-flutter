@@ -134,10 +134,16 @@ service cloud.firestore {
       allow read: if resource.data.keys().hasAll(['churchId'])
         && canReadChurchContent(resource.data.churchId);
       allow create: if isSignedIn()
-        && request.auth.uid == request.resource.data.userId
         && request.resource.data.keys().hasAll(['churchId'])
-        && sameChurch(request.resource.data.churchId);
-      allow update, delete: if isSignedIn() && request.auth.uid == resource.data.userId;
+        && (
+          (request.auth.uid == request.resource.data.userId
+            && sameChurch(request.resource.data.churchId))
+          || isChurchAdminOf(request.resource.data.churchId)
+        );
+      allow update, delete: if isSignedIn() && (
+        request.auth.uid == resource.data.userId ||
+        (resource.data.keys().hasAll(['churchId']) && isChurchAdminOf(resource.data.churchId))
+      );
 
       // 서브컬렉션: posts/{postId}/comments
       match /comments/{commentId} {

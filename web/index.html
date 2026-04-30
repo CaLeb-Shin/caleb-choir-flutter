@@ -47,6 +47,64 @@
     })();
   </script>
 
+  <!-- Naver OAuth — Client Secret은 Firebase Functions 환경변수에만 둡니다. -->
+  <script>
+    window.CCNoteNaver = {
+      clientId: '3NXDVvi7IxgIYBxA3IXL',
+      storageKey: 'cc-note-naver-oauth-state',
+      redirectStorageKey: 'cc-note-naver-redirect-uri',
+      start: function () {
+        var clientId = window.CCNoteNaver.clientId;
+        if (!clientId || clientId === 'YOUR_NAVER_CLIENT_ID') {
+          throw new Error('NAVER_CLIENT_ID_NOT_CONFIGURED');
+        }
+
+        var redirectUri = window.location.origin + window.location.pathname;
+        var state =
+          Date.now().toString(36) +
+          Math.random().toString(36).slice(2) +
+          Math.random().toString(36).slice(2);
+
+        window.sessionStorage.setItem(window.CCNoteNaver.storageKey, state);
+        window.sessionStorage.setItem(window.CCNoteNaver.redirectStorageKey, redirectUri);
+
+        var authorizeUrl =
+          'https://nid.naver.com/oauth2.0/authorize' +
+          '?response_type=code' +
+          '&client_id=' + encodeURIComponent(clientId) +
+          '&redirect_uri=' + encodeURIComponent(redirectUri) +
+          '&state=' + encodeURIComponent(state);
+
+        window.location.assign(authorizeUrl);
+      },
+      consumeCallback: function () {
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('error')) {
+          return JSON.stringify({ error: params.get('error_description') || params.get('error') });
+        }
+        var code = params.get('code');
+        var state = params.get('state');
+        if (!code || !state) return null;
+
+        var expectedState = window.sessionStorage.getItem(window.CCNoteNaver.storageKey);
+        var redirectUri =
+          window.sessionStorage.getItem(window.CCNoteNaver.redirectStorageKey) ||
+          window.location.origin + window.location.pathname;
+
+        window.sessionStorage.removeItem(window.CCNoteNaver.storageKey);
+        window.sessionStorage.removeItem(window.CCNoteNaver.redirectStorageKey);
+
+        if (!expectedState || expectedState !== state) {
+          return JSON.stringify({ error: 'NAVER_STATE_MISMATCH' });
+        }
+
+        var cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        return JSON.stringify({ code: code, state: state, redirectUri: redirectUri });
+      }
+    };
+  </script>
+
   <!-- Daum/Kakao 우편번호 서비스 — 기본 주소검색은 별도 앱 키 없이 사용합니다. -->
   <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
   <script>

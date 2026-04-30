@@ -458,10 +458,12 @@ class _PhotoPicker extends StatelessWidget {
                     _ClearButton(onTap: onClear),
                   ],
                 )
-              : const _PickerEmptyState(
-                  icon: Icons.add_photo_alternate_outlined,
-                  title: '사진 추가',
-                  subtitle: '갤러리에서 재미있는 순간을 골라주세요',
+              : const Center(
+                  child: _PickerEmptyState(
+                    icon: Icons.add_photo_alternate_outlined,
+                    title: '사진 추가',
+                    subtitle: '갤러리에서 재미있는 순간을 골라주세요',
+                  ),
                 ),
         ),
       ),

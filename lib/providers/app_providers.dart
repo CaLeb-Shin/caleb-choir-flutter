@@ -577,6 +577,7 @@ final activeSessionProvider = FutureProvider<Map<String, dynamic>?>((
       'id': 'preview-session-1',
       'title': '주일 찬양 연습',
       'openedAt': '2026-04-28T10:00:00',
+      'attendanceDate': '2026-04-28',
       'location': '본당',
     };
   }

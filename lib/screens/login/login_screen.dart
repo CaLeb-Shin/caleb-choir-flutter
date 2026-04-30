@@ -12,6 +12,9 @@ import '../../services/firebase_service.dart';
 import 'kakao_sign_in_stub.dart'
     if (dart.library.io) 'kakao_sign_in_mobile.dart'
     as kakao_helper;
+import 'naver_sign_in_stub.dart'
+    if (dart.library.io) 'naver_sign_in_mobile.dart'
+    as naver_helper;
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -36,6 +39,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _completeGoogleRedirectSignIn();
+        _completeNaverRedirectSignIn();
       });
     }
   }
@@ -53,6 +57,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _error = _googleErrorMessage(e));
     } catch (e) {
       debugPrint('Google redirect result error: $e');
+    }
+  }
+
+  Future<void> _completeNaverRedirectSignIn() async {
+    try {
+      final callback = naver_helper.consumeNaverRedirectResult();
+      if (callback == null) return;
+      setState(() {
+        _error = null;
+        _loading = true;
+        _loadingProvider = 'naver';
+      });
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'createNaverCustomToken',
+      );
+      final result = await callable.call<Map<String, dynamic>>(callback);
+      final customToken = result.data['token'] as String;
+      await FirebaseAuth.instance.signInWithCustomToken(customToken);
+      await _afterSuccessfulSignIn();
+    } catch (e) {
+      debugPrint('Naver redirect sign-in error: $e');
+      if (!mounted) return;
+      setState(() => _error = _naverErrorMessage(e));
+    } finally {
+      if (mounted && _loadingProvider == 'naver') {
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
+      }
     }
   }
 
@@ -166,6 +200,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  Future<void> _handleNaverSignIn() async {
+    setState(() {
+      _error = null;
+      _loading = true;
+      _loadingProvider = 'naver';
+    });
+    try {
+      await naver_helper.startSignInWithNaver();
+    } catch (e) {
+      debugPrint('Naver sign-in error: $e');
+      setState(() => _error = _naverErrorMessage(e));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
+      }
+    }
+  }
+
   String _googleErrorMessage(FirebaseAuthException e) {
     if (e.code == 'unauthorized-domain') {
       return '현재 주소가 Firebase 로그인 허용 도메인에 없습니다.\nFirebase Auth에 이 도메인을 추가해주세요.';
@@ -174,6 +229,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return 'Google 로그인 창이 닫혔습니다.\n다시 시도해주세요.';
     }
     return 'Google 로그인에 실패했습니다.\n다시 시도해주세요.';
+  }
+
+  String _naverErrorMessage(Object e) {
+    final message = e.toString();
+    if (message.contains('NAVER_CLIENT_ID')) {
+      return '네이버 로그인 키가 아직 설정되지 않았습니다.\n네이버 개발자센터 Client ID를 연결해주세요.';
+    }
+    if (message.contains('UnsupportedError')) {
+      return '모바일 네이버 로그인은 앱 키와 URL scheme 설정 후 사용할 수 있습니다.';
+    }
+    return '네이버 로그인에 실패했습니다.\n다시 시도해주세요.';
   }
 
   @override
@@ -328,6 +394,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+
+              // Naver
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _loading ? null : _handleNaverSignIn,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF03C75A),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: _loading && _loadingProvider == 'naver'
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'N',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              SizedBox(width: 10),
+                              Text(
+                                '네이버로 시작하기',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ],
