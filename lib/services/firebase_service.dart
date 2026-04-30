@@ -723,13 +723,24 @@ class FirebaseService {
   }
 
   // ============ Admin QR Check-in ============
-  static Future<Map<String, dynamic>> adminCheckIn(String userId) async {
+  static Future<Map<String, dynamic>> adminCheckIn(
+    String userId, {
+    String? allowedPart,
+    String scannerMode = 'mobile_admin',
+  }) async {
     final churchId = _requireChurchId();
     final session = await getActiveSession();
     if (session == null) throw Exception('열린 출석 세션이 없습니다');
 
     final userDoc = await _db.collection('users').doc(userId).get();
     if (!userDoc.exists) throw Exception('해당 단원을 찾을 수 없습니다');
+    final userData = userDoc.data() ?? {};
+    if (userData['churchId'] != churchId) {
+      throw Exception('다른 교회 단원 QR입니다');
+    }
+    if (allowedPart != null && userData['part'] != allowedPart) {
+      throw Exception('담당 파트 단원만 출석 처리할 수 있습니다');
+    }
 
     final existing = await _db
         .collection('attendance')
@@ -740,10 +751,7 @@ class FirebaseService {
         .get();
 
     if (existing.docs.isNotEmpty) {
-      return {
-        'alreadyCheckedIn': true,
-        'userName': userDoc.data()?['name'] ?? '',
-      };
+      return {'alreadyCheckedIn': true, 'userName': userData['name'] ?? ''};
     }
 
     await _db.collection('attendance').add({
@@ -751,12 +759,11 @@ class FirebaseService {
       'userId': userId,
       'sessionId': session['id'],
       'checkedInAt': FieldValue.serverTimestamp(),
+      'checkedInBy': uid,
+      'scannerMode': scannerMode,
     });
 
-    return {
-      'alreadyCheckedIn': false,
-      'userName': userDoc.data()?['name'] ?? '',
-    };
+    return {'alreadyCheckedIn': false, 'userName': userData['name'] ?? ''};
   }
 
   // ============ Polls (참석 투표) ============

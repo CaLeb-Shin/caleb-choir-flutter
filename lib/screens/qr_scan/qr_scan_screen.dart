@@ -6,7 +6,15 @@ import '../../widgets/app_logo_title.dart';
 
 class QrScanScreen extends StatefulWidget {
   final void Function(String code) onScanned;
-  const QrScanScreen({super.key, required this.onScanned});
+  final String title;
+  final String instruction;
+
+  const QrScanScreen({
+    super.key,
+    required this.onScanned,
+    this.title = 'QR 스캔',
+    this.instruction = 'QR 코드를 카메라에 비춰주세요',
+  });
 
   @override
   State<QrScanScreen> createState() => _QrScanScreenState();
@@ -26,9 +34,9 @@ class _QrScanScreenState extends State<QrScanScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const AppLogoTitle(
-          title: 'QR 스캔',
-          textStyle: TextStyle(color: Colors.white),
+        title: AppLogoTitle(
+          title: widget.title,
+          textStyle: const TextStyle(color: Colors.white),
         ),
         backgroundColor: AppColors.primaryContainer,
         foregroundColor: Colors.white,
@@ -77,9 +85,9 @@ class _QrScanScreenState extends State<QrScanScreen> {
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text(
-                  'QR 코드를 카메라에 비춰주세요',
-                  style: TextStyle(
+                child: Text(
+                  widget.instruction,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,

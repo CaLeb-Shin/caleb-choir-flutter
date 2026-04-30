@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart' show Share;
+import '../../models/user.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
@@ -20,7 +21,18 @@ class AttendanceScreen extends ConsumerWidget {
     final session = sessionAsync.valueOrNull;
     final history = historyAsync.valueOrNull ?? [];
     final total = history.length;
-    final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
+    final viewAsMember = ref.watch(viewAsMemberProvider);
+    final canOperateSession =
+        ((profile?.isAdmin ?? false) || (profile?.isOfficer ?? false)) &&
+        !viewAsMember;
+    final canScanAttendance =
+        (profile?.hasManagePermission ?? false) && !viewAsMember;
+    final scannerPart = profile?.isPartLeader == true
+        ? profile?.partLeaderFor
+        : null;
+    final scannerPartLabel = scannerPart == null
+        ? null
+        : User.partLabels[scannerPart] ?? scannerPart;
     final qrTitle = session != null
         ? '${_dateLabel(session['attendanceDate'] ?? session['openedAt'])} 출석 QR'
         : '출석 QR';
@@ -43,8 +55,8 @@ class AttendanceScreen extends ConsumerWidget {
           Text('연습 출석을 관리하세요', style: AppText.body(14, color: AppColors.muted)),
           const SizedBox(height: 20),
 
-          // ── Admin controls
-          if (isAdmin) ...[
+          // ── Attendance operator controls
+          if (canOperateSession || canScanAttendance) ...[
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -57,41 +69,56 @@ class AttendanceScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('관리자', style: AppText.label()),
+                  Text(
+                    canOperateSession ? '출석 운영' : '파트장 스캐너',
+                    style: AppText.label(),
+                  ),
+                  if (scannerPartLabel != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '$scannerPartLabel 파트 단원 QR만 출석 처리됩니다',
+                      style: AppText.body(12, color: AppColors.muted),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      Expanded(
-                        child: session != null
-                            ? ElevatedButton.icon(
-                                onPressed: () async {
-                                  await FirebaseService.closeSession(
-                                    session['id'],
-                                  );
-                                  ref.invalidate(activeSessionProvider);
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.error,
-                                  foregroundColor: Colors.white,
+                      if (canOperateSession) ...[
+                        Expanded(
+                          child: session != null
+                              ? ElevatedButton.icon(
+                                  onPressed: () async {
+                                    await FirebaseService.closeSession(
+                                      session['id'],
+                                    );
+                                    ref.invalidate(activeSessionProvider);
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.error,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.stop_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text('출석 마감'),
+                                )
+                              : ElevatedButton.icon(
+                                  onPressed: () =>
+                                      _showOpenSessionDialog(context, ref),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.secondary,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.play_arrow_rounded,
+                                    size: 18,
+                                  ),
+                                  label: const Text('출석 열기'),
                                 ),
-                                icon: const Icon(Icons.stop_rounded, size: 18),
-                                label: const Text('출석 마감'),
-                              )
-                            : ElevatedButton.icon(
-                                onPressed: () =>
-                                    _showOpenSessionDialog(context, ref),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.secondary,
-                                  foregroundColor: Colors.white,
-                                ),
-                                icon: const Icon(
-                                  Icons.play_arrow_rounded,
-                                  size: 18,
-                                ),
-                                label: const Text('출석 열기'),
-                              ),
-                      ),
-                      const SizedBox(width: 10),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: session == null
@@ -101,10 +128,19 @@ class AttendanceScreen extends ConsumerWidget {
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => QrScanScreen(
+                                        title: scannerPartLabel == null
+                                            ? '출석 QR 스캔'
+                                            : '$scannerPartLabel 파트 스캔',
+                                        instruction: scannerPartLabel == null
+                                            ? '단원의 출석 QR을 카메라에 비춰주세요'
+                                            : '$scannerPartLabel 파트 단원의 출석 QR을 비춰주세요',
                                         onScanned: (code) async {
-                                          final userId =
-                                              _userIdFromAttendanceQr(code);
-                                          if (userId == null) {
+                                          final parsed = _attendanceQrFromCode(
+                                            code,
+                                          );
+                                          final userId = parsed?.userId;
+                                          if (parsed == null ||
+                                              userId == null) {
                                             if (context.mounted) {
                                               ScaffoldMessenger.of(
                                                 context,
@@ -118,10 +154,49 @@ class AttendanceScreen extends ConsumerWidget {
                                             }
                                             return;
                                           }
+                                          if (parsed.churchId != null &&
+                                              profile?.churchId != null &&
+                                              parsed.churchId !=
+                                                  profile?.churchId) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    '다른 교회 출석 QR입니다',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                            return;
+                                          }
+                                          if (parsed.sessionId != null &&
+                                              session['id'] != null &&
+                                              parsed.sessionId !=
+                                                  session['id']) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    '현재 열린 출석 QR이 아닙니다',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                            return;
+                                          }
                                           try {
                                             final result =
                                                 await FirebaseService.adminCheckIn(
                                                   userId,
+                                                  allowedPart: scannerPart,
+                                                  scannerMode:
+                                                      scannerPart == null
+                                                      ? 'mobile_admin'
+                                                      : 'mobile_part_leader',
                                                 );
                                             if (context.mounted) {
                                               final name =
@@ -171,7 +246,7 @@ class AttendanceScreen extends ConsumerWidget {
                             Icons.qr_code_scanner_rounded,
                             size: 18,
                           ),
-                          label: const Text('QR 스캔'),
+                          label: Text(scannerPart == null ? 'QR 스캔' : '파트 스캔'),
                         ),
                       ),
                     ],
@@ -498,16 +573,37 @@ class AttendanceScreen extends ConsumerWidget {
     }
   }
 
-  static String? _userIdFromAttendanceQr(String code) {
+  static _AttendanceQr? _attendanceQrFromCode(String code) {
     final trimmed = code.trim();
     final sessionQr = RegExp(
-      r'^ccnote:attendance:[^:]*:[^:]+:(.+)$',
+      r'^ccnote:attendance:([^:]*):([^:]+):(.+)$',
     ).firstMatch(trimmed);
-    if (sessionQr != null) return sessionQr.group(1);
-    final memberQr = RegExp(r'^ccnote:member:[^:]*:(.+)$').firstMatch(trimmed);
-    if (memberQr != null) return memberQr.group(1);
+    if (sessionQr != null) {
+      return _AttendanceQr(
+        churchId: sessionQr.group(1),
+        sessionId: sessionQr.group(2),
+        userId: sessionQr.group(3),
+      );
+    }
+    final memberQr = RegExp(
+      r'^ccnote:member:([^:]*):(.+)$',
+    ).firstMatch(trimmed);
+    if (memberQr != null) {
+      return _AttendanceQr(
+        churchId: memberQr.group(1),
+        userId: memberQr.group(2),
+      );
+    }
     final legacyQr = RegExp(r'^caleb-choir:(.+)$').firstMatch(trimmed);
-    if (legacyQr != null) return legacyQr.group(1);
-    return trimmed.isEmpty ? null : trimmed;
+    if (legacyQr != null) return _AttendanceQr(userId: legacyQr.group(1));
+    return trimmed.isEmpty ? null : _AttendanceQr(userId: trimmed);
   }
+}
+
+class _AttendanceQr {
+  final String? churchId;
+  final String? sessionId;
+  final String? userId;
+
+  const _AttendanceQr({this.churchId, this.sessionId, this.userId});
 }
