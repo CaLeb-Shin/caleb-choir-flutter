@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,9 +7,15 @@ import 'package:flutter/foundation.dart';
 
 class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  static StreamSubscription<User?>? _authSubscription;
+  static StreamSubscription<String>? _tokenSubscription;
+  static bool _initialized = false;
 
   /// 알림 권한 요청 + FCM 토큰 저장
   static Future<void> initialize() async {
+    if (_initialized) return;
+    _initialized = true;
+
     // 웹은 service worker + VAPID 설정이 필요하므로 일단 건너뜀
     if (kIsWeb) {
       debugPrint('FCM: web initialization skipped (requires VAPID key setup)');
@@ -16,7 +24,9 @@ class NotificationService {
 
     try {
       final settings = await _messaging.requestPermission(
-        alert: true, badge: true, sound: true,
+        alert: true,
+        badge: true,
+        sound: true,
       );
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized ||
@@ -24,7 +34,17 @@ class NotificationService {
         await _saveToken();
       }
 
-      _messaging.onTokenRefresh.listen((_) => _saveToken());
+      _authSubscription?.cancel();
+      _authSubscription = FirebaseAuth.instance.authStateChanges().listen((
+        user,
+      ) {
+        if (user != null) {
+          _saveToken();
+        }
+      });
+
+      _tokenSubscription?.cancel();
+      _tokenSubscription = _messaging.onTokenRefresh.listen(_saveToken);
 
       FirebaseMessaging.onMessage.listen((message) {
         debugPrint('FCM foreground: ${message.notification?.title}');
@@ -35,15 +55,24 @@ class NotificationService {
   }
 
   /// FCM 토큰을 Firestore users/{uid} 에 저장
-  static Future<void> _saveToken() async {
+  static Future<void> _saveToken([String? refreshedToken]) async {
     try {
-      final token = await _messaging.getToken();
       final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (token != null && uid != null) {
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(uid)
-            .update({'fcmToken': token});
+      if (uid == null) return;
+
+      final token = refreshedToken ?? await _messaging.getToken();
+      if (token != null) {
+        await FirebaseFirestore.instance.collection('users').doc(uid).set({
+          'fcmToken': token,
+          'fcmTokens': {
+            token: {
+              'enabled': true,
+              'platform': defaultTargetPlatform.name,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+          },
+          'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
         debugPrint('FCM token saved: ${token.substring(0, 20)}...');
       }
     } catch (e) {

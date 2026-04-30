@@ -350,10 +350,10 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
     final count = assignments.length;
     const gap = 6.0;
     const boardPadding = 8.0;
-    final effectiveWidth = columnWidth ?? _seatingCols * 76.0 + 18;
-    final cellWidth =
-        (effectiveWidth - boardPadding * 2 - gap * (_seatingCols - 1)) /
-        _seatingCols;
+    final baseWidth = columnWidth ?? _seatingCols * 76.0 + 18;
+    final effectiveWidth = columnWidth == null
+        ? baseWidth
+        : math.max(0.0, baseWidth - 2);
     return Padding(
       padding: EdgeInsets.only(right: addRightPadding ? 12 : 0),
       child: Column(
@@ -402,114 +402,31 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
                     bottom: r < _seatingRows - 1 ? 6 : 0,
                   ),
                   child: Row(
-                    children: List.generate(_seatingCols, (c) {
-                      final a = assignments
-                          .where((a) => a['row'] == r && a['col'] == c)
-                          .firstOrNull;
-                      final isSelf = a != null && a['userId'] == profile?.id;
-                      return Padding(
-                        padding: EdgeInsets.only(
-                          right: c < _seatingCols - 1 ? gap : 0,
+                    children: [
+                      for (var c = 0; c < _seatingCols; c++) ...[
+                        Expanded(
+                          child: _SeatCellTarget(
+                            part: part,
+                            row: r,
+                            col: c,
+                            assignment: assignments
+                                .where((a) => a['row'] == r && a['col'] == c)
+                                .firstOrNull,
+                            profile: profile,
+                            canEdit: canEdit,
+                            candidates: candidates,
+                            allAssignments: allAssignments,
+                            usesAttendancePoll: usesAttendancePoll,
+                            selectedCandidate: _selectedCandidate,
+                            spotlightMySeat: spotlightMySeat,
+                            height: cellHeight,
+                            onAssign: _assignCandidateToSeat,
+                            onSeatTap: _handleSeatTap,
+                          ),
                         ),
-                        child: DragTarget<Map<String, dynamic>>(
-                          onWillAcceptWithDetails: (details) {
-                            final memberPart = details.data['part'];
-                            return canEdit && memberPart == part;
-                          },
-                          onAcceptWithDetails: (details) =>
-                              _assignCandidateToSeat(
-                                part: part,
-                                row: r,
-                                col: c,
-                                member: details.data,
-                              ),
-                          builder: (context, incoming, rejected) {
-                            final hovering = incoming.isNotEmpty;
-                            return GestureDetector(
-                              onTap: canEdit
-                                  ? () => _handleSeatTap(
-                                      context,
-                                      part,
-                                      r,
-                                      c,
-                                      a,
-                                      candidates,
-                                      allAssignments,
-                                      usesAttendancePoll,
-                                    )
-                                  : null,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 140),
-                                width: cellWidth,
-                                height: cellHeight,
-                                decoration: BoxDecoration(
-                                  color: hovering
-                                      ? AppColors.secondarySoft
-                                      : isSelf
-                                      ? AppColors.secondary
-                                      : a != null
-                                      ? AppColors.primaryContainer.withValues(
-                                          alpha: 0.1,
-                                        )
-                                      : AppColors.card,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: hovering
-                                        ? AppColors.secondary
-                                        : isSelf
-                                        ? AppColors.secondary
-                                        : a != null
-                                        ? AppColors.primaryContainer.withValues(
-                                            alpha: 0.3,
-                                          )
-                                        : AppColors.border.withValues(
-                                            alpha: 0.3,
-                                          ),
-                                    width: hovering || isSelf ? 2 : 1,
-                                  ),
-                                ),
-                                alignment: Alignment.center,
-                                child: a != null
-                                    ? isSelf && spotlightMySeat
-                                          ? _ShakingSeatName(
-                                              text: a['userName'] ?? '-',
-                                              fontSize: 11,
-                                            )
-                                          : Text(
-                                              a['userName'] ?? '-',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: isSelf
-                                                    ? Colors.white
-                                                    : AppColors.primary,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            )
-                                    : Text(
-                                        _selectedCandidate?['part'] == part
-                                            ? '탭'
-                                            : '-',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight:
-                                              _selectedCandidate?['part'] ==
-                                                  part
-                                              ? FontWeight.w800
-                                              : FontWeight.w400,
-                                          color:
-                                              _selectedCandidate?['part'] ==
-                                                  part
-                                              ? AppColors.secondary
-                                              : AppColors.muted,
-                                        ),
-                                      ),
-                              ),
-                            );
-                          },
-                        ),
-                      );
-                    }),
+                        if (c < _seatingCols - 1) const SizedBox(width: gap),
+                      ],
+                    ],
                   ),
                 );
               }),
@@ -1169,6 +1086,144 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
       if (poll['id']?.toString() == pollId) return poll;
     }
     return null;
+  }
+}
+
+typedef _SeatAssignCallback =
+    Future<void> Function({
+      required String part,
+      required int row,
+      required int col,
+      required Map<String, dynamic> member,
+    });
+
+typedef _SeatTapCallback =
+    void Function(
+      BuildContext context,
+      String part,
+      int row,
+      int col,
+      Map<String, dynamic>? current,
+      List<Map<String, dynamic>> candidates,
+      List<Map<String, dynamic>> allAssignments,
+      bool usesAttendancePoll,
+    );
+
+class _SeatCellTarget extends StatelessWidget {
+  final String part;
+  final int row;
+  final int col;
+  final Map<String, dynamic>? assignment;
+  final User? profile;
+  final bool canEdit;
+  final List<Map<String, dynamic>> candidates;
+  final List<Map<String, dynamic>> allAssignments;
+  final bool usesAttendancePoll;
+  final Map<String, dynamic>? selectedCandidate;
+  final bool spotlightMySeat;
+  final double height;
+  final _SeatAssignCallback onAssign;
+  final _SeatTapCallback onSeatTap;
+
+  const _SeatCellTarget({
+    required this.part,
+    required this.row,
+    required this.col,
+    required this.assignment,
+    required this.profile,
+    required this.canEdit,
+    required this.candidates,
+    required this.allAssignments,
+    required this.usesAttendancePoll,
+    required this.selectedCandidate,
+    required this.spotlightMySeat,
+    required this.height,
+    required this.onAssign,
+    required this.onSeatTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelf = assignment != null && assignment!['userId'] == profile?.id;
+
+    return DragTarget<Map<String, dynamic>>(
+      onWillAcceptWithDetails: (details) {
+        final memberPart = details.data['part'];
+        return canEdit && memberPart == part;
+      },
+      onAcceptWithDetails: (details) =>
+          onAssign(part: part, row: row, col: col, member: details.data),
+      builder: (context, incoming, rejected) {
+        final hovering = incoming.isNotEmpty;
+        return GestureDetector(
+          onTap: canEdit
+              ? () => onSeatTap(
+                  context,
+                  part,
+                  row,
+                  col,
+                  assignment,
+                  candidates,
+                  allAssignments,
+                  usesAttendancePoll,
+                )
+              : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: double.infinity,
+            height: height,
+            decoration: BoxDecoration(
+              color: hovering
+                  ? AppColors.secondarySoft
+                  : isSelf
+                  ? AppColors.secondary
+                  : assignment != null
+                  ? AppColors.primaryContainer.withValues(alpha: 0.1)
+                  : AppColors.card,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: hovering
+                    ? AppColors.secondary
+                    : isSelf
+                    ? AppColors.secondary
+                    : assignment != null
+                    ? AppColors.primaryContainer.withValues(alpha: 0.3)
+                    : AppColors.border.withValues(alpha: 0.3),
+                width: hovering || isSelf ? 2 : 1,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: assignment != null
+                ? isSelf && spotlightMySeat
+                      ? _ShakingSeatName(
+                          text: assignment!['userName'] ?? '-',
+                          fontSize: 11,
+                        )
+                      : Text(
+                          assignment!['userName'] ?? '-',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: isSelf ? Colors.white : AppColors.primary,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        )
+                : Text(
+                    selectedCandidate?['part'] == part ? '탭' : '-',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: selectedCandidate?['part'] == part
+                          ? FontWeight.w800
+                          : FontWeight.w400,
+                      color: selectedCandidate?['part'] == part
+                          ? AppColors.secondary
+                          : AppColors.muted,
+                    ),
+                  ),
+          ),
+        );
+      },
+    );
   }
 }
 

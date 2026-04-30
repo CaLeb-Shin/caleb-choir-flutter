@@ -4,8 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/google_logo.dart';
+import '../../widgets/social_login_logos.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
 
@@ -27,6 +28,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _error;
   bool _loading = false;
   String? _loadingProvider;
+  bool _rememberLogin = true;
 
   bool get _showLocalPreview {
     if (!kIsWeb) return false;
@@ -36,12 +38,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _loadRememberLogin();
     if (kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _completeGoogleRedirectSignIn();
         _completeNaverRedirectSignIn();
       });
     }
+  }
+
+  Future<void> _loadRememberLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _rememberLogin = prefs.getBool('remember_login') ?? true;
+    });
+  }
+
+  Future<void> _setRememberLogin(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('remember_login', value);
+    if (!mounted) return;
+    setState(() => _rememberLogin = value);
+  }
+
+  Future<void> _applyAuthPersistence() async {
+    if (!kIsWeb) return;
+    await FirebaseAuth.instance.setPersistence(
+      _rememberLogin ? Persistence.LOCAL : Persistence.SESSION,
+    );
   }
 
   Future<void> _completeGoogleRedirectSignIn() async {
@@ -64,6 +89,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       final callback = naver_helper.consumeNaverRedirectResult();
       if (callback == null) return;
+      await _applyAuthPersistence();
       setState(() {
         _error = null;
         _loading = true;
@@ -111,7 +137,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     });
     try {
       if (kIsWeb) {
-        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+        await _applyAuthPersistence();
         try {
           final result = await FirebaseAuth.instance.signInWithPopup(
             GoogleAuthProvider(),
@@ -170,6 +196,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _loadingProvider = 'kakao';
     });
     try {
+      await _applyAuthPersistence();
       final accessToken = await kakao_helper.signInWithKakao();
       if (accessToken == null) {
         setState(() {
@@ -207,6 +234,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _loadingProvider = 'naver';
     });
     try {
+      await _applyAuthPersistence();
       await naver_helper.startSignInWithNaver();
     } catch (e) {
       debugPrint('Naver sign-in error: $e');
@@ -387,8 +415,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.chat_bubble, size: 18),
-                              SizedBox(width: 8),
+                              KakaoTalkLogo(size: 22),
+                              SizedBox(width: 10),
                               Text(
                                 '카카오로 시작하기',
                                 style: TextStyle(
@@ -430,13 +458,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Text(
-                                'N',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
+                              NaverLogo(size: 20),
                               SizedBox(width: 10),
                               Text(
                                 '네이버로 시작하기',
@@ -475,7 +497,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       : const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            GoogleLogo(size: 20),
+                            GoogleGLogo(size: 22),
                             SizedBox(width: 10),
                             Text(
                               'Google로 시작하기',
@@ -486,6 +508,55 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ),
                           ],
                         ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _loading
+                    ? null
+                    : () => _setRememberLogin(!_rememberLogin),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: Checkbox(
+                          value: _rememberLogin,
+                          onChanged: _loading
+                              ? null
+                              : (value) => _setRememberLogin(value ?? true),
+                          activeColor: AppColors.ink,
+                          checkColor: Colors.white,
+                          side: const BorderSide(color: AppColors.border),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 9),
+                      const Text(
+                        '로그인 정보 저장',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.ink,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text(
+                        '다음부터 자동 로그인',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.muted,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               if (_showLocalPreview) ...[

@@ -172,11 +172,21 @@ exports.sendPushNotification = onDocumentCreated("notifications/{notificationId}
   const usersSnapshot = await admin.firestore().collection("users").get();
   const tokens = [];
   usersSnapshot.docs.forEach((doc) => {
-    const token = doc.data().fcmToken;
+    const user = doc.data();
+    const token = user.fcmToken;
     if (token) tokens.push(token);
+
+    const tokenMap = user.fcmTokens || {};
+    Object.entries(tokenMap).forEach(([tokenKey, tokenData]) => {
+      if (!tokenKey) return;
+      if (tokenData && tokenData.enabled === false) return;
+      tokens.push(tokenKey);
+    });
   });
 
-  if (tokens.length === 0) {
+  const uniqueTokens = [...new Set(tokens)];
+
+  if (uniqueTokens.length === 0) {
     console.log("No FCM tokens found");
     return;
   }
@@ -184,12 +194,12 @@ exports.sendPushNotification = onDocumentCreated("notifications/{notificationId}
   // 멀티캐스트 메시지 전송
   const message = {
     notification: { title: title || "갈렙찬양대", body: body || "" },
-    tokens: tokens,
+    tokens: uniqueTokens,
   };
 
   try {
     const response = await admin.messaging().sendEachForMulticast(message);
-    console.log(`Sent ${response.successCount}/${tokens.length} notifications`);
+    console.log(`Sent ${response.successCount}/${uniqueTokens.length} notifications`);
   } catch (error) {
     console.error("Push notification error:", error);
   }

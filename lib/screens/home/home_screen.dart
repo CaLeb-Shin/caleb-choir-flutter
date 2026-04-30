@@ -193,12 +193,27 @@ class HomeScreen extends ConsumerWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF000E24), Color(0xFF00234B)],
+                      gradient: LinearGradient(
+                        colors: [
+                          const Color(0xFF00234B).withValues(alpha: 0.9),
+                          const Color(0xFF064F7A).withValues(alpha: 0.72),
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.14),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF00234B,
+                          ).withValues(alpha: 0.16),
+                          blurRadius: 18,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
                     ),
                     child: weeklySchedules.isNotEmpty
                         ? _WeeklyScheduleCard(
