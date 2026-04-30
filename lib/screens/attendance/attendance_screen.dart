@@ -301,7 +301,7 @@ class AttendanceScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '아래 QR 코드를 관리자에게 보여주세요',
+                    'QR코드를 파트장에게 보여주세요',
                     style: AppText.body(
                       13,
                       weight: FontWeight.w600,
