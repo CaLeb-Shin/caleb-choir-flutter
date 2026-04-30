@@ -327,9 +327,15 @@ class HomeScreen extends ConsumerWidget {
                         ...recentSheets.map(
                           (s) => _UploadChip(
                             icon: Icons.description_rounded,
-                            title: s['title'] ?? '',
-                            sub: s['composer'] ?? '악보',
+                            title: s['songTitle'] ?? s['title'] ?? '',
+                            sub: '악보&음원',
                             color: AppColors.primary,
+                            onTap: () => _openSection(
+                              context,
+                              '악보&음원',
+                              const SheetMusicScreen(),
+                              navIndex: 1,
+                            ),
                           ),
                         ),
                         ...recentVids.map(
@@ -338,6 +344,12 @@ class HomeScreen extends ConsumerWidget {
                             title: v['title'] ?? '',
                             sub: '영상',
                             color: AppColors.secondary,
+                            onTap: () => _openSection(
+                              context,
+                              '영상',
+                              const VideosScreen(),
+                              navIndex: 2,
+                            ),
                           ),
                         ),
                       ],
@@ -1210,37 +1222,44 @@ class _UploadChip extends StatelessWidget {
   final IconData icon;
   final String title, sub;
   final Color color;
+  final VoidCallback onTap;
+
   const _UploadChip({
     required this.icon,
     required this.title,
     required this.sub,
     required this.color,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 160,
-      margin: const EdgeInsets.only(right: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 20, color: color),
-          const Spacer(),
-          Text(
-            title,
-            style: AppText.body(13, weight: FontWeight.w600),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          Text(sub, style: AppText.body(11, color: AppColors.muted)),
-        ],
+    return Tappable(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: 160,
+        margin: const EdgeInsets.only(right: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const Spacer(),
+            Text(
+              title,
+              style: AppText.body(13, weight: FontWeight.w600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(sub, style: AppText.body(11, color: AppColors.muted)),
+          ],
+        ),
       ),
     );
   }
