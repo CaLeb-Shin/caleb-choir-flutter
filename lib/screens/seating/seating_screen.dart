@@ -64,7 +64,10 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
       bottomNavigationBar: const AppBottomNavBar(),
       body: chartsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('오류: $e')),
+        error: (e, _) => _SeatingErrorState(
+          message: '배치판을 불러오지 못했습니다',
+          onRetry: () => ref.invalidate(seatingChartsProvider),
+        ),
         data: (charts) {
           if (charts.isEmpty) {
             return Center(
@@ -146,7 +149,11 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
       bottomNavigationBar: const AppBottomNavBar(),
       body: assignmentsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('오류: $e')),
+        error: (e, _) => _SeatingErrorState(
+          message: '자리 정보를 불러오지 못했습니다',
+          onRetry: () =>
+              ref.invalidate(seatAssignmentsProvider(_selectedChartId!)),
+        ),
         data: (assignments) {
           final members = membersAsync.valueOrNull ?? [];
           final votes = pollVotesAsync.valueOrNull ?? [];
@@ -353,7 +360,7 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
     final baseWidth = columnWidth ?? _seatingCols * 76.0 + 18;
     final effectiveWidth = columnWidth == null
         ? baseWidth
-        : math.max(0.0, baseWidth - 2);
+        : math.max(0.0, baseWidth - 8);
     return Padding(
       padding: EdgeInsets.only(right: addRightPadding ? 12 : 0),
       child: Column(
@@ -1883,6 +1890,53 @@ class _PartFilterChip extends StatelessWidget {
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SeatingErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _SeatingErrorState({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.secondarySoft,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(
+                Icons.event_seat_rounded,
+                color: AppColors.secondary,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              style: AppText.body(16, weight: FontWeight.w800),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '잠시 후 다시 시도해주세요.',
+              style: AppText.body(13, color: AppColors.muted),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            OutlinedButton(onPressed: onRetry, child: const Text('다시 불러오기')),
           ],
         ),
       ),

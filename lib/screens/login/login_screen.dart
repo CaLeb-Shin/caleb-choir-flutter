@@ -1,4 +1,7 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:async';
+
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -33,6 +36,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool get _showLocalPreview {
     if (!kIsWeb) return false;
     return Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1';
+  }
+
+  bool get _isMobileWeb {
+    if (!kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.android;
+  }
+
+  GoogleAuthProvider _googleProvider() {
+    return GoogleAuthProvider()
+      ..setCustomParameters({'prompt': 'select_account'});
   }
 
   @override
@@ -138,10 +152,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       if (kIsWeb) {
         await _applyAuthPersistence();
+        final provider = _googleProvider();
+        if (_isMobileWeb) {
+          await FirebaseAuth.instance.signInWithRedirect(provider);
+          return;
+        }
         try {
-          final result = await FirebaseAuth.instance.signInWithPopup(
-            GoogleAuthProvider(),
-          );
+          final result = await FirebaseAuth.instance
+              .signInWithPopup(provider)
+              .timeout(const Duration(seconds: 18));
           if (result.user != null) {
             await _afterSuccessfulSignIn();
           }
@@ -149,12 +168,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           if (e.code == 'popup-blocked' ||
               e.code == 'popup-closed-by-user' ||
               e.code == 'cancelled-popup-request') {
-            await FirebaseAuth.instance.signInWithRedirect(
-              GoogleAuthProvider(),
-            );
+            await FirebaseAuth.instance.signInWithRedirect(provider);
             return;
           }
           rethrow;
+        } on TimeoutException {
+          await FirebaseAuth.instance.signInWithRedirect(provider);
+          return;
         }
       } else {
         final googleUser = await GoogleSignIn().signIn();

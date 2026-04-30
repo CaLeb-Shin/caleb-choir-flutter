@@ -347,8 +347,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyboardBottom = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
       backgroundColor: AppColors.primary,
+      resizeToAvoidBottomInset: true,
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -360,7 +362,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         child: SafeArea(
           child: SingleChildScrollView(
             controller: _scrollCtrl,
-            padding: const EdgeInsets.fromLTRB(18, 20, 18, 32),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(18, 20, 18, keyboardBottom + 32),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

@@ -96,8 +96,16 @@ class VideosScreen extends ConsumerWidget {
                       _getThumbnail(video['youtubeUrl'] ?? '');
 
                   return Tappable(
-                    onTap: () =>
-                        launchUrl(Uri.parse(video['youtubeUrl'] ?? '')),
+                    onTap: () {
+                      final url = video['youtubeUrl'] as String? ?? '';
+                      final uri = Uri.tryParse(url);
+                      if (uri == null) return;
+                      launchUrl(
+                        uri,
+                        mode: LaunchMode.externalApplication,
+                        webOnlyWindowName: '_blank',
+                      );
+                    },
                     borderRadius: BorderRadius.circular(14),
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 12),

@@ -67,6 +67,23 @@ service firebase.storage {
       allow delete: if isChurchAdminOf(churchId);
     }
 
+    match /profile_images/{userId}/{fileName} {
+      allow read: if true;
+      allow create, update: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /profile_images/{fileName} {
+      allow read: if true;
+      allow create, update: if isSignedIn()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn();
+    }
+
     match /post_images/{fileName} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn()

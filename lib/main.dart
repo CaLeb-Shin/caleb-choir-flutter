@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,12 +27,17 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   KakaoSdk.init(nativeAppKey: 'YOUR_KAKAO_NATIVE_APP_KEY');
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  runApp(const ProviderScope(child: CalebChoirApp()));
+
+  unawaited(_initializeNotifications());
+}
+
+Future<void> _initializeNotifications() async {
   try {
     await NotificationService.initialize();
   } catch (e) {
     debugPrint('Notification init failed: $e');
   }
-  runApp(const ProviderScope(child: CalebChoirApp()));
 }
 
 class CalebChoirApp extends ConsumerWidget {
@@ -62,6 +69,16 @@ class CalebChoirApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
         if (!kIsWeb || child == null) return child ?? const SizedBox.shrink();
+        final media = MediaQuery.of(context);
+        final isWidePreview = media.size.width >= 700;
+        final wantsPreviewFrame =
+            Uri.base.host == 'localhost' ||
+            Uri.base.host == '127.0.0.1' ||
+            Uri.base.queryParameters['preview'] == '1' ||
+            Uri.base.queryParameters['login'] == '1' ||
+            Uri.base.queryParameters['onboarding'] == '1';
+        if (!wantsPreviewFrame || !isWidePreview) return child;
+
         return Scaffold(
           backgroundColor: const Color(0xFF000E24),
           body: Center(
@@ -81,9 +98,7 @@ class CalebChoirApp extends ConsumerWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(40),
                 child: MediaQuery(
-                  data: MediaQuery.of(
-                    context,
-                  ).copyWith(size: const Size(430, 932)),
+                  data: media.copyWith(size: const Size(430, 932)),
                   child: child,
                 ),
               ),

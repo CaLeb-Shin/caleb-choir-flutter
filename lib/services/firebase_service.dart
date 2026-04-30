@@ -173,9 +173,39 @@ class FirebaseService {
     final ref = FirebaseStorage.instance
         .ref()
         .child('profile_images')
-        .child('$uid.jpg');
+        .child(uid!)
+        .child('profile.jpg');
     await ref.putData(bytes, SettableMetadata(contentType: contentType));
     return await ref.getDownloadURL();
+  }
+
+  static int _createdAtDesc(Map<String, dynamic> a, Map<String, dynamic> b) {
+    return _timestampFieldDesc('createdAt', a, b);
+  }
+
+  static int _timestampFieldDesc(
+    String field,
+    Map<String, dynamic> a,
+    Map<String, dynamic> b,
+  ) {
+    return _timestampMillis(b[field]).compareTo(_timestampMillis(a[field]));
+  }
+
+  static int _timestampFieldAsc(
+    String field,
+    Map<String, dynamic> a,
+    Map<String, dynamic> b,
+  ) {
+    return _timestampMillis(a[field]).compareTo(_timestampMillis(b[field]));
+  }
+
+  static int _timestampMillis(dynamic value) {
+    if (value is Timestamp) return value.millisecondsSinceEpoch;
+    if (value is DateTime) return value.millisecondsSinceEpoch;
+    if (value is String) {
+      return DateTime.tryParse(value)?.millisecondsSinceEpoch ?? 0;
+    }
+    return 0;
   }
 
   static Future<List<Map<String, dynamic>>> getAllMembers() async {
@@ -212,10 +242,12 @@ class FirebaseService {
     final snapshot = await _db
         .collection('attendance_sessions')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('openedAt', descending: true)
         .limit(limit)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    final sessions =
+        snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+          ..sort((a, b) => _timestampFieldDesc('openedAt', a, b));
+    return sessions.take(limit).toList();
   }
 
   static Future<void> openSession(String title) async {
@@ -270,7 +302,6 @@ class FirebaseService {
         .collection('attendance')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('userId', isEqualTo: uid)
-        .orderBy('checkedInAt', descending: true)
         .get();
 
     final records = <Map<String, dynamic>>[];
@@ -288,6 +319,7 @@ class FirebaseService {
             '',
       });
     }
+    records.sort((a, b) => _timestampFieldDesc('checkedInAt', a, b));
     return records;
   }
 
@@ -321,9 +353,10 @@ class FirebaseService {
     final snapshot = await _db
         .collection('videos')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    final videos = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+      ..sort(_createdAtDesc);
+    return videos;
   }
 
   // ============ Awards data ============
@@ -335,9 +368,8 @@ class FirebaseService {
         .collection('posts')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map((d) {
+    final posts = snapshot.docs.map((d) {
       final data = d.data();
       return {
         'id': d.id,
@@ -346,6 +378,8 @@ class FirebaseService {
         'createdAt': (data['createdAt'] as Timestamp?)?.toDate(),
       };
     }).toList();
+    posts.sort(_createdAtDesc);
+    return posts;
   }
 
   /// Attendance records on/after [since].
@@ -410,7 +444,6 @@ class FirebaseService {
     final snapshot = await _db
         .collection('posts')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
         .limit(50)
         .get();
     final posts = <Map<String, dynamic>>[];
@@ -428,6 +461,7 @@ class FirebaseService {
             (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
       });
     }
+    posts.sort(_createdAtDesc);
     return posts;
   }
 
@@ -567,7 +601,6 @@ class FirebaseService {
         .collection('posts')
         .doc(postId)
         .collection('comments')
-        .orderBy('createdAt', descending: false)
         .get();
     final comments = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
@@ -583,6 +616,7 @@ class FirebaseService {
             (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
       });
     }
+    comments.sort((a, b) => _timestampFieldAsc('createdAt', a, b));
     return comments;
   }
 
@@ -610,9 +644,8 @@ class FirebaseService {
     final snapshot = await _db
         .collection('announcements')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs
+    final announcements = snapshot.docs
         .map(
           (d) => {
             'id': d.id,
@@ -625,6 +658,8 @@ class FirebaseService {
           },
         )
         .toList();
+    announcements.sort(_createdAtDesc);
+    return announcements;
   }
 
   // ============ Sheet Music ============
@@ -632,9 +667,10 @@ class FirebaseService {
     final snapshot = await _db
         .collection('sheet_music')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    final items = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+      ..sort(_createdAtDesc);
+    return items;
   }
 
   // ============ Events ============
@@ -642,9 +678,10 @@ class FirebaseService {
     final snapshot = await _db
         .collection('events')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    final events = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+      ..sort(_createdAtDesc);
+    return events;
   }
 
   // ============ Admin: Announcements ============
@@ -798,9 +835,10 @@ class FirebaseService {
     final snapshot = await _db
         .collection('polls')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    final polls = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+      ..sort(_createdAtDesc);
+    return polls;
   }
 
   static Future<void> vote(String pollId, String choice) async {
@@ -894,15 +932,16 @@ class FirebaseService {
   static Future<List<Map<String, dynamic>>> getSeatingCharts({
     bool publishedOnly = false,
   }) async {
-    Query<Map<String, dynamic>> query = _db
+    var query = _db
         .collection('seating_charts')
-        .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true);
+        .where('churchId', isEqualTo: _requireChurchId());
     if (publishedOnly) {
       query = query.where('isPublished', isEqualTo: true);
     }
     final snapshot = await query.get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    final charts = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+      ..sort(_createdAtDesc);
+    return charts;
   }
 
   static Future<List<Map<String, dynamic>>> getSeatAssignments(
@@ -990,9 +1029,10 @@ class FirebaseService {
     final snapshot = await _db
         .collection('seating_presets')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
         .get();
-    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+    final presets = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+      ..sort(_createdAtDesc);
+    return presets;
   }
 
   static Future<String> saveSeatingPreset({
