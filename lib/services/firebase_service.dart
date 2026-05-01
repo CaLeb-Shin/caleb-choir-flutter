@@ -208,6 +208,45 @@ class FirebaseService {
     return 0;
   }
 
+  static String _timestampIso(dynamic value) {
+    final millis = _timestampMillis(value);
+    if (millis == 0) return '';
+    return DateTime.fromMillisecondsSinceEpoch(millis).toIso8601String();
+  }
+
+  static Future<Map<String, dynamic>?> _safeUserData(dynamic userId) async {
+    final id = userId?.toString();
+    if (id == null || id.isEmpty) return null;
+    try {
+      final doc = await _db.collection('users').doc(id).get();
+      return doc.data();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Map<String, dynamic> _authorFields(
+    Map<String, dynamic> data,
+    Map<String, dynamic>? userData,
+  ) {
+    final userId = data['userId']?.toString();
+    final createdByAdmin = data['createdByAdmin'] == true || userId == 'admin';
+    return {
+      'userName':
+          userData?['name'] ??
+          data['userName'] ??
+          data['authorName'] ??
+          (createdByAdmin ? '관리자' : ''),
+      'userPart': userData?['part'] ?? data['userPart'] ?? '',
+      'userGeneration': userData?['generation'] ?? data['userGeneration'] ?? '',
+      'userImageUrl':
+          userData?['profileImageUrl'] ??
+          userData?['imageUrl'] ??
+          data['userImageUrl'] ??
+          data['authorImageUrl'],
+    };
+  }
+
   static Future<List<Map<String, dynamic>>> getAllMembers() async {
     final snapshot = await _db
         .collection('users')
@@ -449,16 +488,12 @@ class FirebaseService {
     final posts = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      final userDoc = await _db.collection('users').doc(data['userId']).get();
+      final userData = await _safeUserData(data['userId']);
       posts.add({
         'id': doc.id,
         ...data,
-        'userName': userDoc.data()?['name'] ?? '',
-        'userPart': userDoc.data()?['part'] ?? '',
-        'userGeneration': userDoc.data()?['generation'] ?? '',
-        'userImageUrl': userDoc.data()?['imageUrl'],
-        'createdAt':
-            (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+        ..._authorFields(data, userData),
+        'createdAt': _timestampIso(data['createdAt']),
       });
     }
     posts.sort(_createdAtDesc);
@@ -469,16 +504,12 @@ class FirebaseService {
     final doc = await _db.collection('posts').doc(postId).get();
     if (!doc.exists) return null;
     final data = doc.data()!;
-    final userDoc = await _db.collection('users').doc(data['userId']).get();
+    final userData = await _safeUserData(data['userId']);
     return {
       'id': doc.id,
       ...data,
-      'userName': userDoc.data()?['name'] ?? '',
-      'userPart': userDoc.data()?['part'] ?? '',
-      'userGeneration': userDoc.data()?['generation'] ?? '',
-      'userImageUrl': userDoc.data()?['imageUrl'],
-      'createdAt':
-          (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+      ..._authorFields(data, userData),
+      'createdAt': _timestampIso(data['createdAt']),
     };
   }
 
@@ -605,15 +636,12 @@ class FirebaseService {
     final comments = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      final userDoc = await _db.collection('users').doc(data['userId']).get();
+      final userData = await _safeUserData(data['userId']);
       comments.add({
         'id': doc.id,
         ...data,
-        'userName': userDoc.data()?['name'] ?? '',
-        'userPart': userDoc.data()?['part'] ?? '',
-        'userImageUrl': userDoc.data()?['imageUrl'],
-        'createdAt':
-            (data['createdAt'] as Timestamp?)?.toDate().toIso8601String() ?? '',
+        ..._authorFields(data, userData),
+        'createdAt': _timestampIso(data['createdAt']),
       });
     }
     comments.sort((a, b) => _timestampFieldAsc('createdAt', a, b));
