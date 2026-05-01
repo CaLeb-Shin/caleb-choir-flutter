@@ -35,7 +35,7 @@ class Church {
   String get displayName {
     final choir = choirName?.trim();
     if (choir == null || choir.isEmpty || choir == name) return name;
-    return '$name · $choir';
+    return '$name - $choir';
   }
 
   factory Church.fromMap(Map<String, dynamic> map) {
