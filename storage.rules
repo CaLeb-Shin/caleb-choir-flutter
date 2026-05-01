@@ -88,8 +88,27 @@ service firebase.storage {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn()
         && request.resource.size < 15 * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && (
+          request.resource.contentType.matches('image/.*')
+          || request.resource.contentType == 'application/octet-stream'
+        );
       allow delete: if isSignedIn();
+    }
+
+    match /post_videos/source/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.size < 120 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('video/.*')
+          || request.resource.contentType == 'application/octet-stream'
+        );
+      allow delete: if isSignedIn();
+    }
+
+    match /post_videos/processed/{fileName} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
     }
   }
 }
