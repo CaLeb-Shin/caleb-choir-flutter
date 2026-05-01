@@ -7,6 +7,7 @@ import '../../models/user.dart';
 import '../../services/firebase_service.dart';
 import '../../services/notification_service.dart';
 import '../../widgets/interactive.dart';
+import 'post_compose_sheet.dart';
 import 'post_detail_screen.dart';
 
 class CommunityScreen extends ConsumerWidget {
@@ -19,179 +20,209 @@ class CommunityScreen extends ConsumerWidget {
     final announcements = announcementsAsync.valueOrNull ?? [];
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Stack(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('커뮤니티', style: AppText.headline(28)),
-                    const SizedBox(height: 2),
-                    Text(
-                      '재미있는 사진과 짧은 영상을 올리고 하트로 응원해요',
-                      style: AppText.body(12, color: AppColors.muted),
-                    ),
-                  ],
-                ),
-              ),
-              if (isAdmin)
-                IconButton(
-                  onPressed: () => _showAnnouncementDialog(context, ref),
-                  icon: const Icon(
-                    Icons.campaign_rounded,
-                    color: AppColors.secondary,
-                  ),
-                  tooltip: '공지 작성',
-                ),
-            ],
-          ),
-        ),
-
-        if (announcements.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-            child: Tappable(
-              onTap: () {},
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.campaign_rounded,
-                      size: 16,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        announcements.first['title'] ?? '',
-                        style: AppText.body(
-                          13,
-                          weight: FontWeight.w600,
-                          color: AppColors.primary,
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('커뮤니티', style: AppText.headline(28)),
+                        const SizedBox(height: 2),
+                        Text(
+                          '재미있는 사진과 짧은 영상을 올리고 하트로 응원해요',
+                          style: AppText.body(12, color: AppColors.muted),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  if (isAdmin)
+                    IconButton(
+                      onPressed: () => _showAnnouncementDialog(context, ref),
+                      icon: const Icon(
+                        Icons.campaign_rounded,
+                        color: AppColors.secondary,
+                      ),
+                      tooltip: '공지 작성',
+                    ),
+                ],
               ),
             ),
-          ),
 
-        Expanded(
-          child: postsAsync.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, stackTrace) =>
-                const Center(child: Text('게시물을 불러올 수 없습니다')),
-            data: (posts) {
-              final weeklyTop = _weeklyTopPosts(posts);
-              if (posts.isEmpty) {
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.photo_camera_outlined,
-                        size: 40,
-                        color: AppColors.subtle,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '아직 올라온 게시물이 없습니다',
-                        style: AppText.body(16, weight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '첫 번째 사진이나 영상을 올려보세요!',
-                        style: AppText.body(13, color: AppColors.muted),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              return RefreshIndicator(
-                onRefresh: () async {
-                  ref.invalidate(postsProvider);
-                  ref.invalidate(announcementsProvider);
-                },
-                child: CustomScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  slivers: [
-                    if (weeklyTop.isNotEmpty)
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
-                          child: _WeeklyCalebShowcase(posts: weeklyTop),
-                        ),
-                      ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
-                        child: Row(
-                          children: [
-                            Text(
-                              '사진/영상 피드',
-                              style: AppText.body(15, weight: FontWeight.w800),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${posts.length}',
-                              style: AppText.body(
-                                12,
-                                weight: FontWeight.w800,
-                                color: AppColors.secondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+            if (announcements.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                child: Tappable(
+                  onTap: () {},
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
                     ),
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
-                      sliver: SliverGrid(
-                        gridDelegate:
-                            const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              crossAxisSpacing: 10,
-                              mainAxisSpacing: 10,
-                              childAspectRatio: 0.78,
+                    decoration: BoxDecoration(
+                      color: AppColors.primarySoft,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.campaign_rounded,
+                          size: 16,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            announcements.first['title'] ?? '',
+                            style: AppText.body(
+                              13,
+                              weight: FontWeight.w600,
+                              color: AppColors.primary,
                             ),
-                        delegate: SliverChildBuilderDelegate(
-                          (context, i) => _PhotoPostTile(
-                            post: posts[i],
-                            onTap: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    PostDetailScreen(postId: posts[i]['id']),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            Expanded(
+              child: postsAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (error, stackTrace) =>
+                    const Center(child: Text('게시물을 불러올 수 없습니다')),
+                data: (posts) {
+                  final weeklyTop = _weeklyTopPosts(posts);
+                  if (posts.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.photo_camera_outlined,
+                            size: 40,
+                            color: AppColors.subtle,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '아직 올라온 게시물이 없습니다',
+                            style: AppText.body(16, weight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '첫 번째 사진이나 영상을 올려보세요!',
+                            style: AppText.body(13, color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return RefreshIndicator(
+                    onRefresh: () async {
+                      ref.invalidate(postsProvider);
+                      ref.invalidate(announcementsProvider);
+                    },
+                    child: CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        if (weeklyTop.isNotEmpty)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                14,
+                                20,
+                                14,
                               ),
+                              child: _WeeklyCalebShowcase(posts: weeklyTop),
                             ),
                           ),
-                          childCount: posts.length,
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
+                            child: Row(
+                              children: [
+                                Text(
+                                  '사진/영상 피드',
+                                  style: AppText.body(
+                                    15,
+                                    weight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${posts.length}',
+                                  style: AppText.body(
+                                    12,
+                                    weight: FontWeight.w800,
+                                    color: AppColors.secondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 100),
+                          sliver: SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2,
+                                  crossAxisSpacing: 10,
+                                  mainAxisSpacing: 10,
+                                  childAspectRatio: 0.78,
+                                ),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, i) => _PhotoPostTile(
+                                post: posts[i],
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => PostDetailScreen(
+                                      postId: posts[i]['id'],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              childCount: posts.length,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              );
-            },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        Positioned(
+          right: 20,
+          bottom: 18,
+          child: SafeArea(
+            minimum: const EdgeInsets.only(bottom: 4),
+            child: _ComposeButton(onTap: () => _openComposeSheet(context)),
           ),
         ),
       ],
+    );
+  }
+
+  void _openComposeSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const PostComposeSheet(),
     );
   }
 
@@ -353,6 +384,39 @@ class _WeeklyCalebShowcase extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ComposeButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ComposeButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '게시물 올리기',
+      child: Tappable(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: AppColors.primaryContainer,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.edit_rounded, color: Colors.white, size: 28),
+        ),
       ),
     );
   }

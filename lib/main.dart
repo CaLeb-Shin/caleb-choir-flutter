@@ -19,7 +19,6 @@ import 'screens/attendance/attendance_screen.dart';
 import 'screens/community/community_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
-import 'screens/community/post_compose_sheet.dart';
 import 'widgets/app_bottom_nav_bar.dart';
 import 'widgets/app_logo_title.dart';
 
@@ -210,25 +209,6 @@ class _MainShellState extends ConsumerState<MainShell> {
         currentIndex: index,
         popToRootOnTap: false,
       ),
-      floatingActionButton: index == 4
-          ? FloatingActionButton(
-              onPressed: () => _openComposeSheet(context),
-              backgroundColor: AppColors.primaryContainer,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(Icons.edit_rounded, color: Colors.white),
-            )
-          : null,
-    );
-  }
-
-  void _openComposeSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const PostComposeSheet(),
     );
   }
 }
