@@ -488,11 +488,18 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1024,
-        imageQuality: 85,
+        maxWidth: 720,
+        imageQuality: 68,
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('프로필 사진은 5MB 이하로 선택해주세요')));
+        return;
+      }
       setState(() {
         _newImageBytes = bytes;
         _uploading = true;

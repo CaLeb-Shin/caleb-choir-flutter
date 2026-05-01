@@ -93,6 +93,11 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           final title = (post['title'] as String?) ?? '';
           final content = (post['content'] as String?) ?? '';
           final isMine = post['userId'] == myUid;
+          final detailCacheWidth =
+              (MediaQuery.sizeOf(context).width *
+                      MediaQuery.devicePixelRatioOf(context))
+                  .clamp(720, 1400)
+                  .round();
 
           return Column(
             children: [
@@ -115,6 +120,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                           imageUrl: imageUrl,
                           fit: BoxFit.cover,
                           width: double.infinity,
+                          fadeInDuration: const Duration(milliseconds: 120),
+                          memCacheWidth: detailCacheWidth,
+                          maxWidthDiskCache: detailCacheWidth,
                           placeholder: (_, __) => Container(
                             height: 240,
                             color: AppColors.surfaceLow,
@@ -396,6 +404,9 @@ class _Avatar extends StatelessWidget {
           width: 40,
           height: 40,
           fit: BoxFit.cover,
+          fadeInDuration: const Duration(milliseconds: 100),
+          memCacheWidth: 96,
+          maxWidthDiskCache: 96,
           placeholder: (_, __) =>
               Container(width: 40, height: 40, color: AppColors.primarySoft),
           errorWidget: (_, __, ___) => _initials(),

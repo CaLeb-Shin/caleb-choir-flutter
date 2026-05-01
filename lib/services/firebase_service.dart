@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
 
+typedef UploadProgress = void Function(double progress);
+
 class FirebaseService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static final fb.FirebaseAuth _auth = fb.FirebaseAuth.instance;
@@ -168,14 +170,19 @@ class FirebaseService {
   static Future<String?> uploadProfileImage(
     Uint8List bytes, {
     String contentType = 'image/jpeg',
+    UploadProgress? onProgress,
   }) async {
     if (uid == null) return null;
+    if (bytes.length > 5 * 1024 * 1024) {
+      throw Exception('프로필 사진은 5MB 이하로 올려주세요');
+    }
     final ref = FirebaseStorage.instance
         .ref()
         .child('profile_images')
         .child(uid!)
         .child('profile.jpg');
-    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+    final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+    await _waitUpload(task, onProgress: onProgress);
     return await ref.getDownloadURL();
   }
 
@@ -517,14 +524,19 @@ class FirebaseService {
   static Future<String?> uploadPostImage(
     Uint8List bytes, {
     String contentType = 'image/jpeg',
+    UploadProgress? onProgress,
   }) async {
     if (uid == null) return null;
+    if (bytes.length > 15 * 1024 * 1024) {
+      throw Exception('사진은 15MB 이하로 올려주세요');
+    }
     final filename = '${DateTime.now().millisecondsSinceEpoch}_$uid.jpg';
     final ref = FirebaseStorage.instance
         .ref()
         .child('post_images')
         .child(filename);
-    await ref.putData(bytes, SettableMetadata(contentType: contentType));
+    final task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+    await _waitUpload(task, onProgress: onProgress);
     return await ref.getDownloadURL();
   }
 
@@ -536,8 +548,12 @@ class FirebaseService {
     required int trimEndSec,
     String contentType = 'video/mp4',
     String extension = 'mp4',
+    UploadProgress? onProgress,
   }) async {
     if (uid == null) return null;
+    if (bytes.length > 120 * 1024 * 1024) {
+      throw Exception('영상은 120MB 이하로 올려주세요');
+    }
     final safeExtension = extension.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
     final filename =
         '${postId}_${DateTime.now().millisecondsSinceEpoch}_$uid.${safeExtension.isEmpty ? 'mp4' : safeExtension}';
@@ -546,7 +562,7 @@ class FirebaseService {
         .child('post_videos')
         .child('source')
         .child(filename);
-    await ref.putData(
+    final task = ref.putData(
       bytes,
       SettableMetadata(
         contentType: contentType,
@@ -559,7 +575,26 @@ class FirebaseService {
         },
       ),
     );
+    await _waitUpload(task, onProgress: onProgress);
     return ref.fullPath;
+  }
+
+  static Future<TaskSnapshot> _waitUpload(
+    UploadTask task, {
+    UploadProgress? onProgress,
+  }) async {
+    if (onProgress != null) {
+      await for (final snapshot in task.snapshotEvents) {
+        final total = snapshot.totalBytes;
+        if (total > 0) {
+          onProgress(
+            (snapshot.bytesTransferred / total).clamp(0.0, 1.0).toDouble(),
+          );
+        }
+        if (snapshot.state == TaskState.success) return snapshot;
+      }
+    }
+    return task;
   }
 
   static Future<String> createPost({

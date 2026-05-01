@@ -686,9 +686,16 @@ class _NetworkPhoto extends StatelessWidget {
     if (imageUrl.isEmpty) {
       return const _PhotoFallback();
     }
+    final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final cacheWidth = (MediaQuery.sizeOf(context).width * pixelRatio / 2)
+        .clamp(360, 760)
+        .round();
     return CachedNetworkImage(
       imageUrl: imageUrl,
       fit: BoxFit.cover,
+      fadeInDuration: const Duration(milliseconds: 120),
+      memCacheWidth: cacheWidth,
+      maxWidthDiskCache: cacheWidth,
       placeholder: (context, url) => const _PhotoFallback(),
       errorWidget: (context, url, error) => const _PhotoFallback(),
     );

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -26,6 +27,8 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
   String? _videoName;
   String _videoMimeType = 'video/mp4';
   bool _submitting = false;
+  double _uploadProgress = 0;
+  String _uploadLabel = '';
 
   @override
   void dispose() {
@@ -39,11 +42,18 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1600,
-        imageQuality: 85,
+        maxWidth: 1200,
+        imageQuality: 72,
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
+      if (bytes.length > 15 * 1024 * 1024) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('사진은 15MB 이하로 선택해주세요')));
+        return;
+      }
       setState(() {
         _imageBytes = bytes;
         _mediaType = _ComposeMediaType.photo;
@@ -58,17 +68,32 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
 
   Future<void> _pickVideo() async {
     try {
-      final picker = ImagePicker();
-      final picked = await picker.pickVideo(
-        source: ImageSource.gallery,
-        maxDuration: const Duration(seconds: 12),
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.video,
+        allowMultiple: false,
+        withData: true,
       );
-      if (picked == null) return;
-      final bytes = await picked.readAsBytes();
+      final file = picked?.files.single;
+      if (file == null) return;
+      final bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('이 영상은 브라우저에서 읽을 수 없습니다')));
+        return;
+      }
+      if (bytes.length > 120 * 1024 * 1024) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('영상은 120MB 이하로 선택해주세요')));
+        return;
+      }
       setState(() {
         _videoBytes = bytes;
-        _videoName = picked.name;
-        _videoMimeType = picked.mimeType ?? 'video/mp4';
+        _videoName = file.name;
+        _videoMimeType = _mimeFromExtension(file.extension ?? '');
         _mediaType = _ComposeMediaType.video;
       });
     } catch (e) {
@@ -87,6 +112,12 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
       ).showSnackBar(const SnackBar(content: Text('제목을 입력해주세요')));
       return;
     }
+    if (_mediaType == _ComposeMediaType.photo && _imageBytes == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('업로드할 사진을 선택해주세요')));
+      return;
+    }
     if (_mediaType == _ComposeMediaType.video && _videoBytes == null) {
       ScaffoldMessenger.of(
         context,
@@ -94,7 +125,12 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
       return;
     }
 
-    setState(() => _submitting = true);
+    String? createdPostId;
+    setState(() {
+      _submitting = true;
+      _uploadProgress = 0;
+      _uploadLabel = '업로드 준비 중';
+    });
     try {
       final content = _contentCtrl.text.trim().isEmpty
           ? null
@@ -108,6 +144,7 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
           videoTrimStartSec: 0,
           videoTrimEndSec: 12,
         );
+        createdPostId = postId;
         final sourcePath = await FirebaseService.uploadPostVideoSource(
           _videoBytes!,
           postId: postId,
@@ -115,8 +152,11 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
           trimEndSec: 12,
           contentType: _videoMimeType,
           extension: _extensionFromName(_videoName ?? ''),
+          onProgress: (progress) =>
+              _setUploadProgress('영상 ${_percent(progress)}% 업로드 중', progress),
         );
         if (sourcePath == null) throw Exception('영상 업로드 권한이 없습니다');
+        _setUploadProgress('영상 처리 요청 중', 1);
         await FirebaseService.markPostVideoProcessing(
           postId,
           sourcePath: sourcePath,
@@ -124,8 +164,13 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
       } else {
         String? imageUrl;
         if (_imageBytes != null) {
-          imageUrl = await FirebaseService.uploadPostImage(_imageBytes!);
+          imageUrl = await FirebaseService.uploadPostImage(
+            _imageBytes!,
+            onProgress: (progress) =>
+                _setUploadProgress('사진 ${_percent(progress)}% 업로드 중', progress),
+          );
         }
+        _setUploadProgress('게시물 저장 중', 1);
         await FirebaseService.createPost(
           title: title,
           content: content,
@@ -136,6 +181,9 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
       ref.invalidate(postsProvider);
       if (mounted) Navigator.pop(context);
     } catch (e) {
+      if (createdPostId != null) {
+        await FirebaseService.deletePost(createdPostId);
+      }
       setState(() => _submitting = false);
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -148,6 +196,30 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
     final dot = name.lastIndexOf('.');
     if (dot < 0 || dot == name.length - 1) return 'mp4';
     return name.substring(dot + 1).toLowerCase();
+  }
+
+  String _mimeFromExtension(String extension) {
+    switch (extension.toLowerCase()) {
+      case 'mov':
+        return 'video/quicktime';
+      case 'webm':
+        return 'video/webm';
+      case 'm4v':
+        return 'video/x-m4v';
+      case 'mp4':
+      default:
+        return 'video/mp4';
+    }
+  }
+
+  int _percent(double progress) => (progress * 100).clamp(0, 100).round();
+
+  void _setUploadProgress(String label, double progress) {
+    if (!mounted) return;
+    setState(() {
+      _uploadLabel = label;
+      _uploadProgress = progress.clamp(0, 1).toDouble();
+    });
   }
 
   @override
@@ -208,6 +280,13 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
                         }),
                       ),
               ),
+              if (_submitting) ...[
+                const SizedBox(height: 14),
+                _UploadProgressPanel(
+                  label: _uploadLabel,
+                  progress: _uploadProgress,
+                ),
+              ],
               const SizedBox(height: 16),
               _StyledTextField(
                 controller: _titleCtrl,
@@ -309,6 +388,63 @@ class _ComposeHeader extends StatelessWidget {
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _UploadProgressPanel extends StatelessWidget {
+  final String label;
+  final double progress;
+
+  const _UploadProgressPanel({required this.label, required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (progress * 100).clamp(0, 100).round();
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label.isEmpty ? '업로드 중' : label,
+                  style: AppText.body(
+                    12,
+                    weight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              Text(
+                '$percent%',
+                style: AppText.body(
+                  12,
+                  weight: FontWeight.w900,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 7,
+              value: progress <= 0 ? null : progress,
+              backgroundColor: Colors.white.withValues(alpha: 0.7),
+              color: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
