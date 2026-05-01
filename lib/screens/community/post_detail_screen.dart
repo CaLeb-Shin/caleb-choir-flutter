@@ -86,7 +86,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         data: (post) {
           if (post == null) return const Center(child: Text('삭제된 게시물입니다'));
           final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
-          final imageUrl = post['imageUrl'] as String?;
+          final imageUrl = _postImageUrl(post);
           final mediaType = (post['mediaType'] as String?) ?? 'photo';
           final videoUrl = post['videoUrl'] as String?;
           final videoStatus = (post['videoStatus'] as String?) ?? 'processing';
@@ -108,7 +108,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     const SizedBox(height: 16),
                     if (mediaType == 'video')
                       _VideoDetailCard(url: videoUrl, status: videoStatus)
-                    else if (imageUrl != null)
+                    else if (imageUrl.isNotEmpty)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(14),
                         child: CachedNetworkImage(
@@ -613,4 +613,12 @@ class _CommentInput extends StatelessWidget {
       ),
     );
   }
+}
+
+String _postImageUrl(Map<String, dynamic> post) {
+  for (final key in ['imageUrl', 'mediaUrl', 'photoUrl', 'thumbnailUrl']) {
+    final value = post[key];
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+  }
+  return '';
 }

@@ -643,8 +643,16 @@ class _PostMediaPreview extends StatelessWidget {
         status: (post['videoStatus'] as String?) ?? 'processing',
       );
     }
-    return _NetworkPhoto(imageUrl: (post['imageUrl'] as String?) ?? '');
+    return _NetworkPhoto(imageUrl: _postImageUrl(post));
   }
+}
+
+String _postImageUrl(Map<String, dynamic> post) {
+  for (final key in ['imageUrl', 'mediaUrl', 'photoUrl', 'thumbnailUrl']) {
+    final value = post[key];
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+  }
+  return '';
 }
 
 class _VideoPreview extends StatelessWidget {
