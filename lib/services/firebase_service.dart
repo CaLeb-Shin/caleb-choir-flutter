@@ -705,22 +705,35 @@ class FirebaseService {
 
   /// Toggle the current user's reaction of [type] on [postId]. Atomic.
   static Future<void> toggleReaction(String postId, String type) async {
-    if (uid == null) return;
+    final userId = uid;
+    if (userId == null) return;
     final ref = _db.collection('posts').doc(postId);
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) return;
       final reactionsRaw =
           (snap.data()?['reactions'] as Map<String, dynamic>?) ?? {};
-      final list = List<String>.from(
-        (reactionsRaw[type] as List<dynamic>?) ?? [],
-      );
-      if (list.contains(uid)) {
-        list.remove(uid);
-      } else {
-        list.add(uid!);
+
+      final reactionTypes = {'like', 'sad', 'pray', type};
+      final lists = <String, List<String>>{};
+      for (final reactionType in reactionTypes) {
+        lists[reactionType] = List<String>.from(
+          (reactionsRaw[reactionType] as List<dynamic>?) ?? [],
+        );
       }
-      tx.update(ref, {'reactions.$type': list});
+
+      final wasActive = lists[type]?.contains(userId) ?? false;
+      for (final list in lists.values) {
+        list.remove(userId);
+      }
+      if (!wasActive) {
+        lists[type]!.add(userId);
+      }
+
+      tx.update(ref, {
+        for (final entry in lists.entries)
+          'reactions.${entry.key}': entry.value,
+      });
     });
   }
 

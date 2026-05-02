@@ -19,6 +19,7 @@ class CommunityScreen extends ConsumerWidget {
     final announcementsAsync = ref.watch(announcementsProvider);
     final announcements = announcementsAsync.valueOrNull ?? [];
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
+    final myUid = FirebaseService.uid;
 
     return Stack(
       children: [
@@ -185,6 +186,16 @@ class CommunityScreen extends ConsumerWidget {
                             delegate: SliverChildBuilderDelegate(
                               (context, i) => _PhotoPostTile(
                                 post: posts[i],
+                                myUid: myUid,
+                                onReaction: (type) async {
+                                  final postId = posts[i]['id']?.toString();
+                                  if (postId == null || postId.isEmpty) return;
+                                  await FirebaseService.toggleReaction(
+                                    postId,
+                                    type,
+                                  );
+                                  ref.invalidate(postsProvider);
+                                },
                                 onTap: () => Navigator.of(context).push(
                                   MaterialPageRoute(
                                     builder: (_) => PostDetailScreen(
@@ -534,15 +545,22 @@ class _WeeklyCalebEmpty extends StatelessWidget {
 
 class _PhotoPostTile extends StatelessWidget {
   final Map<String, dynamic> post;
+  final String? myUid;
   final VoidCallback onTap;
-  const _PhotoPostTile({required this.post, required this.onTap});
+  final Future<void> Function(String type) onReaction;
+  const _PhotoPostTile({
+    required this.post,
+    required this.myUid,
+    required this.onTap,
+    required this.onReaction,
+  });
 
   @override
   Widget build(BuildContext context) {
     final title = (post['title'] as String?) ?? '';
     final content = (post['content'] as String?) ?? '';
     final commentCount = (post['commentCount'] as int?) ?? 0;
-    final hearts = CommunityScreen._heartCount(post);
+    final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
 
     return Tappable(
       onTap: onTap,
@@ -584,31 +602,10 @@ class _PhotoPostTile extends StatelessWidget {
             Positioned(
               top: 8,
               right: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.38),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.favorite_rounded,
-                      size: 13,
-                      color: AppColors.secondaryContainer,
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      '$hearts',
-                      style: AppText.body(
-                        11,
-                        weight: FontWeight.w900,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
+              child: _FeedReactionStrip(
+                reactions: reactions,
+                myUid: myUid,
+                onReaction: onReaction,
               ),
             ),
             Positioned(
@@ -671,6 +668,99 @@ class _PhotoPostTile extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FeedReactionStrip extends StatelessWidget {
+  final Map<String, dynamic> reactions;
+  final String? myUid;
+  final Future<void> Function(String type) onReaction;
+  const _FeedReactionStrip({
+    required this.reactions,
+    required this.myUid,
+    required this.onReaction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final entry in reactionMeta.entries) ...[
+          _FeedReactionButton(
+            type: entry.key,
+            emoji: entry.value.emoji,
+            label: entry.value.label,
+            count: ((reactions[entry.key] as List<dynamic>?) ?? []).length,
+            active: ((reactions[entry.key] as List<dynamic>?) ?? []).contains(
+              myUid,
+            ),
+            onTap: () => onReaction(entry.key),
+          ),
+          if (entry.key != reactionMeta.keys.last) const SizedBox(width: 4),
+        ],
+      ],
+    );
+  }
+}
+
+class _FeedReactionButton extends StatelessWidget {
+  final String type;
+  final String emoji;
+  final String label;
+  final int count;
+  final bool active;
+  final VoidCallback onTap;
+  const _FeedReactionButton({
+    required this.type,
+    required this.emoji,
+    required this.label,
+    required this.count,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '$label $count',
+      selected: active,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 26,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.secondaryContainer
+                : Colors.black.withValues(alpha: 0.38),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: active
+                  ? Colors.white.withValues(alpha: 0.64)
+                  : Colors.white.withValues(alpha: 0.12),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 12)),
+              const SizedBox(width: 3),
+              Text(
+                '$count',
+                style: AppText.body(
+                  10,
+                  weight: FontWeight.w900,
+                  color: active ? AppColors.primary : Colors.white,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
