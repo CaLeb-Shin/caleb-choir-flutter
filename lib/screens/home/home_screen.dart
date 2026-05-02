@@ -53,23 +53,23 @@ class HomeScreen extends ConsumerWidget {
         final weekday = ['월', '화', '수', '목', '금', '토', '일'][now.weekday - 1];
         final totalUploads = recentSheets.length + recentVids.length;
 
-        // Pick upcoming events from Firestore (date >= today), up to 3
+        // Pick upcoming schedule entries from Firestore. Admin writes these to
+        // the events collection with date/location/option flags.
         final allEvents = eventsAsync.valueOrNull ?? [];
+        final today = DateTime(now.year, now.month, now.day);
         final upcomingEvents =
             allEvents.where((e) {
-              final d = e['date'];
-              if (d == null || d is! String || d.isEmpty) return false;
-              final parsed = DateTime.tryParse(d);
+              final parsed = _eventDateTime(e);
               if (parsed == null) return false;
-              return !parsed.isBefore(DateTime(now.year, now.month, now.day));
+              final eventDay = DateTime(parsed.year, parsed.month, parsed.day);
+              return !eventDay.isBefore(today);
             }).toList()..sort(
-              (a, b) => (a['date'] as String).compareTo(b['date'] as String),
+              (a, b) => _eventDateTime(a)!.compareTo(_eventDateTime(b)!),
             );
         final weeklySchedules = _weeklyScheduleItems(
           session: session,
           upcomingEvents: upcomingEvents,
           polls: polls,
-          now: now,
         );
 
         return RefreshIndicator(
@@ -758,7 +758,6 @@ class HomeScreen extends ConsumerWidget {
     required Map<String, dynamic>? session,
     required List<Map<String, dynamic>> upcomingEvents,
     required List<Map<String, dynamic>> polls,
-    required DateTime now,
   }) {
     final items = <_WeeklyScheduleItem>[];
     if (session != null) {
@@ -791,14 +790,6 @@ class HomeScreen extends ConsumerWidget {
 
     for (final event in upcomingEvents) {
       if (items.length >= 3) break;
-      final date = DateTime.tryParse(
-        event['eventDate']?.toString() ?? event['date']?.toString() ?? '',
-      );
-      if (date != null) {
-        final today = DateTime(now.year, now.month, now.day);
-        final eventDay = DateTime(date.year, date.month, date.day);
-        if (eventDay.difference(today).inDays > 7) continue;
-      }
       final targetDate = _dateKeyFrom(
         event['eventDate'] ?? event['date'] ?? event['targetDate'],
       );
@@ -810,6 +801,13 @@ class HomeScreen extends ConsumerWidget {
       items.add(_WeeklyScheduleItem.fromEvent(event, poll: poll));
     }
     return items;
+  }
+
+  static DateTime? _eventDateTime(Map<String, dynamic> event) {
+    final value = event['eventDate'] ?? event['date'] ?? event['targetDate'];
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
   }
 
   static String? _dateKeyFrom(dynamic value) {
@@ -985,9 +983,7 @@ class _WeeklyScheduleItem {
       'milestone': Color(0xFFD1B3FF),
     };
     final type = event['type']?.toString() ?? 'event';
-    final date = DateTime.tryParse(
-      event['eventDate']?.toString() ?? event['date']?.toString() ?? '',
-    );
+    final date = HomeScreen._eventDateTime(event);
     final title = event['title']?.toString().trim();
     return _WeeklyScheduleItem(
       title: title?.isNotEmpty == true ? title! : '일정',
@@ -1050,7 +1046,7 @@ class _WeeklyScheduleCard extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                '이번 주 스케줄',
+                '다가오는 스케줄',
                 style: AppText.headline(20, color: Colors.white),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

@@ -810,6 +810,19 @@ class FirebaseService {
     return events;
   }
 
+  static Stream<List<Map<String, dynamic>>> watchEvents() {
+    return _db
+        .collection('events')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .snapshots()
+        .map((snapshot) {
+          final events =
+              snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+                ..sort(_createdAtDesc);
+          return events;
+        });
+  }
+
   // ============ Admin: Announcements ============
   static Future<void> createAnnouncement(
     String title, {

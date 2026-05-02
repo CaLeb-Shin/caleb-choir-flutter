@@ -679,9 +679,9 @@ final sheetMusicProvider = FutureProvider<List<Map<String, dynamic>>>((
   return FirebaseService.getSheetMusic();
 });
 
-final eventsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  if (ref.watch(localPreviewModeProvider)) return _previewEvents;
-  return FirebaseService.getEvents();
+final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  if (ref.watch(localPreviewModeProvider)) return Stream.value(_previewEvents);
+  return FirebaseService.watchEvents();
 });
 
 final membersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
