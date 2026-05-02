@@ -712,6 +712,7 @@ class _PostMediaPreview extends StatelessWidget {
     if (mediaType == 'video') {
       return _VideoPreview(
         status: (post['videoStatus'] as String?) ?? 'processing',
+        hasPlayableSource: _postVideoUrl(post).isNotEmpty,
       );
     }
     return _NetworkPhoto(imageUrl: _postImageUrl(post));
@@ -726,14 +727,24 @@ String _postImageUrl(Map<String, dynamic> post) {
   return '';
 }
 
+String _postVideoUrl(Map<String, dynamic> post) {
+  for (final key in ['videoUrl', 'videoSourceUrl', 'mediaUrl']) {
+    final value = post[key];
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+  }
+  return '';
+}
+
 class _VideoPreview extends StatelessWidget {
   final String status;
-  const _VideoPreview({required this.status});
+  final bool hasPlayableSource;
+  const _VideoPreview({required this.status, required this.hasPlayableSource});
 
   @override
   Widget build(BuildContext context) {
     final isReady = status == 'ready';
     final isFailed = status == 'failed';
+    final canPlay = isReady || (hasPlayableSource && !isFailed);
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
@@ -754,7 +765,7 @@ class _VideoPreview extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isReady
+                canPlay
                     ? Icons.play_arrow_rounded
                     : isFailed
                     ? Icons.error_outline_rounded
@@ -766,6 +777,8 @@ class _VideoPreview extends StatelessWidget {
               Text(
                 isReady
                     ? '영상'
+                    : canPlay
+                    ? '원본'
                     : isFailed
                     ? '처리 실패'
                     : '압축 중',

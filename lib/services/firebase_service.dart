@@ -282,6 +282,20 @@ class FirebaseService {
     return {'id': doc.id, ...doc.data()};
   }
 
+  static Stream<Map<String, dynamic>?> watchActiveSession() {
+    return _db
+        .collection('attendance_sessions')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .where('isOpen', isEqualTo: true)
+        .limit(1)
+        .snapshots()
+        .map((snapshot) {
+          if (snapshot.docs.isEmpty) return null;
+          final doc = snapshot.docs.first;
+          return {'id': doc.id, ...doc.data()};
+        });
+  }
+
   static Future<List<Map<String, dynamic>>> getRecentSessions({
     int limit = 20,
   }) async {
@@ -507,6 +521,29 @@ class FirebaseService {
     return posts;
   }
 
+  static Stream<List<Map<String, dynamic>>> watchPosts() {
+    return _db
+        .collection('posts')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .limit(50)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final posts = <Map<String, dynamic>>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final userData = await _safeUserData(data['userId']);
+            posts.add({
+              'id': doc.id,
+              ...data,
+              ..._authorFields(data, userData),
+              'createdAt': _timestampIso(data['createdAt']),
+            });
+          }
+          posts.sort(_createdAtDesc);
+          return posts;
+        });
+  }
+
   static Future<Map<String, dynamic>?> getPost(String postId) async {
     final doc = await _db.collection('posts').doc(postId).get();
     if (!doc.exists) return null;
@@ -518,6 +555,22 @@ class FirebaseService {
       ..._authorFields(data, userData),
       'createdAt': _timestampIso(data['createdAt']),
     };
+  }
+
+  static Stream<Map<String, dynamic>?> watchPost(String postId) {
+    return _db.collection('posts').doc(postId).snapshots().asyncMap((
+      doc,
+    ) async {
+      if (!doc.exists) return null;
+      final data = doc.data()!;
+      final userData = await _safeUserData(data['userId']);
+      return {
+        'id': doc.id,
+        ...data,
+        ..._authorFields(data, userData),
+        'createdAt': _timestampIso(data['createdAt']),
+      };
+    });
   }
 
   /// 게시물 이미지 업로드 → downloadUrl 반환
@@ -579,6 +632,11 @@ class FirebaseService {
     return ref.fullPath;
   }
 
+  static Future<String?> getStorageDownloadUrl(String storagePath) async {
+    if (storagePath.trim().isEmpty) return null;
+    return FirebaseStorage.instance.ref(storagePath).getDownloadURL();
+  }
+
   static Future<TaskSnapshot> _waitUpload(
     UploadTask task, {
     UploadProgress? onProgress,
@@ -628,9 +686,14 @@ class FirebaseService {
   static Future<void> markPostVideoProcessing(
     String postId, {
     required String sourcePath,
+    String? sourceUrl,
   }) async {
     await _db.collection('posts').doc(postId).update({
       'videoSourcePath': sourcePath,
+      if (sourceUrl != null && sourceUrl.trim().isNotEmpty) ...{
+        'videoSourceUrl': sourceUrl,
+        'videoUrl': sourceUrl,
+      },
       'videoStatus': 'processing',
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -902,6 +965,19 @@ class FirebaseService {
     final polls = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
       ..sort(_createdAtDesc);
     return polls;
+  }
+
+  static Stream<List<Map<String, dynamic>>> watchPolls() {
+    return _db
+        .collection('polls')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .snapshots()
+        .map((snapshot) {
+          final polls =
+              snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
+                ..sort(_createdAtDesc);
+          return polls;
+        });
   }
 
   static Future<void> vote(String pollId, String choice) async {

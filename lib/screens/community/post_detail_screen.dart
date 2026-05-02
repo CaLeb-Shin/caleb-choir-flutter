@@ -88,7 +88,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
           final imageUrl = _postImageUrl(post);
           final mediaType = (post['mediaType'] as String?) ?? 'photo';
-          final videoUrl = post['videoUrl'] as String?;
+          final videoUrl = _postVideoUrl(post);
           final videoStatus = (post['videoStatus'] as String?) ?? 'processing';
           final title = (post['title'] as String?) ?? '';
           final content = (post['content'] as String?) ?? '';
@@ -242,10 +242,12 @@ class _VideoDetailCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isReady = status == 'ready' && url != null && url!.isNotEmpty;
+    final hasUrl = url != null && url!.isNotEmpty;
+    final isReady = status == 'ready' && hasUrl;
     final isFailed = status == 'failed';
+    final canPlay = hasUrl && !isFailed;
     return Tappable(
-      onTap: isReady
+      onTap: canPlay
           ? () =>
                 launchUrl(Uri.parse(url!), mode: LaunchMode.externalApplication)
           : null,
@@ -276,7 +278,7 @@ class _VideoDetailCard extends StatelessWidget {
                     ),
                   ),
                   child: Icon(
-                    isReady
+                    canPlay
                         ? Icons.play_arrow_rounded
                         : isFailed
                         ? Icons.error_outline_rounded
@@ -289,6 +291,8 @@ class _VideoDetailCard extends StatelessWidget {
                 Text(
                   isReady
                       ? '영상 보기'
+                      : canPlay
+                      ? '원본 영상 보기'
                       : isFailed
                       ? '영상 처리에 실패했습니다'
                       : '서버에서 영상을 압축 중입니다',
@@ -300,7 +304,11 @@ class _VideoDetailCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  isReady ? '탭하면 재생됩니다' : '잠시 후 새로고침하면 확인할 수 있어요',
+                  isReady
+                      ? '탭하면 재생됩니다'
+                      : canPlay
+                      ? '압축 완료 전까지 원본을 재생합니다'
+                      : '잠시 후 자동으로 갱신됩니다',
                   style: AppText.body(
                     12,
                     color: Colors.white.withValues(alpha: 0.68),
@@ -628,6 +636,14 @@ class _CommentInput extends StatelessWidget {
 
 String _postImageUrl(Map<String, dynamic> post) {
   for (final key in ['imageUrl', 'mediaUrl', 'photoUrl', 'thumbnailUrl']) {
+    final value = post[key];
+    if (value is String && value.trim().isNotEmpty) return value.trim();
+  }
+  return '';
+}
+
+String _postVideoUrl(Map<String, dynamic> post) {
+  for (final key in ['videoUrl', 'videoSourceUrl', 'mediaUrl']) {
     final value = post[key];
     if (value is String && value.trim().isNotEmpty) return value.trim();
   }

@@ -650,12 +650,14 @@ class HomeScreen extends ConsumerWidget {
     });
     final polls = ref.watch(pollsProvider).valueOrNull ?? [];
     final hasNewPolls = polls.any((p) => p['isOpen'] == true);
+    final hasOpenAttendance =
+        ref.watch(activeSessionProvider).valueOrNull != null;
 
     final items = <Widget>[
       MiniActionTile(
         icon: Icons.qr_code_rounded,
         label: '출석&투표',
-        hasNew: hasNewPolls,
+        hasNew: hasOpenAttendance || hasNewPolls,
         onTap: () => _openSection(
           context,
           '출석&투표',
@@ -780,6 +782,7 @@ class HomeScreen extends ConsumerWidget {
           locationText: _formatSessionLocation(session),
           targetDate: targetDate,
           pollId: poll?['id']?.toString(),
+          needsAttendance: true,
           needsSeating: _scheduleNeedsSeating(session),
           isActive: true,
         ),
@@ -874,6 +877,35 @@ class HomeScreen extends ConsumerWidget {
         title.contains('예배') ||
         title.contains('공연');
   }
+
+  static bool _scheduleNeedsAttendance(Map<String, dynamic> source) {
+    final explicit =
+        source['needsAttendance'] ??
+        source['hasAttendance'] ??
+        source['attendanceEnabled'] ??
+        source['requiresAttendance'];
+    if (explicit is bool) return explicit;
+    if (explicit is num) return explicit != 0;
+    if (explicit is String) {
+      final normalized = explicit.trim().toLowerCase();
+      if (['true', '1', 'yes', 'y'].contains(normalized)) return true;
+      if (['false', '0', 'no', 'n'].contains(normalized)) return false;
+    }
+
+    final type = source['type']?.toString().toLowerCase() ?? '';
+    final title = source['title']?.toString() ?? '';
+    return type == 'rehearsal' ||
+        type == 'dressrehearsal' ||
+        type == 'concert' ||
+        type == 'performance' ||
+        type == 'worship' ||
+        type == 'service' ||
+        title.contains('연습') ||
+        title.contains('리허설') ||
+        title.contains('찬양') ||
+        title.contains('예배') ||
+        title.contains('공연');
+  }
 }
 
 class _BackableSectionScreen extends StatelessWidget {
@@ -913,6 +945,7 @@ class _WeeklyScheduleItem {
   final String locationText;
   final String? targetDate;
   final String? pollId;
+  final bool needsAttendance;
   final bool needsSeating;
   final bool isActive;
 
@@ -925,6 +958,7 @@ class _WeeklyScheduleItem {
     required this.locationText,
     this.targetDate,
     this.pollId,
+    this.needsAttendance = false,
     this.needsSeating = false,
     this.isActive = false,
   });
@@ -966,6 +1000,8 @@ class _WeeklyScheduleItem {
       locationText: _eventLocation(event),
       targetDate: date?.toIso8601String().split('T').first,
       pollId: poll?['id']?.toString(),
+      needsAttendance:
+          HomeScreen._scheduleNeedsAttendance(event) || poll != null,
       needsSeating: HomeScreen._scheduleNeedsSeating(event),
     );
   }
@@ -1041,7 +1077,7 @@ class _WeeklyScheduleCard extends StatelessWidget {
         for (var i = 0; i < schedules.length; i++) ...[
           _WeeklyScheduleRow(
             item: schedules[i],
-            onAttendance: onAttendance == null
+            onAttendance: onAttendance == null || !schedules[i].needsAttendance
                 ? null
                 : () => onAttendance!(schedules[i]),
             onSeat: onSeat == null || !schedules[i].needsSeating

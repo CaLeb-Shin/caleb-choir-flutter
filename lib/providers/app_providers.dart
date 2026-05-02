@@ -320,6 +320,7 @@ const _previewEvents = [
     'time': '오후 8:00',
     'location': '찬양대실',
     'type': 'dressrehearsal',
+    'needsAttendance': true,
     'needsSeating': false,
   },
   {
@@ -331,6 +332,7 @@ const _previewEvents = [
     'time': '오전 10:00',
     'location': '본당',
     'type': 'rehearsal',
+    'needsAttendance': true,
     'needsSeating': true,
   },
 ];
@@ -571,19 +573,17 @@ final rejectedUsersProvider = FutureProvider<List<Map<String, dynamic>>>((
 });
 
 // ─── Attendance ───
-final activeSessionProvider = FutureProvider<Map<String, dynamic>?>((
-  ref,
-) async {
+final activeSessionProvider = StreamProvider<Map<String, dynamic>?>((ref) {
   if (ref.watch(localPreviewModeProvider)) {
-    return const {
+    return Stream.value(const {
       'id': 'preview-session-1',
       'title': '주일 찬양 연습',
       'openedAt': '2026-04-28T10:00:00',
       'attendanceDate': '2026-04-28',
       'location': '본당',
-    };
+    });
   }
-  return FirebaseService.getActiveSession();
+  return FirebaseService.watchActiveSession();
 });
 
 final myHistoryProvider = FutureProvider<List<Map<String, dynamic>>>((
@@ -631,23 +631,25 @@ final videosProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   return FirebaseService.getVideos();
 });
 
-final postsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  if (ref.watch(localPreviewModeProvider)) return _previewPosts;
-  return FirebaseService.getPosts();
+final postsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  if (ref.watch(localPreviewModeProvider)) return Stream.value(_previewPosts);
+  return FirebaseService.watchPosts();
 });
 
-final postProvider = FutureProvider.family<Map<String, dynamic>?, String>((
+final postProvider = StreamProvider.family<Map<String, dynamic>?, String>((
   ref,
   postId,
-) async {
+) {
   if (ref.watch(localPreviewModeProvider)) {
     try {
-      return _previewPosts.firstWhere((post) => post['id'] == postId);
+      return Stream.value(
+        _previewPosts.firstWhere((post) => post['id'] == postId),
+      );
     } catch (_) {
-      return null;
+      return Stream.value(null);
     }
   }
-  return FirebaseService.getPost(postId);
+  return FirebaseService.watchPost(postId);
 });
 
 final commentsProvider =
@@ -697,18 +699,18 @@ final effectiveIsPartLeaderProvider = Provider<bool>((ref) {
 });
 
 // ─── Polls ───
-final pollsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+final pollsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   if (ref.watch(localPreviewModeProvider)) {
-    return const [
+    return Stream.value(const [
       {
         'id': _previewPollId,
         'title': '5월 5일 주일 찬양 참석',
         'targetDate': '2026-05-05',
         'isOpen': true,
       },
-    ];
+    ]);
   }
-  return FirebaseService.getPolls();
+  return FirebaseService.watchPolls();
 });
 
 final pollVotesProvider =

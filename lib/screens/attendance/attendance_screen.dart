@@ -68,6 +68,11 @@ class AttendanceScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 20),
 
+          if (session != null) ...[
+            _ActiveAttendanceCard(session: session),
+            const SizedBox(height: 14),
+          ],
+
           _AttendancePollSection(
             pollsAsync: pollsAsync,
             profile: profile,
@@ -796,6 +801,103 @@ class _AttendancePollSection extends StatelessWidget {
       return 1;
     }
     return 0;
+  }
+}
+
+class _ActiveAttendanceCard extends StatelessWidget {
+  final Map<String, dynamic> session;
+  const _ActiveAttendanceCard({required this.session});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = AttendanceScreen._dateLabel(
+      session['attendanceDate'] ?? session['openedAt'],
+    );
+    final title = session['title']?.toString().trim();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primaryContainer,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+            ),
+            child: const Icon(
+              Icons.qr_code_rounded,
+              color: AppColors.secondaryContainer,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: AppColors.success,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '출석 진행 중',
+                      style: AppText.body(
+                        11,
+                        weight: FontWeight.w900,
+                        color: AppColors.secondaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  title == null || title.isEmpty ? '$date 출석' : title,
+                  style: AppText.body(
+                    16,
+                    weight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$date · 아래 QR이 현재 열린 출석용으로 갱신되었습니다',
+                  style: AppText.body(
+                    12,
+                    color: Colors.white.withValues(alpha: 0.68),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -156,10 +156,14 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
               _setUploadProgress('영상 ${_percent(progress)}% 업로드 중', progress),
         );
         if (sourcePath == null) throw Exception('영상 업로드 권한이 없습니다');
+        final sourceUrl = await FirebaseService.getStorageDownloadUrl(
+          sourcePath,
+        );
         _setUploadProgress('영상 처리 요청 중', 1);
         await FirebaseService.markPostVideoProcessing(
           postId,
           sourcePath: sourcePath,
+          sourceUrl: sourceUrl,
         );
       } else {
         String? imageUrl;
