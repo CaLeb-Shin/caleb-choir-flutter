@@ -17,7 +17,7 @@ class AppBottomNavBar extends ConsumerWidget {
     (_NavGlyph.home, '홈'),
     (_NavGlyph.score, '악보&음원'),
     (_NavGlyph.video, '영상'),
-    (_NavGlyph.attendance, '출석'),
+    (_NavGlyph.attendance, '출석&투표'),
     (_NavGlyph.community, '소통'),
     (_NavGlyph.profile, '마이'),
   ];
@@ -132,14 +132,23 @@ class AppBottomNavBar extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(height: 3),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: active
-                                ? FontWeight.w800
-                                : FontWeight.w500,
-                            color: active ? AppColors.primary : AppColors.muted,
+                        SizedBox(
+                          width: 56,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: active
+                                    ? FontWeight.w800
+                                    : FontWeight.w500,
+                                color: active
+                                    ? AppColors.primary
+                                    : AppColors.muted,
+                              ),
+                            ),
                           ),
                         ),
                       ],

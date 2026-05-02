@@ -320,6 +320,7 @@ const _previewEvents = [
     'time': '오후 8:00',
     'location': '찬양대실',
     'type': 'dressrehearsal',
+    'needsSeating': false,
   },
   {
     'id': 'preview-event-2',
@@ -330,6 +331,7 @@ const _previewEvents = [
     'time': '오전 10:00',
     'location': '본당',
     'type': 'rehearsal',
+    'needsSeating': true,
   },
 ];
 

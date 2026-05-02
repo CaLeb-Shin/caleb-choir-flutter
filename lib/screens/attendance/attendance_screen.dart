@@ -9,13 +9,23 @@ import '../../services/firebase_service.dart';
 import '../qr_scan/qr_scan_screen.dart';
 
 class AttendanceScreen extends ConsumerWidget {
-  const AttendanceScreen({super.key});
+  final String? initialPollId;
+  final String? initialTargetDate;
+  final String? initialTitle;
+
+  const AttendanceScreen({
+    super.key,
+    this.initialPollId,
+    this.initialTargetDate,
+    this.initialTitle,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
     final sessionAsync = ref.watch(activeSessionProvider);
     final historyAsync = ref.watch(myHistoryProvider);
+    final pollsAsync = ref.watch(pollsProvider);
 
     final profile = profileAsync.valueOrNull;
     final session = sessionAsync.valueOrNull;
@@ -50,10 +60,44 @@ class AttendanceScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('출석', style: AppText.headline(28)),
+          Text('출석&투표', style: AppText.headline(28)),
           const SizedBox(height: 4),
-          Text('연습 출석을 관리하세요', style: AppText.body(14, color: AppColors.muted)),
+          Text(
+            'QR 출석과 참석 투표를 한 화면에서 확인하세요',
+            style: AppText.body(14, color: AppColors.muted),
+          ),
           const SizedBox(height: 20),
+
+          _AttendancePollSection(
+            pollsAsync: pollsAsync,
+            profile: profile,
+            initialPollId: initialPollId,
+            initialTargetDate: initialTargetDate,
+            initialTitle: initialTitle,
+            onVote: (pollId, choice) async {
+              try {
+                await FirebaseService.vote(pollId, choice);
+                ref.invalidate(pollsProvider);
+                ref.invalidate(pollVotesProvider(pollId));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        choice == 'attend' ? '참석으로 투표했습니다' : '불참으로 투표했습니다',
+                      ),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text('투표 실패: $e')));
+                }
+              }
+            },
+          ),
+          const SizedBox(height: 14),
 
           // ── Attendance operator controls
           if (canOperateSession || canScanAttendance) ...[
@@ -257,93 +301,6 @@ class AttendanceScreen extends ConsumerWidget {
             const SizedBox(height: 16),
           ],
 
-          // Active session
-          if (session != null)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF000E24), Color(0xFF00234B)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Color(0xFF4ADE80),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '출석 진행 중',
-                        style: AppText.body(
-                          13,
-                          weight: FontWeight.w600,
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    session['title'] ?? '',
-                    style: AppText.headline(20, color: Colors.white),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'QR코드를 파트장에게 보여주세요',
-                    style: AppText.body(
-                      13,
-                      weight: FontWeight.w600,
-                      color: const Color(0xFFFED488),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 40),
-              decoration: BoxDecoration(
-                color: AppColors.card,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: AppColors.border.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.calendar_today_rounded,
-                    size: 32,
-                    color: AppColors.subtle,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '현재 열린 출석이 없습니다',
-                    style: AppText.body(15, weight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '관리자가 출석을 열면 여기에 표시됩니다',
-                    style: AppText.body(13, color: AppColors.muted),
-                  ),
-                ],
-              ),
-            ),
-          const SizedBox(height: 20),
-
           // ── My QR Code
           if (profile != null) ...[
             Row(
@@ -354,13 +311,17 @@ class AttendanceScreen extends ConsumerWidget {
                   color: AppColors.secondary,
                 ),
                 const SizedBox(width: 8),
-                Text(qrTitle, style: AppText.headline(18)),
+                Expanded(child: Text(qrTitle, style: AppText.headline(18))),
+                if (session != null) ...[
+                  const SizedBox(width: 10),
+                  const _LiveAttendanceBadge(),
+                ],
               ],
             ),
             const SizedBox(height: 12),
             Center(
               child: Container(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(20),
@@ -373,15 +334,15 @@ class AttendanceScreen extends ConsumerWidget {
                     QrImageView(
                       data: qrData,
                       version: QrVersions.auto,
-                      size: 200,
+                      size: 168,
                       eyeStyle: const QrEyeStyle(color: Color(0xFF000E24)),
                       dataModuleStyle: const QrDataModuleStyle(
                         color: Color(0xFF000E24),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(profile.displayName, style: AppText.headline(18)),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
+                    Text(profile.displayName, style: AppText.headline(16)),
+                    const SizedBox(height: 2),
                     Text(
                       qrSubtitle,
                       style: AppText.body(12, color: AppColors.muted),
@@ -394,7 +355,7 @@ class AttendanceScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             // Profile meta row
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: AppColors.card,
                 borderRadius: BorderRadius.circular(14),
@@ -597,6 +558,507 @@ class AttendanceScreen extends ConsumerWidget {
     final legacyQr = RegExp(r'^caleb-choir:(.+)$').firstMatch(trimmed);
     if (legacyQr != null) return _AttendanceQr(userId: legacyQr.group(1));
     return trimmed.isEmpty ? null : _AttendanceQr(userId: trimmed);
+  }
+
+  static String? _dateKeyFrom(dynamic value) {
+    if (value == null) return null;
+    final raw = value.toString().trim();
+    if (raw.isEmpty) return null;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed == null) return raw.length >= 10 ? raw.substring(0, 10) : raw;
+    return parsed.toIso8601String().split('T').first;
+  }
+}
+
+class _LiveAttendanceBadge extends StatefulWidget {
+  const _LiveAttendanceBadge();
+
+  @override
+  State<_LiveAttendanceBadge> createState() => _LiveAttendanceBadgeState();
+}
+
+class _LiveAttendanceBadgeState extends State<_LiveAttendanceBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final glow = 0.26 + (_controller.value * 0.34);
+        final dotSize = 7.0 + (_controller.value * 2);
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: AppColors.primaryContainer,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.success.withValues(alpha: glow),
+                blurRadius: 16,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: dotSize,
+                height: dotSize,
+                decoration: BoxDecoration(
+                  color: AppColors.success,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.success.withValues(alpha: 0.55),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'LIVE',
+                style: AppText.body(
+                  11,
+                  weight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '출석 진행 중',
+                style: AppText.body(
+                  11,
+                  weight: FontWeight.w800,
+                  color: Colors.white.withValues(alpha: 0.88),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AttendancePollSection extends StatelessWidget {
+  final AsyncValue<List<Map<String, dynamic>>> pollsAsync;
+  final User? profile;
+  final String? initialPollId;
+  final String? initialTargetDate;
+  final String? initialTitle;
+  final Future<void> Function(String pollId, String choice) onVote;
+
+  const _AttendancePollSection({
+    required this.pollsAsync,
+    required this.profile,
+    required this.initialPollId,
+    required this.initialTargetDate,
+    required this.initialTitle,
+    required this.onVote,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return pollsAsync.when(
+      loading: () => _sectionShell(
+        child: const Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      ),
+      error: (error, _) => _sectionShell(
+        child: Text(
+          '투표를 불러오지 못했습니다',
+          style: AppText.body(14, color: AppColors.error),
+        ),
+      ),
+      data: (polls) {
+        final visible = polls.where((poll) {
+          if (poll['isOpen'] != true) return false;
+          if (profile?.isAdmin == true) return true;
+          final scope = poll['scopePart'];
+          return scope == null || scope == profile?.part;
+        }).toList();
+
+        visible.sort((a, b) {
+          final aScore = _matchScore(a);
+          final bScore = _matchScore(b);
+          if (aScore != bScore) return bScore.compareTo(aScore);
+          return (a['targetDate']?.toString() ?? '').compareTo(
+            b['targetDate']?.toString() ?? '',
+          );
+        });
+
+        return _sectionShell(
+          child: visible.isEmpty
+              ? Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: AppColors.border.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        Icons.how_to_vote_rounded,
+                        size: 28,
+                        color: AppColors.subtle,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '진행 중인 투표가 없습니다',
+                        style: AppText.body(14, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (final poll in visible) ...[
+                      _InlinePollCard(
+                        poll: poll,
+                        profile: profile,
+                        highlighted: _matchScore(poll) > 0,
+                        onVote: onVote,
+                      ),
+                      if (poll != visible.last) const SizedBox(height: 10),
+                    ],
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _sectionShell({required Widget child}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.how_to_vote_rounded,
+              size: 20,
+              color: AppColors.secondary,
+            ),
+            const SizedBox(width: 8),
+            Text('참석 투표', style: AppText.headline(18)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+
+  int _matchScore(Map<String, dynamic> poll) {
+    if (initialPollId != null && poll['id']?.toString() == initialPollId) {
+      return 3;
+    }
+    final targetDate = AttendanceScreen._dateKeyFrom(initialTargetDate);
+    if (targetDate != null &&
+        AttendanceScreen._dateKeyFrom(poll['targetDate']) == targetDate) {
+      return 2;
+    }
+    final title = initialTitle?.trim();
+    final pollTitle = poll['title']?.toString().trim() ?? '';
+    if (title != null &&
+        title.isNotEmpty &&
+        pollTitle.isNotEmpty &&
+        (pollTitle.contains(title) || title.contains(pollTitle))) {
+      return 1;
+    }
+    return 0;
+  }
+}
+
+class _InlinePollCard extends ConsumerWidget {
+  final Map<String, dynamic> poll;
+  final User? profile;
+  final bool highlighted;
+  final Future<void> Function(String pollId, String choice) onVote;
+
+  const _InlinePollCard({
+    required this.poll,
+    required this.profile,
+    required this.highlighted,
+    required this.onVote,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pollId = poll['id']?.toString() ?? '';
+    final votes = ref.watch(pollVotesProvider(pollId)).valueOrNull ?? [];
+    final members = ref.watch(membersProvider).valueOrNull ?? [];
+    final attend = votes.where((vote) => vote['choice'] == 'attend').length;
+    final absent = votes.where((vote) => vote['choice'] == 'absent').length;
+    final voted = attend + absent;
+    final myVote = votes
+        .where((vote) => vote['userId'] == profile?.id)
+        .firstOrNull;
+    final myChoice = myVote?['choice']?.toString();
+    final scopePart = poll['scopePart']?.toString();
+    final scopeLabel = scopePart == null
+        ? '전체'
+        : '${User.partLabels[scopePart] ?? scopePart} 파트';
+    final eligible = _eligibleCount(members, scopePart, voted);
+    final notVoted = eligible > voted ? eligible - voted : 0;
+    final targetDate = AttendanceScreen._dateLabel(poll['targetDate']);
+    final pollTitle = poll['title']?.toString() ?? '참석 투표';
+    final attendNames = _voteNames(votes, members, 'attend');
+    final absentNames = _voteNames(votes, members, 'absent');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: highlighted ? AppColors.secondarySoft : AppColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: highlighted
+              ? AppColors.secondaryContainer.withValues(alpha: 0.8)
+              : AppColors.border.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                targetDate,
+                style: AppText.body(
+                  12,
+                  weight: FontWeight.w900,
+                  color: AppColors.secondary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  scopeLabel,
+                  style: AppText.body(
+                    11,
+                    weight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              if (myChoice != null)
+                Text(
+                  myChoice == 'attend' ? '내 투표: 참석' : '내 투표: 불참',
+                  style: AppText.body(
+                    12,
+                    weight: FontWeight.w900,
+                    color: AppColors.primary,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            pollTitle,
+            style: AppText.body(16, weight: FontWeight.w900),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _choiceButton(
+                  label: '참석',
+                  count: attend,
+                  choice: 'attend',
+                  selected: myChoice == 'attend',
+                  color: AppColors.success,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _choiceButton(
+                  label: '불참',
+                  count: absent,
+                  choice: 'absent',
+                  selected: myChoice == 'absent',
+                  color: AppColors.error,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _voterNames(attendNames, AppColors.success)),
+              const SizedBox(width: 10),
+              Expanded(child: _voterNames(absentNames, AppColors.error)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            myChoice == null
+                ? '$voted명 투표 · $notVoted명 미투표 · 내 투표: 아직 미투표'
+                : '$voted명 투표 · $notVoted명 미투표',
+            style: AppText.body(11, color: AppColors.muted),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _eligibleCount(
+    List<Map<String, dynamic>> members,
+    String? scopePart,
+    int votedCount,
+  ) {
+    final explicit = _intValue(
+      poll['eligibleCount'] ??
+          poll['targetCount'] ??
+          poll['memberCount'] ??
+          poll['totalMembers'],
+    );
+    if (explicit > 0) return explicit;
+
+    final eligible = members.where((member) {
+      final status = member['status']?.toString().toLowerCase();
+      if (member['approved'] == false ||
+          status == 'pending' ||
+          status == 'rejected') {
+        return false;
+      }
+      if (scopePart == null) return true;
+      return member['part']?.toString() == scopePart;
+    }).length;
+
+    return eligible > 0 ? eligible : votedCount;
+  }
+
+  String _voteNames(
+    List<Map<String, dynamic>> votes,
+    List<Map<String, dynamic>> members,
+    String choice,
+  ) {
+    final memberNames = <String, String>{
+      for (final member in members)
+        if (member['id'] != null)
+          member['id'].toString():
+              (member['name'] ?? member['displayName'] ?? '').toString(),
+    };
+    final names = <String>[];
+
+    for (final vote in votes.where((vote) => vote['choice'] == choice)) {
+      final userId = vote['userId']?.toString();
+      final name =
+          (vote['userName'] ??
+                  vote['name'] ??
+                  vote['displayName'] ??
+                  (userId == null ? null : memberNames[userId]) ??
+                  '')
+              .toString()
+              .trim();
+      if (name.isNotEmpty && !names.contains(name)) {
+        names.add(name);
+      }
+    }
+
+    if (names.isEmpty) {
+      return choice == 'attend' ? '아직 참석자 없음' : '아직 불참자 없음';
+    }
+    if (names.length > 4) {
+      return '${names.take(4).join(', ')} 외 ${names.length - 4}명';
+    }
+    return names.join(', ');
+  }
+
+  Widget _voterNames(String names, Color accent) {
+    return Text(
+      names,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: AppText.body(
+        10,
+        weight: FontWeight.w700,
+        color: accent.withValues(alpha: 0.58),
+      ),
+    );
+  }
+
+  int _intValue(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  Widget _choiceButton({
+    required String label,
+    required int count,
+    required String choice,
+    required bool selected,
+    required Color color,
+  }) {
+    final foreground = selected ? Colors.white : color;
+    final subColor = selected
+        ? Colors.white.withValues(alpha: 0.72)
+        : color.withValues(alpha: 0.68);
+
+    return ElevatedButton(
+      onPressed: () => onVote(poll['id'].toString(), choice),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: selected ? color : Colors.white,
+        foregroundColor: foreground,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: color.withValues(alpha: 0.55)),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: AppText.body(14, weight: FontWeight.w900)),
+          const SizedBox(height: 2),
+          Text(
+            '$count명',
+            style: AppText.body(10, weight: FontWeight.w800, color: subColor),
+          ),
+        ],
+      ),
+    );
   }
 }
 

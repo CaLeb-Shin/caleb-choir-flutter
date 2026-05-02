@@ -8,7 +8,16 @@ import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/app_logo_title.dart';
 
 class PollsScreen extends ConsumerStatefulWidget {
-  const PollsScreen({super.key});
+  final String? initialPollId;
+  final String? initialTargetDate;
+  final String? initialTitle;
+
+  const PollsScreen({
+    super.key,
+    this.initialPollId,
+    this.initialTargetDate,
+    this.initialTitle,
+  });
 
   @override
   ConsumerState<PollsScreen> createState() => _PollsScreenState();
@@ -17,6 +26,13 @@ class PollsScreen extends ConsumerStatefulWidget {
 class _PollsScreenState extends ConsumerState<PollsScreen> {
   bool _showOpen = true;
   String? _selectedPollId;
+  bool _initialSelectionApplied = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedPollId = widget.initialPollId;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +70,11 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                 (p) => _showOpen ? p['isOpen'] == true : p['isOpen'] != true,
               )
               .toList();
+          if (!_initialSelectionApplied && filtered.isNotEmpty) {
+            _selectedPollId ??= _initialMatchingPollId(filtered);
+            _initialSelectionApplied = true;
+          }
+          final selectedPollId = _selectedPollId;
 
           return Column(
             children: [
@@ -92,10 +113,10 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                         itemBuilder: (_, i) => _PollCard(
                           poll: filtered[i],
                           profile: profile,
-                          isSelected: _selectedPollId == filtered[i]['id'],
+                          isSelected: selectedPollId == filtered[i]['id'],
                           onTap: () => setState(() {
                             _selectedPollId =
-                                _selectedPollId == filtered[i]['id']
+                                selectedPollId == filtered[i]['id']
                                 ? null
                                 : filtered[i]['id'];
                           }),
@@ -110,6 +131,29 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
         },
       ),
     );
+  }
+
+  String? _initialMatchingPollId(List<Map<String, dynamic>> polls) {
+    final targetDate = widget.initialTargetDate?.trim();
+    if (targetDate != null && targetDate.isNotEmpty) {
+      for (final poll in polls) {
+        if (poll['targetDate']?.toString().trim() == targetDate) {
+          return poll['id']?.toString();
+        }
+      }
+    }
+
+    final title = widget.initialTitle?.trim();
+    if (title != null && title.isNotEmpty) {
+      for (final poll in polls) {
+        final pollTitle = poll['title']?.toString().trim() ?? '';
+        if (pollTitle.isEmpty) continue;
+        if (pollTitle.contains(title) || title.contains(pollTitle)) {
+          return poll['id']?.toString();
+        }
+      }
+    }
+    return null;
   }
 
   Widget _tabChip(String label, bool active, VoidCallback onTap) {
@@ -146,10 +190,11 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
         );
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('오류: $e')));
+      }
     }
   }
 
@@ -211,7 +256,7 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                 if (!isPartLeader && (profile?.isAdmin ?? false)) ...[
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String?>(
-                    value: scopePart,
+                    initialValue: scopePart,
                     decoration: const InputDecoration(labelText: '대상 범위'),
                     items: [
                       const DropdownMenuItem(value: null, child: Text('전체')),
