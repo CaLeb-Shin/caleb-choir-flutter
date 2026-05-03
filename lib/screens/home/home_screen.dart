@@ -222,9 +222,10 @@ class HomeScreen extends ConsumerWidget {
                             attendanceCount: attendanceCount,
                             onAttendance: (item) =>
                                 _openAttendanceForSchedule(context, item),
-                            onSeat: (_) => _openSeatForSchedule(
+                            onSeat: (item) => _openSeatForSchedule(
                               context,
-                              currentSeatingChart,
+                              _seatingChartForSchedule(seatingCharts, item) ??
+                                  currentSeatingChart,
                             ),
                             onDetails: session == null
                                 ? () => _openSection(
@@ -502,6 +503,28 @@ class HomeScreen extends ConsumerWidget {
     if (charts.isEmpty) return null;
     final published = charts.where((chart) => chart['isPublished'] == true);
     return published.isNotEmpty ? published.first : charts.first;
+  }
+
+  static Map<String, dynamic>? _seatingChartForSchedule(
+    List<Map<String, dynamic>> charts,
+    _WeeklyScheduleItem item,
+  ) {
+    final chartId = item.seatingChartId;
+    if (chartId != null && chartId.isNotEmpty) {
+      for (final chart in charts) {
+        if (chart['id']?.toString() == chartId) return chart;
+      }
+    }
+    final targetDate = item.targetDate;
+    if (targetDate != null && targetDate.isNotEmpty) {
+      for (final chart in charts) {
+        if (_dateKeyFrom(chart['eventDate']) == targetDate ||
+            _dateKeyFrom(chart['targetDate']) == targetDate) {
+          return chart;
+        }
+      }
+    }
+    return null;
   }
 
   static Map<String, dynamic>? _mySeat(
@@ -943,6 +966,7 @@ class _WeeklyScheduleItem {
   final String locationText;
   final String? targetDate;
   final String? pollId;
+  final String? seatingChartId;
   final bool needsAttendance;
   final bool needsSeating;
   final bool isActive;
@@ -956,6 +980,7 @@ class _WeeklyScheduleItem {
     required this.locationText,
     this.targetDate,
     this.pollId,
+    this.seatingChartId,
     this.needsAttendance = false,
     this.needsSeating = false,
     this.isActive = false,
@@ -996,6 +1021,7 @@ class _WeeklyScheduleItem {
       locationText: _eventLocation(event),
       targetDate: date?.toIso8601String().split('T').first,
       pollId: poll?['id']?.toString(),
+      seatingChartId: event['seatingChartId']?.toString(),
       needsAttendance:
           HomeScreen._scheduleNeedsAttendance(event) || poll != null,
       needsSeating: HomeScreen._scheduleNeedsSeating(event),
