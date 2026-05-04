@@ -24,7 +24,7 @@ import 'widgets/app_logo_title.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  KakaoSdk.init(nativeAppKey: 'YOUR_KAKAO_NATIVE_APP_KEY');
+  KakaoSdk.init(nativeAppKey: '7dac8af45e9ebf4c81284e72bb1b7ebb');
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const ProviderScope(child: CalebChoirApp()));
 

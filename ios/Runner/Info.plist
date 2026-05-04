@@ -27,13 +27,13 @@
 				<string>com.googleusercontent.apps.714127777029-ujl5cr93mn5q4j9371k3h1kgdflu1c6p</string>
 			</array>
 		</dict>
-		<!-- 카카오 로그인 URL Scheme - TODO: YOUR_KAKAO_NATIVE_APP_KEY를 실제 키로 교체 -->
+		<!-- 카카오 로그인 URL Scheme -->
 		<dict>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>kakaoYOUR_KAKAO_NATIVE_APP_KEY</string>
+				<string>kakao7dac8af45e9ebf4c81284e72bb1b7ebb</string>
 			</array>
 		</dict>
 	</array>
