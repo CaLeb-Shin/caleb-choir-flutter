@@ -5,6 +5,7 @@ import '../../theme/app_theme.dart';
 import '../../models/church.dart';
 import '../../providers/app_providers.dart';
 import '../../widgets/app_logo_title.dart';
+import '../../widgets/church_logo.dart';
 import '../profile_setup/profile_setup_screen.dart';
 import 'church_register_screen.dart';
 
@@ -151,19 +152,7 @@ class _ChurchTile extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.church_rounded,
-                  color: AppColors.primary,
-                  size: 22,
-                ),
-              ),
+              ChurchLogo(imageUrl: church.logoUrl, size: 44, radius: 12),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

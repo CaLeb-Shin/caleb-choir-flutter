@@ -11,6 +11,7 @@ import '../../models/user.dart';
 import '../../providers/app_providers.dart';
 import '../../services/address_search/address_search.dart';
 import '../../services/firebase_service.dart';
+import '../../widgets/church_logo.dart';
 
 /// 로그인 직후 통합 온보딩 화면 — 가입 유형 선택과 프로필 입력을 한 페이지에서 처리.
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -1787,18 +1788,12 @@ class _SelectedChurchTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.primaryContainer,
-              borderRadius: BorderRadius.circular(13),
-            ),
-            child: const Icon(
-              Icons.church_rounded,
-              color: Colors.white,
-              size: 20,
-            ),
+          ChurchLogo(
+            imageUrl: church.logoUrl,
+            size: 40,
+            radius: 13,
+            backgroundColor: AppColors.primaryContainer,
+            iconColor: Colors.white,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -1939,18 +1934,10 @@ class _ChurchSearchResults extends ConsumerWidget {
                         padding: const EdgeInsets.all(12),
                         child: Row(
                           children: [
-                            Container(
-                              width: 36,
-                              height: 36,
-                              decoration: BoxDecoration(
-                                color: AppColors.primarySoft,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(
-                                Icons.church_rounded,
-                                color: AppColors.primary,
-                                size: 18,
-                              ),
+                            ChurchLogo(
+                              imageUrl: c.logoUrl,
+                              size: 36,
+                              radius: 10,
                             ),
                             const SizedBox(width: 10),
                             Expanded(

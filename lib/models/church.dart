@@ -4,6 +4,7 @@ class Church {
   final String nameLower;
   final String? address;
   final String? choirName;
+  final String? logoUrl;
   final String? contactPhone;
   final String? contactEmail;
   final String status; // 'pending' | 'approved' | 'rejected'
@@ -22,6 +23,7 @@ class Church {
     this.adminUids = const [],
     this.address,
     this.choirName,
+    this.logoUrl,
     this.contactPhone,
     this.contactEmail,
     this.rejectionReason,
@@ -52,6 +54,7 @@ class Church {
       nameLower: (map['nameLower'] ?? '').toString(),
       address: map['address'] as String?,
       choirName: map['choirName'] as String?,
+      logoUrl: map['logoUrl'] as String?,
       contactPhone: map['contactPhone'] as String?,
       contactEmail: map['contactEmail'] as String?,
       status: (map['status'] ?? 'pending').toString(),
