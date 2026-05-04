@@ -593,12 +593,10 @@ class FirebaseService {
     return await ref.getDownloadURL();
   }
 
-  /// 게시물 영상 원본 업로드 → 서버 압축 함수가 처리할 Storage path 반환
+  /// 게시물 영상 업로드 → 저장된 Storage path 반환
   static Future<String?> uploadPostVideoSource(
     Uint8List bytes, {
     required String postId,
-    required int trimStartSec,
-    required int trimEndSec,
     String contentType = 'video/mp4',
     String extension = 'mp4',
     UploadProgress? onProgress,
@@ -623,8 +621,6 @@ class FirebaseService {
           'postId': postId,
           'churchId': _requireChurchId(),
           'userId': uid!,
-          'trimStartSec': '$trimStartSec',
-          'trimEndSec': '$trimEndSec',
         },
       ),
     );
@@ -662,24 +658,33 @@ class FirebaseService {
     String mediaType = 'photo',
     String? videoStatus,
     String? videoSourcePath,
+    String? videoSourceUrl,
+    String? videoUrl,
     int? videoTrimStartSec,
     int? videoTrimEndSec,
   }) async {
-    final docRef = await _db.collection('posts').add({
+    final postData = <String, dynamic>{
       'churchId': _requireChurchId(),
       'userId': uid,
       'title': title,
       'content': content,
       'imageUrl': imageUrl,
       'mediaType': mediaType,
-      if (videoStatus != null) 'videoStatus': videoStatus,
-      if (videoSourcePath != null) 'videoSourcePath': videoSourcePath,
-      if (videoTrimStartSec != null) 'videoTrimStartSec': videoTrimStartSec,
-      if (videoTrimEndSec != null) 'videoTrimEndSec': videoTrimEndSec,
       'reactions': <String, List<String>>{'like': [], 'sad': [], 'pray': []},
       'commentCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
-    });
+    };
+    if (videoStatus != null) postData['videoStatus'] = videoStatus;
+    if (videoSourcePath != null) postData['videoSourcePath'] = videoSourcePath;
+    if (videoSourceUrl != null) postData['videoSourceUrl'] = videoSourceUrl;
+    if (videoUrl != null) postData['videoUrl'] = videoUrl;
+    if (videoTrimStartSec != null) {
+      postData['videoTrimStartSec'] = videoTrimStartSec;
+    }
+    if (videoTrimEndSec != null) {
+      postData['videoTrimEndSec'] = videoTrimEndSec;
+    }
+    final docRef = await _db.collection('posts').add(postData);
     return docRef.id;
   }
 
@@ -695,6 +700,22 @@ class FirebaseService {
         'videoUrl': sourceUrl,
       },
       'videoStatus': 'processing',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  static Future<void> markPostVideoReady(
+    String postId, {
+    required String sourcePath,
+    String? sourceUrl,
+  }) async {
+    await _db.collection('posts').doc(postId).update({
+      'videoSourcePath': sourcePath,
+      if (sourceUrl != null && sourceUrl.trim().isNotEmpty) ...{
+        'videoSourceUrl': sourceUrl,
+        'videoUrl': sourceUrl,
+      },
+      'videoStatus': 'ready',
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

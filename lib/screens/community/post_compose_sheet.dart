@@ -141,15 +141,11 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
           content: content,
           mediaType: 'video',
           videoStatus: 'uploading',
-          videoTrimStartSec: 0,
-          videoTrimEndSec: 12,
         );
         createdPostId = postId;
         final sourcePath = await FirebaseService.uploadPostVideoSource(
           _videoBytes!,
           postId: postId,
-          trimStartSec: 0,
-          trimEndSec: 12,
           contentType: _videoMimeType,
           extension: _extensionFromName(_videoName ?? ''),
           onProgress: (progress) =>
@@ -159,8 +155,8 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
         final sourceUrl = await FirebaseService.getStorageDownloadUrl(
           sourcePath,
         );
-        _setUploadProgress('영상 처리 요청 중', 1);
-        await FirebaseService.markPostVideoProcessing(
+        _setUploadProgress('영상 저장 중', 1);
+        await FirebaseService.markPostVideoReady(
           postId,
           sourcePath: sourcePath,
           sourceUrl: sourceUrl,
@@ -487,7 +483,7 @@ class _MediaTypeSwitch extends StatelessWidget {
           const SizedBox(width: 4),
           Expanded(
             child: _MediaTypeButton(
-              label: '12초 영상',
+              label: '영상',
               icon: Icons.movie_creation_outlined,
               selected: selected == _ComposeMediaType.video,
               enabled: enabled,
@@ -663,8 +659,8 @@ class _VideoPicker extends StatelessWidget {
                       ? _SelectedVideoState(videoName: videoName)
                       : const _PickerEmptyState(
                           icon: Icons.video_library_outlined,
-                          title: '12초 이하 영상 선택',
-                          subtitle: '긴 영상은 휴대폰에서 먼저 잘라서 올려주세요',
+                          title: '영상 선택',
+                          subtitle: '올리면 바로 볼 수 있게 저장됩니다',
                         ),
                 ),
                 if (hasVideo) _ClearButton(onTap: onClear),
@@ -686,14 +682,14 @@ class _VideoPicker extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Icon(
-                Icons.cut_rounded,
+                Icons.play_circle_outline_rounded,
                 size: 17,
                 color: AppColors.secondary,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '지금은 앱 안에서 영상을 보며 자르는 기능은 준비 전이에요. 12초 이내로 편집한 영상만 선택해주세요.',
+                  '선택한 영상은 별도 처리 대기 없이 저장되고 커뮤니티에서 바로 재생됩니다.',
                   style: AppText.body(
                     12,
                     height: 1.45,
@@ -749,7 +745,7 @@ class _SelectedVideoState extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '업로드 후 서버에서 가볍게 압축됩니다',
+            '업로드 후 바로 재생할 수 있습니다',
             style: AppText.body(
               11,
               color: Colors.white.withValues(alpha: 0.68),

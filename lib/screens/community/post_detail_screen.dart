@@ -292,10 +292,10 @@ class _VideoDetailCard extends StatelessWidget {
                   isReady
                       ? '영상 보기'
                       : canPlay
-                      ? '원본 영상 보기'
+                      ? '영상 보기'
                       : isFailed
                       ? '영상 처리에 실패했습니다'
-                      : '서버에서 영상을 압축 중입니다',
+                      : '영상을 업로드 중입니다',
                   style: AppText.body(
                     15,
                     weight: FontWeight.w800,
@@ -307,8 +307,8 @@ class _VideoDetailCard extends StatelessWidget {
                   isReady
                       ? '탭하면 재생됩니다'
                       : canPlay
-                      ? '압축 완료 전까지 원본을 재생합니다'
-                      : '잠시 후 자동으로 갱신됩니다',
+                      ? '탭하면 재생됩니다'
+                      : '잠시 후 다시 확인해주세요',
                   style: AppText.body(
                     12,
                     color: Colors.white.withValues(alpha: 0.68),

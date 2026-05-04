@@ -37,7 +37,7 @@ class CommunityScreen extends ConsumerWidget {
                         Text('커뮤니티', style: AppText.headline(28)),
                         const SizedBox(height: 2),
                         Text(
-                          '재미있는 사진과 짧은 영상을 올리고 하트로 응원해요',
+                          '재미있는 사진과 영상을 올리고 하트로 응원해요',
                           style: AppText.body(12, color: AppColors.muted),
                         ),
                       ],
@@ -868,10 +868,10 @@ class _VideoPreview extends StatelessWidget {
                 isReady
                     ? '영상'
                     : canPlay
-                    ? '원본'
+                    ? '영상'
                     : isFailed
                     ? '처리 실패'
-                    : '압축 중',
+                    : '업로드 중',
                 style: AppText.body(
                   11,
                   weight: FontWeight.w900,
