@@ -17,7 +17,7 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const NAVER_CLIENT_ID = defineSecret("NAVER_CLIENT_ID");
 const NAVER_CLIENT_SECRET = defineSecret("NAVER_CLIENT_SECRET");
-const KAKAO_REST_API_KEY = "b47b061cd0b02624e9cf0d548b803b7e";
+const KAKAO_REST_API_KEY = "1f9fa5991d000ee260fa27298f20ad8d";
 
 /**
  * 카카오 액세스 토큰 또는 웹 authorization code를 검증하고 Firebase Custom Token을 생성한다.
