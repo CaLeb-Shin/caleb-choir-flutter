@@ -32,6 +32,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _loading = false;
   String? _loadingProvider;
   bool _rememberLogin = true;
+  String? _lastLoginProvider;
 
   bool get _showLocalPreview {
     if (!kIsWeb) return false;
@@ -52,7 +53,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRememberLogin();
+    _loadLoginPreferences();
     if (kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _completeGoogleRedirectSignIn();
@@ -62,11 +63,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _loadRememberLogin() async {
+  Future<void> _loadLoginPreferences() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
       _rememberLogin = prefs.getBool('remember_login') ?? true;
+      _lastLoginProvider = prefs.getString('last_login_provider');
     });
   }
 
@@ -84,12 +86,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  Future<void> _setLastLoginProvider(String provider) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_login_provider', provider);
+    if (!mounted) return;
+    setState(() => _lastLoginProvider = provider);
+  }
+
+  String _providerLabel(String provider) {
+    return switch (provider) {
+      'kakao' => '카카오',
+      'naver' => '네이버',
+      'google' => 'Google',
+      _ => provider,
+    };
+  }
+
   Future<void> _completeGoogleRedirectSignIn() async {
     try {
       final result = await FirebaseAuth.instance.getRedirectResult();
       if (result.user != null) {
         debugPrint('Google redirect sign-in completed: ${result.user!.uid}');
-        await _afterSuccessfulSignIn();
+        await _afterSuccessfulSignIn('google');
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('Google redirect sign-in error: $e');
@@ -116,7 +134,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final result = await callable.call<Map<String, dynamic>>(callback);
       final customToken = result.data['token'] as String;
       await FirebaseAuth.instance.signInWithCustomToken(customToken);
-      await _afterSuccessfulSignIn();
+      await _afterSuccessfulSignIn('naver');
     } catch (e) {
       debugPrint('Naver redirect sign-in error: $e');
       if (!mounted) return;
@@ -147,7 +165,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final result = await callable.call<Map<String, dynamic>>(callback);
       final customToken = result.data['token'] as String;
       await FirebaseAuth.instance.signInWithCustomToken(customToken);
-      await _afterSuccessfulSignIn();
+      await _afterSuccessfulSignIn('kakao');
     } catch (e) {
       debugPrint('Kakao redirect sign-in error: $e');
       if (!mounted) return;
@@ -163,7 +181,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _afterSuccessfulSignIn() async {
+  Future<void> _afterSuccessfulSignIn(String provider) async {
+    await _setLastLoginProvider(provider);
     try {
       await FirebaseService.ensurePlatformAdminRole();
     } catch (e) {
@@ -195,7 +214,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               .signInWithPopup(provider)
               .timeout(const Duration(seconds: 18));
           if (result.user != null) {
-            await _afterSuccessfulSignIn();
+            await _afterSuccessfulSignIn('google');
           }
         } on FirebaseAuthException catch (e) {
           if (e.code == 'popup-blocked' ||
@@ -224,7 +243,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           idToken: googleAuth.idToken,
         );
         await FirebaseAuth.instance.signInWithCredential(credential);
-        await _afterSuccessfulSignIn();
+        await _afterSuccessfulSignIn('google');
       }
     } on FirebaseAuthException catch (e) {
       debugPrint('Google sign-in error: $e');
@@ -266,7 +285,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       });
       final customToken = result.data['token'] as String;
       await FirebaseAuth.instance.signInWithCustomToken(customToken);
-      await _afterSuccessfulSignIn();
+      await _afterSuccessfulSignIn('kakao');
     } catch (e) {
       debugPrint('Kakao sign-in error: $e');
       final detail = e is StateError ? e.message : '다시 시도해주세요.';
@@ -440,6 +459,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                 ),
+
+              if (_lastLoginProvider != null) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.accent.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.history_rounded,
+                        size: 17,
+                        color: AppColors.secondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '최근 사용한 로그인: ${_providerLabel(_lastLoginProvider!)}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.ink,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               // Kakao
               Padding(
