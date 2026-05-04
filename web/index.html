@@ -37,9 +37,10 @@
           integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"
           crossorigin="anonymous"></script>
   <script>
-    // Kakao Developers 콘솔 > 플랫폼 > Web 에 배포 도메인을 등록해야 합니다.
+    // Kakao Developers 콘솔 > 플랫폼 키에 배포 도메인과 리다이렉트 URI를 등록해야 합니다.
     (function () {
       var KAKAO_JS_KEY = 'abfe7b47dcddf30af3b239b9561da8608';
+      var KAKAO_REST_API_KEY = '1f9fa5991d000ee260fa27298f20ad8d';
 
       function toMessage(error) {
         if (!error) return '카카오 로그인 오류가 발생했습니다.';
@@ -68,7 +69,6 @@
         },
         start: function () {
           try {
-            window.CCNoteKakao.ensureInitialized();
             var redirectUri = window.location.origin;
             var state =
               'kakao_' +
@@ -79,10 +79,14 @@
             window.sessionStorage.setItem(window.CCNoteKakao.storageKey, state);
             window.sessionStorage.setItem(window.CCNoteKakao.redirectStorageKey, redirectUri);
 
-            window.Kakao.Auth.authorize({
-              redirectUri: redirectUri,
+            var params = new URLSearchParams({
+              response_type: 'code',
+              client_id: KAKAO_REST_API_KEY,
+              redirect_uri: redirectUri,
               state: state
             });
+
+            window.location.assign('https://kauth.kakao.com/oauth/authorize?' + params.toString());
           } catch (error) {
             throw new Error(toMessage(error));
           }
