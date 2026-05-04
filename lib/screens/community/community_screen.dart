@@ -674,7 +674,7 @@ class _PhotoPostTile extends StatelessWidget {
   }
 }
 
-class _FeedReactionStrip extends StatelessWidget {
+class _FeedReactionStrip extends StatefulWidget {
   final Map<String, dynamic> reactions;
   final String? myUid;
   final Future<void> Function(String type) onReaction;
@@ -685,7 +685,34 @@ class _FeedReactionStrip extends StatelessWidget {
   });
 
   @override
+  State<_FeedReactionStrip> createState() => _FeedReactionStripState();
+}
+
+class _FeedReactionStripState extends State<_FeedReactionStrip> {
+  Map<String, List<String>>? _optimisticReactions;
+
+  Future<void> _handleReaction(
+    String type,
+    Map<String, dynamic> currentReactions,
+  ) async {
+    final userId = widget.myUid;
+    if (userId == null) return;
+    setState(() {
+      _optimisticReactions = toggledReactions(currentReactions, type, userId);
+    });
+    try {
+      await widget.onReaction(type);
+      Future<void>.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) setState(() => _optimisticReactions = null);
+      });
+    } catch (_) {
+      if (mounted) setState(() => _optimisticReactions = null);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final reactions = _optimisticReactions ?? widget.reactions;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -696,9 +723,9 @@ class _FeedReactionStrip extends StatelessWidget {
             label: entry.value.label,
             count: ((reactions[entry.key] as List<dynamic>?) ?? []).length,
             active: ((reactions[entry.key] as List<dynamic>?) ?? []).contains(
-              myUid,
+              widget.myUid,
             ),
-            onTap: () => onReaction(entry.key),
+            onTap: () => _handleReaction(entry.key, reactions),
           ),
           if (entry.key != reactionMeta.keys.last) const SizedBox(width: 4),
         ],

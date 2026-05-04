@@ -17,6 +17,37 @@ const reactionMeta = <String, ({String label, String emoji})>{
   'pray': (label: '기도해요', emoji: '🙏'),
 };
 
+Map<String, List<String>> normalizedReactions(Map<String, dynamic> reactions) {
+  return {
+    for (final type in reactionMeta.keys)
+      type: List<String>.from(
+        ((reactions[type] as List<dynamic>?) ?? const []).map(
+          (uid) => uid.toString(),
+        ),
+      ),
+  };
+}
+
+Map<String, List<String>> toggledReactions(
+  Map<String, dynamic> reactions,
+  String type,
+  String? uid,
+) {
+  final next = normalizedReactions(reactions);
+  if (uid == null || uid.isEmpty || !reactionMeta.containsKey(type)) {
+    return next;
+  }
+
+  final wasActive = next[type]?.contains(uid) ?? false;
+  for (final list in next.values) {
+    list.remove(uid);
+  }
+  if (!wasActive) {
+    next[type]!.add(uid);
+  }
+  return next;
+}
+
 class PostDetailScreen extends ConsumerStatefulWidget {
   final String postId;
   const PostDetailScreen({super.key, required this.postId});
@@ -28,6 +59,7 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   final _commentCtrl = TextEditingController();
   bool _sending = false;
+  Map<String, List<String>>? _optimisticReactions;
 
   @override
   void dispose() {
@@ -35,10 +67,30 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     super.dispose();
   }
 
-  Future<void> _toggleReaction(String type) async {
-    await FirebaseService.toggleReaction(widget.postId, type);
-    ref.invalidate(postProvider(widget.postId));
-    ref.invalidate(postsProvider);
+  Future<void> _toggleReaction(
+    String type,
+    Map<String, dynamic> currentReactions,
+  ) async {
+    final userId = FirebaseService.uid;
+    if (userId == null) return;
+    setState(() {
+      _optimisticReactions = toggledReactions(currentReactions, type, userId);
+    });
+    try {
+      await FirebaseService.toggleReaction(widget.postId, type);
+      ref.invalidate(postProvider(widget.postId));
+      ref.invalidate(postsProvider);
+      Future<void>.delayed(const Duration(milliseconds: 350), () {
+        if (mounted) setState(() => _optimisticReactions = null);
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _optimisticReactions = null);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('반응 저장 실패: $e')));
+      }
+    }
   }
 
   Future<void> _sendComment() async {
@@ -59,6 +111,44 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
       }
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _confirmDeleteComment(
+    BuildContext context,
+    String commentId,
+  ) async {
+    if (commentId.isEmpty) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('댓글 삭제'),
+        content: const Text('내가 쓴 댓글을 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('삭제', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await FirebaseService.deleteComment(widget.postId, commentId);
+      ref.invalidate(commentsProvider(widget.postId));
+      ref.invalidate(postProvider(widget.postId));
+      ref.invalidate(postsProvider);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          this.context,
+        ).showSnackBar(SnackBar(content: Text('댓글 삭제 실패: $e')));
+      }
     }
   }
 
@@ -85,7 +175,9 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
         error: (_, __) => const Center(child: Text('게시물을 불러올 수 없습니다')),
         data: (post) {
           if (post == null) return const Center(child: Text('삭제된 게시물입니다'));
-          final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
+          final serverReactions =
+              (post['reactions'] as Map<String, dynamic>?) ?? {};
+          final reactions = _optimisticReactions ?? serverReactions;
           final imageUrl = _postImageUrl(post);
           final mediaType = (post['mediaType'] as String?) ?? 'photo';
           final videoUrl = _postVideoUrl(post);
@@ -93,6 +185,8 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           final title = (post['title'] as String?) ?? '';
           final content = (post['content'] as String?) ?? '';
           final isMine = post['userId'] == myUid;
+          final visibleCommentCount =
+              commentsAsync.valueOrNull?.length ?? post['commentCount'] ?? 0;
           final detailCacheWidth =
               (MediaQuery.sizeOf(context).width *
                       MediaQuery.devicePixelRatioOf(context))
@@ -159,7 +253,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      '댓글 ${post['commentCount'] ?? 0}',
+                      '댓글 $visibleCommentCount',
                       style: AppText.body(
                         13,
                         weight: FontWeight.w700,
@@ -189,7 +283,15 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                         }
                         return Column(
                           children: [
-                            for (final c in comments) _CommentTile(comment: c),
+                            for (final c in comments)
+                              _CommentTile(
+                                comment: c,
+                                canDelete: c['userId']?.toString() == myUid,
+                                onDelete: () => _confirmDeleteComment(
+                                  context,
+                                  c['id']?.toString() ?? '',
+                                ),
+                              ),
                           ],
                         );
                       },
@@ -225,7 +327,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
               Navigator.pop(dialogCtx);
               await FirebaseService.deletePost(widget.postId);
               ref.invalidate(postsProvider);
-              if (mounted) Navigator.pop(context);
+              if (mounted) Navigator.pop(this.context);
             },
             child: const Text('삭제', style: TextStyle(color: AppColors.error)),
           ),
@@ -444,7 +546,8 @@ class _Avatar extends StatelessWidget {
 class _ReactionRow extends StatelessWidget {
   final Map<String, dynamic> reactions;
   final String? myUid;
-  final Future<void> Function(String type) onTap;
+  final Future<void> Function(String type, Map<String, dynamic> reactions)
+  onTap;
   const _ReactionRow({
     required this.reactions,
     required this.myUid,
@@ -464,7 +567,7 @@ class _ReactionRow extends StatelessWidget {
             active: ((reactions[entry.key] as List<dynamic>?) ?? []).contains(
               myUid,
             ),
-            onTap: () => onTap(entry.key),
+            onTap: () => onTap(entry.key, reactions),
           ),
           if (entry.key != reactionMeta.keys.last) const SizedBox(width: 8),
         ],
@@ -609,7 +712,13 @@ class _ReactionChipState extends State<_ReactionChip>
 
 class _CommentTile extends StatelessWidget {
   final Map<String, dynamic> comment;
-  const _CommentTile({required this.comment});
+  final bool canDelete;
+  final VoidCallback onDelete;
+  const _CommentTile({
+    required this.comment,
+    required this.canDelete,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -652,6 +761,19 @@ class _CommentTile extends StatelessWidget {
               ],
             ),
           ),
+          if (canDelete)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+              padding: EdgeInsets.zero,
+              tooltip: '댓글 삭제',
+              onPressed: onDelete,
+              icon: const Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: AppColors.muted,
+              ),
+            ),
         ],
       ),
     );
