@@ -757,10 +757,7 @@ class FirebaseService {
         lists[type]!.add(userId);
       }
 
-      tx.update(ref, {
-        for (final entry in lists.entries)
-          'reactions.${entry.key}': entry.value,
-      });
+      tx.update(ref, {'reactions': lists});
     });
   }
 
@@ -789,20 +786,25 @@ class FirebaseService {
   static Future<void> addComment(String postId, String content) async {
     if (uid == null) return;
     final postRef = _db.collection('posts').doc(postId);
-    await postRef.collection('comments').add({
+    final commentRef = postRef.collection('comments').doc();
+    final batch = _db.batch();
+    batch.set(commentRef, {
       'churchId': _requireChurchId(),
       'postId': postId,
       'userId': uid,
       'content': content,
       'createdAt': FieldValue.serverTimestamp(),
     });
-    await postRef.update({'commentCount': FieldValue.increment(1)});
+    batch.update(postRef, {'commentCount': FieldValue.increment(1)});
+    await batch.commit();
   }
 
   static Future<void> deleteComment(String postId, String commentId) async {
     final postRef = _db.collection('posts').doc(postId);
-    await postRef.collection('comments').doc(commentId).delete();
-    await postRef.update({'commentCount': FieldValue.increment(-1)});
+    final batch = _db.batch();
+    batch.delete(postRef.collection('comments').doc(commentId));
+    batch.update(postRef, {'commentCount': FieldValue.increment(-1)});
+    await batch.commit();
   }
 
   // ============ Announcements ============
@@ -905,6 +907,7 @@ class FirebaseService {
   static Future<void> addSheetMusic(
     String title, {
     String? composer,
+    String? conductorComment,
     String? fileUrl,
     String? audioUrl,
   }) async {
@@ -912,6 +915,7 @@ class FirebaseService {
       'churchId': _requireChurchId(),
       'title': title,
       'composer': composer,
+      'conductorComment': conductorComment,
       'fileUrl': fileUrl,
       'audioUrl': audioUrl,
       'createdBy': uid,

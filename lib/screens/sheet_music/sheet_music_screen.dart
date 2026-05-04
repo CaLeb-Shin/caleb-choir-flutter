@@ -174,6 +174,45 @@ class SheetMusicScreen extends ConsumerWidget {
                                   ),
                               ],
                             ),
+                            if (group.conductorComment.isNotEmpty) ...[
+                              const SizedBox(height: 14),
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(13),
+                                decoration: BoxDecoration(
+                                  color: AppColors.secondaryContainer
+                                      .withValues(alpha: 0.55),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: AppColors.secondary.withValues(
+                                      alpha: 0.18,
+                                    ),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '🎙️ 지휘자 코멘트',
+                                      style: AppText.body(
+                                        12,
+                                        weight: FontWeight.w900,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      group.conductorComment,
+                                      style: AppText.body(
+                                        13,
+                                        height: 1.45,
+                                        color: AppColors.ink,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 14),
                             Column(
                               children: group.items
@@ -214,6 +253,7 @@ class SheetMusicScreen extends ConsumerWidget {
   void _showAddDialog(BuildContext context, WidgetRef ref) {
     final titleCtrl = TextEditingController();
     final composerCtrl = TextEditingController();
+    final conductorCommentCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -230,6 +270,13 @@ class SheetMusicScreen extends ConsumerWidget {
               controller: composerCtrl,
               decoration: const InputDecoration(hintText: '작곡가 (선택)'),
             ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: conductorCommentCtrl,
+              decoration: const InputDecoration(hintText: '🎙️ 지휘자 코멘트 (선택)'),
+              minLines: 2,
+              maxLines: 4,
+            ),
           ],
         ),
         actions: [
@@ -244,6 +291,7 @@ class SheetMusicScreen extends ConsumerWidget {
                 await FirebaseService.addSheetMusic(
                   titleCtrl.text.trim(),
                   composer: composerCtrl.text.trim(),
+                  conductorComment: conductorCommentCtrl.text.trim(),
                 );
                 ref.invalidate(sheetMusicProvider);
               }
@@ -268,12 +316,14 @@ class _SheetMusicGroup {
   final String dateLabel;
   final String songTitle;
   final String composer;
+  final String conductorComment;
   final List<Map<String, dynamic>> items;
 
   const _SheetMusicGroup({
     required this.dateLabel,
     required this.songTitle,
     required this.composer,
+    required this.conductorComment,
     required this.items,
   });
 }
@@ -284,6 +334,7 @@ List<_SheetMusicGroup> _groupSheetMusic(List<Map<String, dynamic>> sheets) {
   for (final sheet in sheets) {
     final date = _dateDisplay(sheet['sheetDate']);
     final songTitle = _songTitle(sheet);
+    final conductorComment = sheet['conductorComment']?.toString().trim() ?? '';
     final key = '$date::$songTitle';
     final existing = groups[key];
 
@@ -292,10 +343,20 @@ List<_SheetMusicGroup> _groupSheetMusic(List<Map<String, dynamic>> sheets) {
         dateLabel: date.isEmpty ? '날짜 미지정' : date,
         songTitle: songTitle,
         composer: sheet['composer']?.toString() ?? '',
+        conductorComment: conductorComment,
         items: [sheet],
       );
     } else {
       existing.items.add(sheet);
+      if (existing.conductorComment.isEmpty && conductorComment.isNotEmpty) {
+        groups[key] = _SheetMusicGroup(
+          dateLabel: existing.dateLabel,
+          songTitle: existing.songTitle,
+          composer: existing.composer,
+          conductorComment: conductorComment,
+          items: existing.items,
+        );
+      }
     }
   }
 

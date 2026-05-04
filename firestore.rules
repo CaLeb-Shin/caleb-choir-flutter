@@ -43,6 +43,9 @@ service cloud.firestore {
     function canReadChurchContent(cid) {
       return sameChurch(cid) || isChurchAdminOf(cid);
     }
+    function postChurchId(postId) {
+      return get(/databases/$(database)/documents/posts/$(postId)).data.churchId;
+    }
 
     // ── Churches ──
     match /churches/{churchId} {
@@ -147,18 +150,23 @@ service cloud.firestore {
       allow update: if isSignedIn()
         && resource.data.keys().hasAll(['churchId'])
         && sameChurch(resource.data.churchId)
-        && request.resource.data.get('churchId', '') == resource.data.churchId
-        && request.resource.data.get('userId', '') == resource.data.userId
+        && request.resource.data.keys().hasAll(['reactions'])
         && request.resource.data.reactions.keys().hasOnly(['like', 'sad', 'pray'])
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
+      allow update: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId'])
+        && sameChurch(resource.data.churchId)
+        && request.resource.data.keys().hasAll(['commentCount'])
+        && request.resource.data.commentCount is int
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']);
 
       // 서브컬렉션: posts/{postId}/comments
       match /comments/{commentId} {
-        allow read: if resource.data.keys().hasAll(['churchId'])
-          && canReadChurchContent(resource.data.churchId);
+        allow read: if canReadChurchContent(resource.data.get('churchId', postChurchId(docId)));
         allow create: if isSignedIn()
           && request.auth.uid == request.resource.data.userId
           && request.resource.data.keys().hasAll(['churchId'])
+          && request.resource.data.postId == docId
           && sameChurch(request.resource.data.churchId);
         allow delete: if isSignedIn() && request.auth.uid == resource.data.userId;
       }

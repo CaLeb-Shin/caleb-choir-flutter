@@ -119,6 +119,7 @@ const _previewSheetMusic = [
     'sheetPart': 'soprano',
     'sheetDate': '2026-05-05',
     'composer': '미리보기 악보&음원',
+    'conductorComment': '🎙️ 후렴은 한 호흡으로 넓게 열고, 가사의 방향을 먼저 생각하며 불러주세요.',
     'fileUrl':
         'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
     'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
