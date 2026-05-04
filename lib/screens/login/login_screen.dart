@@ -93,13 +93,82 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() => _lastLoginProvider = provider);
   }
 
-  String _providerLabel(String provider) {
-    return switch (provider) {
-      'kakao' => '카카오',
-      'naver' => '네이버',
-      'google' => 'Google',
-      _ => provider,
-    };
+  bool _isLastLoginProvider(String provider) => _lastLoginProvider == provider;
+
+  Widget _recentLoginMarker({
+    required Color color,
+    required Color backgroundColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_rounded, size: 13, color: color),
+          const SizedBox(width: 3),
+          Text(
+            '최근 로그인',
+            style: TextStyle(
+              fontSize: 10,
+              height: 1,
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _loginButtonContent({
+    required String provider,
+    required Widget logo,
+    required String label,
+    required Color markerColor,
+    required Color markerBackgroundColor,
+  }) {
+    final isRecent = _isLastLoginProvider(provider);
+    return Row(
+      children: [
+        SizedBox(
+          width: 92,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: isRecent
+                ? Align(
+                    key: ValueKey('recent-$provider'),
+                    alignment: Alignment.centerLeft,
+                    child: _recentLoginMarker(
+                      color: markerColor,
+                      backgroundColor: markerBackgroundColor,
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('empty-recent')),
+          ),
+        ),
+        Expanded(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              logo,
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 92),
+      ],
+    );
   }
 
   Future<void> _completeGoogleRedirectSignIn() async {
@@ -460,43 +529,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
 
-              if (_lastLoginProvider != null) ...[
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 11,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: AppColors.accent.withValues(alpha: 0.18),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.history_rounded,
-                        size: 17,
-                        color: AppColors.secondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '최근 사용한 로그인: ${_providerLabel(_lastLoginProvider!)}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.ink,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
               // Kakao
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -522,19 +554,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               color: Color(0xFF191919),
                             ),
                           )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              KakaoTalkLogo(size: 22),
-                              SizedBox(width: 10),
-                              Text(
-                                '카카오로 시작하기',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
+                        : _loginButtonContent(
+                            provider: 'kakao',
+                            logo: const KakaoTalkLogo(size: 22),
+                            label: '카카오로 시작하기',
+                            markerColor: const Color(0xFF191919),
+                            markerBackgroundColor: Colors.white.withValues(
+                              alpha: 0.56,
+                            ),
                           ),
                   ),
                 ),
@@ -565,19 +592,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               color: Colors.white,
                             ),
                           )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              NaverLogo(size: 20),
-                              SizedBox(width: 10),
-                              Text(
-                                '네이버로 시작하기',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
+                        : _loginButtonContent(
+                            provider: 'naver',
+                            logo: const NaverLogo(size: 20),
+                            label: '네이버로 시작하기',
+                            markerColor: Colors.white,
+                            markerBackgroundColor: Colors.white.withValues(
+                              alpha: 0.18,
+                            ),
                           ),
                   ),
                 ),
@@ -604,19 +626,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            GoogleGLogo(size: 22),
-                            SizedBox(width: 10),
-                            Text(
-                              'Google로 시작하기',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                      : _loginButtonContent(
+                          provider: 'google',
+                          logo: const GoogleGLogo(size: 22),
+                          label: 'Google로 시작하기',
+                          markerColor: AppColors.primary,
+                          markerBackgroundColor: AppColors.primarySoft,
                         ),
                 ),
               ),

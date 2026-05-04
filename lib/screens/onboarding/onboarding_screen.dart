@@ -82,6 +82,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _churchContactPhoneFocus = FocusNode();
   final _churchContactEmailFocus = FocusNode();
   final _nameFocus = FocusNode();
+  final _nicknameFocus = FocusNode();
+  final _generationFocus = FocusNode();
+  final _churchPositionFocus = FocusNode();
+  final _partFocus = FocusNode();
+  final _leaderPartFocus = FocusNode();
+  final _leaderTitleFocus = FocusNode();
+  final _phoneFocus = FocusNode();
 
   // ── 이미지
   Uint8List? _imageBytes;
@@ -119,6 +126,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     _churchContactPhoneFocus.dispose();
     _churchContactEmailFocus.dispose();
     _nameFocus.dispose();
+    _nicknameFocus.dispose();
+    _generationFocus.dispose();
+    _churchPositionFocus.dispose();
+    _partFocus.dispose();
+    _leaderPartFocus.dispose();
+    _leaderTitleFocus.dispose();
+    _phoneFocus.dispose();
     super.dispose();
   }
 
@@ -272,6 +286,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     _ValidationTarget.name => _nameFocus,
   };
 
+  Widget _orderedFocus(double order, Widget child) {
+    return FocusTraversalOrder(order: NumericFocusOrder(order), child: child);
+  }
+
   Future<void> _guideToValidationIssue(_ValidationIssue issue) async {
     await Future<void>.delayed(const Duration(milliseconds: 40));
     if (!mounted) return;
@@ -306,9 +324,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             ? null
             : _nicknameCtrl.text.trim(),
         'generation': _genCtrl.text.trim(),
-        'choirName': _choirNameCtrl.text.trim().isEmpty
-            ? null
-            : _choirNameCtrl.text.trim(),
+        'choirName': _isChurchAdmin
+            ? (_choirNameCtrl.text.trim().isEmpty
+                  ? null
+                  : _choirNameCtrl.text.trim())
+            : (_selectedChurch?.choirName?.trim().isEmpty ?? true
+                  ? null
+                  : _selectedChurch!.choirName!.trim()),
         'churchPosition': _churchPositionCtrl.text.trim().isEmpty
             ? null
             : _churchPositionCtrl.text.trim(),
@@ -390,269 +412,302 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       ),
                     ],
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _StepHeader(
-                        step: '01',
-                        title: '가입 방식',
-                        subtitle: '가입 유형을 먼저 선택해주세요.',
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _RoleOptionCard(
-                              icon: Icons.person_rounded,
-                              title: '단원',
-                              subtitle: '승인된 교회',
-                              compact: true,
-                              selected: _role == _RoleChoice.member,
-                              onTap: () =>
-                                  setState(() => _role = _RoleChoice.member),
+                  child: FocusTraversalGroup(
+                    policy: OrderedTraversalPolicy(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _StepHeader(
+                          step: '01',
+                          title: '가입 방식',
+                          subtitle: '가입 유형을 먼저 선택해주세요.',
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _RoleOptionCard(
+                                icon: Icons.person_rounded,
+                                title: '단원',
+                                subtitle: '승인된 교회',
+                                compact: true,
+                                selected: _role == _RoleChoice.member,
+                                onTap: () =>
+                                    setState(() => _role = _RoleChoice.member),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _RoleOptionCard(
+                                icon: Icons.stars_rounded,
+                                title: '파트장',
+                                subtitle: '담당 파트',
+                                compact: true,
+                                selected: _role == _RoleChoice.partLeader,
+                                onTap: () => setState(() {
+                                  _role = _RoleChoice.partLeader;
+                                  _leaderPart = _part;
+                                }),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _RoleOptionCard(
+                          icon: Icons.add_business_rounded,
+                          title: '등록된 교회가 없어요',
+                          subtitle: '주소 확인 후 교회 등록 신청',
+                          selected: _role == _RoleChoice.churchAdmin,
+                          onTap: () => _switchToChurchRegister(),
+                        ),
+                        const SizedBox(height: 12),
+                        _InfoCallout(
+                          icon: Icons.verified_user_rounded,
+                          text: _isChurchAdmin
+                              ? '교회 등록 신청은 플랫폼 관리자 승인 후 최종 등록됩니다.'
+                              : '교회 관리자가 승인하면 가입이 완료됩니다.',
+                        ),
+                        const SizedBox(height: 22),
+
+                        _StepHeader(
+                          step: '02',
+                          title: _isJoinFlow ? '교회 선택' : '교회 등록 신청',
+                          subtitle: _isJoinFlow
+                              ? '등록된 교회를 검색해 선택하세요.'
+                              : '공식 주소 확인 후 승인 대기로 접수됩니다.',
+                        ),
+                        const SizedBox(height: 12),
+                        if (_isJoinFlow)
+                          KeyedSubtree(
+                            key: _churchPickerKey,
+                            child: _buildChurchPickerSection(),
+                          )
+                        else
+                          _buildChurchRegisterSection(),
+
+                        const SizedBox(height: 22),
+                        _StepHeader(
+                          step: '03',
+                          title: '내 정보',
+                          subtitle: '실명과 파트를 정확히 적어주세요.',
+                        ),
+                        const SizedBox(height: 16),
+
+                        Center(
+                          child: _ProfileImagePicker(
+                            imageBytes: _imageBytes,
+                            uploading: _uploading,
+                            onTap: _uploading ? null : _pickImage,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Center(
+                          child: Text(
+                            '프로필 사진 추가 (선택)',
+                            style: AppText.body(12, color: AppColors.muted),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+
+                        const _Label(text: '이름 *'),
+                        const SizedBox(height: 6),
+                        KeyedSubtree(
+                          key: _nameKey,
+                          child: _orderedFocus(
+                            30,
+                            TextField(
+                              controller: _nameCtrl,
+                              focusNode: _nameFocus,
+                              textInputAction: TextInputAction.next,
+                              decoration: const InputDecoration(
+                                hintText: '실명을 입력하세요',
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _RoleOptionCard(
-                              icon: Icons.stars_rounded,
-                              title: '파트장',
-                              subtitle: '담당 파트',
-                              compact: true,
-                              selected: _role == _RoleChoice.partLeader,
-                              onTap: () => setState(() {
-                                _role = _RoleChoice.partLeader;
-                                _leaderPart = _part;
-                              }),
+                        ),
+                        const SizedBox(height: 16),
+
+                        const _Label(text: '별칭 (선택)'),
+                        const SizedBox(height: 6),
+                        _orderedFocus(
+                          31,
+                          TextField(
+                            controller: _nicknameCtrl,
+                            focusNode: _nicknameFocus,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              hintText: '별칭을 입력하세요',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        const _Label(text: '기수'),
+                        const SizedBox(height: 6),
+                        _orderedFocus(
+                          32,
+                          TextField(
+                            controller: _genCtrl,
+                            focusNode: _generationFocus,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              hintText: '기수를 입력하세요',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        const _Label(text: '교회 내 직분 (선택)'),
+                        const SizedBox(height: 6),
+                        _orderedFocus(
+                          33,
+                          TextField(
+                            controller: _churchPositionCtrl,
+                            focusNode: _churchPositionFocus,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              hintText: '직분을 입력하세요',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        const _Label(text: '소속 파트 *'),
+                        const SizedBox(height: 6),
+                        _orderedFocus(
+                          34,
+                          DropdownButtonFormField<String>(
+                            focusNode: _partFocus,
+                            initialValue: _part,
+                            items: User.selectableParts
+                                .map(
+                                  (k) => DropdownMenuItem(
+                                    value: k,
+                                    child: Text(User.partLabels[k] ?? k),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(() {
+                              _part = v ?? _part;
+                              if (_isPartLeader) _leaderPart = _part;
+                            }),
+                          ),
+                        ),
+                        if (_isPartLeader) ...[
+                          const SizedBox(height: 16),
+                          const _Label(text: '담당 파트 *'),
+                          const SizedBox(height: 6),
+                          _orderedFocus(
+                            35,
+                            DropdownButtonFormField<String>(
+                              focusNode: _leaderPartFocus,
+                              initialValue: _leaderPart,
+                              items: User.selectableParts
+                                  .map(
+                                    (k) => DropdownMenuItem(
+                                      value: k,
+                                      child: Text(User.partLabels[k] ?? k),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) => setState(
+                                () => _leaderPart = v ?? _leaderPart,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const _Label(text: '담당 직책 *'),
+                          const SizedBox(height: 6),
+                          _orderedFocus(
+                            36,
+                            DropdownButtonFormField<String>(
+                              focusNode: _leaderTitleFocus,
+                              initialValue: _leaderTitle,
+                              items: User.partLeaderTitleLabels.entries
+                                  .map(
+                                    (entry) => DropdownMenuItem(
+                                      value: entry.key,
+                                      child: Text(entry.value),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (v) => setState(
+                                () => _leaderTitle = v ?? _leaderTitle,
+                              ),
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 8),
-                      _RoleOptionCard(
-                        icon: Icons.add_business_rounded,
-                        title: '등록된 교회가 없어요',
-                        subtitle: '주소 확인 후 교회 등록 신청',
-                        selected: _role == _RoleChoice.churchAdmin,
-                        onTap: () => _switchToChurchRegister(),
-                      ),
-                      const SizedBox(height: 12),
-                      _InfoCallout(
-                        icon: Icons.verified_user_rounded,
-                        text: _isChurchAdmin
-                            ? '교회 등록 신청은 플랫폼 관리자 승인 후 최종 등록됩니다.'
-                            : '교회 관리자가 승인하면 가입이 완료됩니다.',
-                      ),
-                      const SizedBox(height: 22),
-
-                      _StepHeader(
-                        step: '02',
-                        title: _isJoinFlow ? '교회 선택' : '교회 등록 신청',
-                        subtitle: _isJoinFlow
-                            ? '등록된 교회를 검색해 선택하세요.'
-                            : '공식 주소 확인 후 승인 대기로 접수됩니다.',
-                      ),
-                      const SizedBox(height: 12),
-                      if (_isJoinFlow)
-                        KeyedSubtree(
-                          key: _churchPickerKey,
-                          child: _buildChurchPickerSection(),
-                        )
-                      else
-                        _buildChurchRegisterSection(),
-
-                      const SizedBox(height: 22),
-                      _StepHeader(
-                        step: '03',
-                        title: '내 정보',
-                        subtitle: '실명과 파트를 정확히 적어주세요.',
-                      ),
-                      const SizedBox(height: 16),
-
-                      Center(
-                        child: _ProfileImagePicker(
-                          imageBytes: _imageBytes,
-                          uploading: _uploading,
-                          onTap: _uploading ? null : _pickImage,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: Text(
-                          '프로필 사진 추가 (선택)',
-                          style: AppText.body(12, color: AppColors.muted),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      const _Label(text: '이름 *'),
-                      const SizedBox(height: 6),
-                      KeyedSubtree(
-                        key: _nameKey,
-                        child: TextField(
-                          controller: _nameCtrl,
-                          focusNode: _nameFocus,
-                          decoration: const InputDecoration(
-                            hintText: '실명을 입력하세요',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      const _Label(text: '별칭 (선택)'),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _nicknameCtrl,
-                        decoration: const InputDecoration(
-                          hintText: '별칭을 입력하세요',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      const _Label(text: '기수'),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _genCtrl,
-                        decoration: const InputDecoration(
-                          hintText: '기수를 입력하세요',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      if (!_isChurchAdmin) ...[
-                        const _Label(text: '찬양대 이름 (선택)'),
-                        const SizedBox(height: 6),
-                        TextField(
-                          controller: _choirNameCtrl,
-                          decoration: const InputDecoration(
-                            hintText: '찬양대 이름을 입력하세요',
-                          ),
-                        ),
                         const SizedBox(height: 16),
-                      ],
 
-                      const _Label(text: '교회 내 직분 (선택)'),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _churchPositionCtrl,
-                        decoration: const InputDecoration(
-                          hintText: '직분을 입력하세요',
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      const _Label(text: '소속 파트 *'),
-                      const SizedBox(height: 6),
-                      DropdownButtonFormField<String>(
-                        initialValue: _part,
-                        items: User.selectableParts
-                            .map(
-                              (k) => DropdownMenuItem(
-                                value: k,
-                                child: Text(User.partLabels[k] ?? k),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() {
-                          _part = v ?? _part;
-                          if (_isPartLeader) _leaderPart = _part;
-                        }),
-                      ),
-                      if (_isPartLeader) ...[
-                        const SizedBox(height: 16),
-                        const _Label(text: '담당 파트 *'),
+                        const _Label(text: '전화번호 (선택)'),
                         const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          initialValue: _leaderPart,
-                          items: User.selectableParts
-                              .map(
-                                (k) => DropdownMenuItem(
-                                  value: k,
-                                  child: Text(User.partLabels[k] ?? k),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) =>
-                              setState(() => _leaderPart = v ?? _leaderPart),
-                        ),
-                        const SizedBox(height: 16),
-                        const _Label(text: '담당 직책 *'),
-                        const SizedBox(height: 6),
-                        DropdownButtonFormField<String>(
-                          initialValue: _leaderTitle,
-                          items: User.partLeaderTitleLabels.entries
-                              .map(
-                                (entry) => DropdownMenuItem(
-                                  value: entry.key,
-                                  child: Text(entry.value),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (v) =>
-                              setState(() => _leaderTitle = v ?? _leaderTitle),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-
-                      const _Label(text: '전화번호 (선택)'),
-                      const SizedBox(height: 6),
-                      TextField(
-                        controller: _phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          hintText: '전화번호를 입력하세요',
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-
-                      if (_error != null)
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 12),
-                          decoration: BoxDecoration(
-                            color: AppColors.error.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.error.withValues(alpha: 0.16),
+                        _orderedFocus(
+                          37,
+                          TextField(
+                            controller: _phoneCtrl,
+                            focusNode: _phoneFocus,
+                            keyboardType: TextInputType.phone,
+                            textInputAction: TextInputAction.done,
+                            decoration: const InputDecoration(
+                              hintText: '전화번호를 입력하세요',
                             ),
                           ),
-                          child: Text(
-                            _error!,
-                            style: AppText.body(13, color: AppColors.error),
-                          ),
                         ),
+                        const SizedBox(height: 24),
 
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _saving ? null : _submit,
-                          style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                        if (_error != null)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.error.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: AppColors.error.withValues(alpha: 0.16),
+                              ),
+                            ),
+                            child: Text(
+                              _error!,
+                              style: AppText.body(13, color: AppColors.error),
+                            ),
                           ),
-                          child: _saving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
+
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _saving ? null : _submit,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                            ),
+                            child: _saving
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    _isChurchAdmin ? '교회 등록 승인 요청' : '가입 신청',
                                   ),
-                                )
-                              : Text(_isChurchAdmin ? '교회 등록 승인 요청' : '가입 신청'),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Center(
-                        child: TextButton(
-                          onPressed: _saving ? null : _signOutAndReturnToLogin,
-                          child: Text(
-                            '다른 계정으로 로그인',
-                            style: AppText.body(13, color: AppColors.muted),
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        Center(
+                          child: TextButton(
+                            onPressed: _saving
+                                ? null
+                                : _signOutAndReturnToLogin,
+                            child: Text(
+                              '다른 계정으로 로그인',
+                              style: AppText.body(13, color: AppColors.muted),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -673,23 +728,26 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             onClear: () => setState(() => _selectedChurch = null),
           )
         else ...[
-          TextField(
-            controller: _churchSearchCtrl,
-            focusNode: _churchSearchFocus,
-            onChanged: _onChurchSearchChanged,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: '교회명으로 검색',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _churchSearchCtrl.text.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      onPressed: () {
-                        _churchSearchCtrl.clear();
-                        _onChurchSearchChanged('');
-                      },
-                    ),
+          _orderedFocus(
+            20,
+            TextField(
+              controller: _churchSearchCtrl,
+              focusNode: _churchSearchFocus,
+              onChanged: _onChurchSearchChanged,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: '교회명으로 검색',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _churchSearchCtrl.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          _churchSearchCtrl.clear();
+                          _onChurchSearchChanged('');
+                        },
+                      ),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -721,9 +779,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: 6),
         KeyedSubtree(
           key: _churchAddressKey,
-          child: _AddressSearchField(
-            controller: _churchAddressCtrl,
-            onSearch: _openAddressSearchDialog,
+          child: _orderedFocus(
+            20,
+            _AddressSearchField(
+              controller: _churchAddressCtrl,
+              onSearch: _openAddressSearchDialog,
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -736,10 +797,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: 6),
         KeyedSubtree(
           key: _churchNameKey,
-          child: TextField(
-            controller: _churchNameCtrl,
-            focusNode: _churchNameFocus,
-            decoration: const InputDecoration(hintText: '교회명을 입력하세요'),
+          child: _orderedFocus(
+            21,
+            TextField(
+              controller: _churchNameCtrl,
+              focusNode: _churchNameFocus,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(hintText: '교회명을 입력하세요'),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -747,10 +812,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: 6),
         KeyedSubtree(
           key: _choirNameKey,
-          child: TextField(
-            controller: _choirNameCtrl,
-            focusNode: _choirNameFocus,
-            decoration: const InputDecoration(hintText: '찬양대 이름을 입력하세요'),
+          child: _orderedFocus(
+            22,
+            TextField(
+              controller: _choirNameCtrl,
+              focusNode: _choirNameFocus,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(hintText: '찬양대 이름을 입력하세요'),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -758,11 +827,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: 6),
         KeyedSubtree(
           key: _churchContactPhoneKey,
-          child: TextField(
-            controller: _churchContactPhoneCtrl,
-            focusNode: _churchContactPhoneFocus,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(hintText: '대표 연락처를 입력하세요'),
+          child: _orderedFocus(
+            23,
+            TextField(
+              controller: _churchContactPhoneCtrl,
+              focusNode: _churchContactPhoneFocus,
+              keyboardType: TextInputType.phone,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(hintText: '대표 연락처를 입력하세요'),
+            ),
           ),
         ),
         const SizedBox(height: 12),
@@ -770,11 +843,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         const SizedBox(height: 6),
         KeyedSubtree(
           key: _churchContactEmailKey,
-          child: TextField(
-            controller: _churchContactEmailCtrl,
-            focusNode: _churchContactEmailFocus,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(hintText: '대표 이메일을 입력하세요'),
+          child: _orderedFocus(
+            24,
+            TextField(
+              controller: _churchContactEmailCtrl,
+              focusNode: _churchContactEmailFocus,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(hintText: '대표 이메일을 입력하세요'),
+            ),
           ),
         ),
       ],
