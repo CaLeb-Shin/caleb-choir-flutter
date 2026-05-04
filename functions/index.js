@@ -17,21 +17,47 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const NAVER_CLIENT_ID = defineSecret("NAVER_CLIENT_ID");
 const NAVER_CLIENT_SECRET = defineSecret("NAVER_CLIENT_SECRET");
+const KAKAO_REST_API_KEY = "1f9fa5991d000ee260fa27298f20ad8d";
 
 /**
- * 카카오 액세스 토큰을 검증하고 Firebase Custom Token을 생성하는 Cloud Function
+ * 카카오 액세스 토큰 또는 웹 authorization code를 검증하고 Firebase Custom Token을 생성한다.
  */
 exports.createKakaoCustomToken = onCall(async (request) => {
-  const { accessToken } = request.data;
+  const { accessToken, code, redirectUri } = request.data || {};
 
-  if (!accessToken) {
-    throw new HttpsError("invalid-argument", "카카오 액세스 토큰이 필요합니다.");
+  if (!accessToken && (!code || !redirectUri)) {
+    throw new HttpsError("invalid-argument", "카카오 인증 정보가 필요합니다.");
   }
 
   try {
+    let kakaoAccessToken = accessToken;
+    if (!kakaoAccessToken) {
+      const tokenParams = new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: KAKAO_REST_API_KEY,
+        redirect_uri: redirectUri,
+        code,
+      });
+
+      const tokenResponse = await axios.post(
+        "https://kauth.kakao.com/oauth/token",
+        tokenParams.toString(),
+        {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
+          },
+        },
+      );
+      kakaoAccessToken = tokenResponse.data?.access_token;
+    }
+
+    if (!kakaoAccessToken) {
+      throw new HttpsError("unauthenticated", "카카오 액세스 토큰을 받을 수 없습니다.");
+    }
+
     // 카카오 API로 사용자 정보 조회
     const kakaoResponse = await axios.get("https://kapi.kakao.com/v2/user/me", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${kakaoAccessToken}` },
     });
 
     const kakaoUser = kakaoResponse.data;

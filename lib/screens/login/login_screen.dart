@@ -56,6 +56,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (kIsWeb) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _completeGoogleRedirectSignIn();
+        _completeKakaoRedirectSignIn();
         _completeNaverRedirectSignIn();
       });
     }
@@ -122,6 +123,38 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _error = _naverErrorMessage(e));
     } finally {
       if (mounted && _loadingProvider == 'naver') {
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _completeKakaoRedirectSignIn() async {
+    try {
+      final callback = kakao_helper.consumeKakaoRedirectResult();
+      if (callback == null) return;
+      await _applyAuthPersistence();
+      setState(() {
+        _error = null;
+        _loading = true;
+        _loadingProvider = 'kakao';
+      });
+      final callable = FirebaseFunctions.instance.httpsCallable(
+        'createKakaoCustomToken',
+      );
+      final result = await callable.call<Map<String, dynamic>>(callback);
+      final customToken = result.data['token'] as String;
+      await FirebaseAuth.instance.signInWithCustomToken(customToken);
+      await _afterSuccessfulSignIn();
+    } catch (e) {
+      debugPrint('Kakao redirect sign-in error: $e');
+      if (!mounted) return;
+      final detail = e is StateError ? e.message : '다시 시도해주세요.';
+      setState(() => _error = '카카오 로그인에 실패했습니다.\n$detail');
+    } finally {
+      if (mounted && _loadingProvider == 'kakao') {
         setState(() {
           _loading = false;
           _loadingProvider = null;

@@ -53,6 +53,8 @@
       }
 
       window.CCNoteKakao = {
+        storageKey: 'cc-note-kakao-oauth-state',
+        redirectStorageKey: 'cc-note-kakao-redirect-uri',
         ensureInitialized: function () {
           if (!window.Kakao) {
             throw new Error('카카오 SDK를 불러오지 못했습니다. 네트워크 또는 스크립트 차단 여부를 확인해주세요.');
@@ -64,34 +66,59 @@
             throw new Error('카카오 SDK 초기화에 실패했습니다. JavaScript 키와 Web 플랫폼 도메인을 확인해주세요.');
           }
         },
-        login: function (success, fail) {
+        start: function () {
           try {
             window.CCNoteKakao.ensureInitialized();
-            window.Kakao.Auth.login({
-              success: function (authObj) {
-                if (authObj && authObj.access_token) {
-                  success(authObj.access_token);
-                  return;
-                }
-                fail('카카오 액세스 토큰을 받지 못했습니다.');
-              },
-              fail: function (error) {
-                var message = toMessage(error);
-                if (/access_denied|cancel|cancelled|canceled/i.test(message)) {
-                  success('');
-                  return;
-                }
-                fail(message);
-              }
+            var redirectUri = window.location.origin;
+            var state =
+              'kakao_' +
+              Date.now().toString(36) +
+              Math.random().toString(36).slice(2) +
+              Math.random().toString(36).slice(2);
+
+            window.sessionStorage.setItem(window.CCNoteKakao.storageKey, state);
+            window.sessionStorage.setItem(window.CCNoteKakao.redirectStorageKey, redirectUri);
+
+            window.Kakao.Auth.authorize({
+              redirectUri: redirectUri,
+              state: state
             });
           } catch (error) {
-            fail(toMessage(error));
+            throw new Error(toMessage(error));
           }
+        },
+        consumeCallback: function () {
+          var params = new URLSearchParams(window.location.search);
+          var state = params.get('state');
+          var expectedState = window.sessionStorage.getItem(window.CCNoteKakao.storageKey);
+          if (!state || !expectedState || state !== expectedState) return null;
+
+          var redirectUri =
+            window.sessionStorage.getItem(window.CCNoteKakao.redirectStorageKey) ||
+            window.location.origin;
+
+          window.sessionStorage.removeItem(window.CCNoteKakao.storageKey);
+          window.sessionStorage.removeItem(window.CCNoteKakao.redirectStorageKey);
+
+          var cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+
+          if (params.get('error')) {
+            return JSON.stringify({ error: params.get('error_description') || params.get('error') });
+          }
+          var code = params.get('code');
+          if (!code) return JSON.stringify({ error: '카카오 인증 코드를 받지 못했습니다.' });
+          return JSON.stringify({ code: code, state: state, redirectUri: redirectUri });
         },
         logout: function (callback) {
           try {
             window.CCNoteKakao.ensureInitialized();
-            window.Kakao.Auth.logout(callback);
+            var result = window.Kakao.Auth.logout();
+            if (result && typeof result.then === 'function') {
+              result.finally(callback);
+            } else {
+              callback();
+            }
           } catch (_) {
             callback();
           }

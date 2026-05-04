@@ -9,3 +9,5 @@ Future<String?> signInWithKakao() async {
   }
   return token.accessToken;
 }
+
+Map<String, String>? consumeKakaoRedirectResult() => null;

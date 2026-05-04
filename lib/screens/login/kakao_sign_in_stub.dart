@@ -1,38 +1,36 @@
 // Web Kakao login bridge. The JavaScript helper lives in web/index.html.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 
-@JS('CCNoteKakao.login')
-external void _kakaoLogin(JSFunction success, JSFunction fail);
+@JS('CCNoteKakao.start')
+external void _startKakaoLogin();
+
+@JS('CCNoteKakao.consumeCallback')
+external JSString? _consumeKakaoCallback();
 
 @JS('CCNoteKakao.logout')
 external void _kakaoLogout(JSFunction callback);
 
 Future<String?> signInWithKakao() async {
-  final completer = Completer<String?>();
-  try {
-    _kakaoLogin(
-      ((JSString token) {
-        if (completer.isCompleted) return;
-        final accessToken = token.toDart.trim();
-        completer.complete(accessToken.isEmpty ? null : accessToken);
-      }).toJS,
-      ((JSString message) {
-        if (!completer.isCompleted) {
-          completer.completeError(StateError(message.toDart));
-        }
-      }).toJS,
-    );
-  } catch (error) {
-    if (!completer.isCompleted) {
-      completer.completeError(StateError(error.toString()));
-    }
+  _startKakaoLogin();
+  return null;
+}
+
+Map<String, String>? consumeKakaoRedirectResult() {
+  final raw = _consumeKakaoCallback();
+  if (raw == null) return null;
+  final decoded = jsonDecode(raw.toDart) as Map<String, dynamic>;
+  final error = decoded['error'] as String?;
+  if (error != null && error.isNotEmpty) {
+    throw StateError(error);
   }
-  return completer.future.timeout(
-    const Duration(minutes: 2),
-    onTimeout: () => throw StateError('카카오 로그인 창 응답이 없습니다. 팝업 차단 여부를 확인해주세요.'),
-  );
+  final code = decoded['code'] as String?;
+  final state = decoded['state'] as String?;
+  final redirectUri = decoded['redirectUri'] as String?;
+  if (code == null || state == null || redirectUri == null) return null;
+  return {'code': code, 'state': state, 'redirectUri': redirectUri};
 }
 
 Future<void> signOutKakao() async {
