@@ -1,57 +1,48 @@
-// Web 환경용 Kakao 로그인 — Kakao JavaScript SDK (v2)를 dart:js_interop으로 호출한다.
-// SDK 초기화(Kakao.init)는 web/index.html에서 수행된다.
+// Web Kakao login bridge. The JavaScript helper lives in web/index.html.
 
 import 'dart:async';
 import 'dart:js_interop';
 
-extension type _KakaoAuthObj(JSObject _) implements JSObject {
-  // ignore: non_constant_identifier_names
-  external String get access_token;
-}
+@JS('CCNoteKakao.login')
+external void _kakaoLogin(JSFunction success, JSFunction fail);
 
-extension type _KakaoLoginOptions._(JSObject _) implements JSObject {
-  external factory _KakaoLoginOptions({
-    JSFunction success,
-    JSFunction fail,
-  });
-}
-
-@JS('Kakao.Auth.login')
-external void _kakaoAuthLogin(_KakaoLoginOptions options);
-
-@JS('Kakao.Auth.logout')
-external void _kakaoAuthLogout(JSFunction callback);
-
-@JS('Kakao.isInitialized')
-external bool _kakaoIsInitialized();
+@JS('CCNoteKakao.logout')
+external void _kakaoLogout(JSFunction callback);
 
 Future<String?> signInWithKakao() async {
-  if (!_kakaoIsInitialized()) return null;
   final completer = Completer<String?>();
   try {
-    _kakaoAuthLogin(
-      _KakaoLoginOptions(
-        success: ((_KakaoAuthObj authObj) {
-          if (!completer.isCompleted) completer.complete(authObj.access_token);
-        }).toJS,
-        fail: ((JSObject _) {
-          if (!completer.isCompleted) completer.complete(null);
-        }).toJS,
-      ),
+    _kakaoLogin(
+      ((JSString token) {
+        if (completer.isCompleted) return;
+        final accessToken = token.toDart.trim();
+        completer.complete(accessToken.isEmpty ? null : accessToken);
+      }).toJS,
+      ((JSString message) {
+        if (!completer.isCompleted) {
+          completer.completeError(StateError(message.toDart));
+        }
+      }).toJS,
     );
-  } catch (_) {
-    if (!completer.isCompleted) completer.complete(null);
+  } catch (error) {
+    if (!completer.isCompleted) {
+      completer.completeError(StateError(error.toString()));
+    }
   }
-  return completer.future;
+  return completer.future.timeout(
+    const Duration(minutes: 2),
+    onTimeout: () => throw StateError('카카오 로그인 창 응답이 없습니다. 팝업 차단 여부를 확인해주세요.'),
+  );
 }
 
 Future<void> signOutKakao() async {
-  if (!_kakaoIsInitialized()) return;
   final completer = Completer<void>();
   try {
-    _kakaoAuthLogout((() {
-      if (!completer.isCompleted) completer.complete();
-    }).toJS);
+    _kakaoLogout(
+      (() {
+        if (!completer.isCompleted) completer.complete();
+      }).toJS,
+    );
   } catch (_) {
     if (!completer.isCompleted) completer.complete();
   }

@@ -236,7 +236,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await _afterSuccessfulSignIn();
     } catch (e) {
       debugPrint('Kakao sign-in error: $e');
-      setState(() => _error = '카카오 로그인에 실패했습니다.\n다시 시도해주세요.');
+      final detail = e is StateError ? e.message : '다시 시도해주세요.';
+      setState(() => _error = '카카오 로그인에 실패했습니다.\n$detail');
     } finally {
       if (mounted) {
         setState(() {

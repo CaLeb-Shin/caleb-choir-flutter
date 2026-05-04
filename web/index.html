@@ -37,11 +37,71 @@
           integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"
           crossorigin="anonymous"></script>
   <script>
-    // 또한 콘솔 > 플랫폼 > Web 에 배포 도메인을 등록해야 합니다.
+    // Kakao Developers 콘솔 > 플랫폼 > Web 에 배포 도메인을 등록해야 합니다.
     (function () {
       var KAKAO_JS_KEY = 'abfe7b47dcddf30af3b239b9561da8608';
-      if (window.Kakao && !window.Kakao.isInitialized()) {
-        window.Kakao.init(KAKAO_JS_KEY);
+
+      function toMessage(error) {
+        if (!error) return '카카오 로그인 오류가 발생했습니다.';
+        if (typeof error === 'string') return error;
+        if (error.message) return error.message;
+        try {
+          return JSON.stringify(error);
+        } catch (_) {
+          return String(error);
+        }
+      }
+
+      window.CCNoteKakao = {
+        ensureInitialized: function () {
+          if (!window.Kakao) {
+            throw new Error('카카오 SDK를 불러오지 못했습니다. 네트워크 또는 스크립트 차단 여부를 확인해주세요.');
+          }
+          if (!window.Kakao.isInitialized()) {
+            window.Kakao.init(KAKAO_JS_KEY);
+          }
+          if (!window.Kakao.isInitialized()) {
+            throw new Error('카카오 SDK 초기화에 실패했습니다. JavaScript 키와 Web 플랫폼 도메인을 확인해주세요.');
+          }
+        },
+        login: function (success, fail) {
+          try {
+            window.CCNoteKakao.ensureInitialized();
+            window.Kakao.Auth.login({
+              success: function (authObj) {
+                if (authObj && authObj.access_token) {
+                  success(authObj.access_token);
+                  return;
+                }
+                fail('카카오 액세스 토큰을 받지 못했습니다.');
+              },
+              fail: function (error) {
+                var message = toMessage(error);
+                if (/access_denied|cancel|cancelled|canceled/i.test(message)) {
+                  success('');
+                  return;
+                }
+                fail(message);
+              }
+            });
+          } catch (error) {
+            fail(toMessage(error));
+          }
+        },
+        logout: function (callback) {
+          try {
+            window.CCNoteKakao.ensureInitialized();
+            window.Kakao.Auth.logout(callback);
+          } catch (_) {
+            callback();
+          }
+        }
+      };
+
+      try {
+        window.CCNoteKakao.ensureInitialized();
+      } catch (error) {
+        console.warn('[C.C Note] Kakao initialization failed:', toMessage(error));
       }
     })();
   </script>

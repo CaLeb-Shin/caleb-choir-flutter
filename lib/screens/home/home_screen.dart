@@ -23,8 +23,6 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profileAsync = ref.watch(profileProvider);
     final announcementsAsync = ref.watch(announcementsProvider);
-    final historyAsync = ref.watch(myHistoryProvider);
-    final sessionAsync = ref.watch(activeSessionProvider);
     final eventsAsync = ref.watch(eventsProvider);
     final currentChurch = ref.watch(currentChurchProvider).valueOrNull;
     final recentSheets = ref.watch(recentSheetMusicProvider).valueOrNull ?? [];
@@ -46,8 +44,6 @@ class HomeScreen extends ConsumerWidget {
       data: (profile) {
         if (profile == null) return const SizedBox.shrink();
         final announcements = announcementsAsync.valueOrNull ?? [];
-        final attendanceCount = historyAsync.valueOrNull?.length ?? 0;
-        final session = sessionAsync.valueOrNull;
         final mySeat = _mySeat(currentSeatAssignments, profile.id);
         final now = DateTime.now();
         final weekday = ['월', '화', '수', '목', '금', '토', '일'][now.weekday - 1];
@@ -67,7 +63,6 @@ class HomeScreen extends ConsumerWidget {
               (a, b) => _eventDateTime(a)!.compareTo(_eventDateTime(b)!),
             );
         final weeklySchedules = _weeklyScheduleItems(
-          session: session,
           upcomingEvents: upcomingEvents,
           polls: polls,
         );
@@ -219,7 +214,6 @@ class HomeScreen extends ConsumerWidget {
                     child: weeklySchedules.isNotEmpty
                         ? _WeeklyScheduleCard(
                             schedules: weeklySchedules,
-                            attendanceCount: attendanceCount,
                             onAttendance: (item) =>
                                 _openAttendanceForSchedule(context, item),
                             onSeat: (item) => _openSeatForSchedule(
@@ -227,17 +221,11 @@ class HomeScreen extends ConsumerWidget {
                               _seatingChartForSchedule(seatingCharts, item) ??
                                   currentSeatingChart,
                             ),
-                            onDetails: session == null
-                                ? () => _openSection(
-                                    context,
-                                    '일정',
-                                    const EventsScreen(),
-                                  )
-                                : () =>
-                                      ref
-                                              .read(tabIndexProvider.notifier)
-                                              .state =
-                                          3,
+                            onDetails: () => _openSection(
+                              context,
+                              '일정',
+                              const EventsScreen(),
+                            ),
                           )
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -272,15 +260,6 @@ class HomeScreen extends ConsumerWidget {
                               Text(
                                 '관리자가 일정을 등록하면 여기에 표시됩니다',
                                 style: AppText.body(13, color: Colors.white54),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                '총 $attendanceCount회 출석',
-                                style: AppText.body(
-                                  13,
-                                  weight: FontWeight.w600,
-                                  color: AppColors.secondaryContainer,
-                                ),
                               ),
                             ],
                           ),
@@ -538,35 +517,6 @@ class HomeScreen extends ConsumerWidget {
     return null;
   }
 
-  static String _formatSessionDate(dynamic d) {
-    if (d == null) return '';
-    try {
-      final dt = DateTime.parse(d.toString());
-      final wd = ['월', '화', '수', '목', '금', '토', '일'][dt.weekday - 1];
-      return '${dt.year}년 ${dt.month}월 ${dt.day}일 ($wd)';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  static String _formatSessionTime(dynamic d) {
-    if (d == null) return '';
-    try {
-      final dt = DateTime.parse(d.toString());
-      return '${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  static String _formatSessionLocation(Map<String, dynamic> session) {
-    for (final key in ['location', 'place', 'venue', 'address']) {
-      final value = session[key]?.toString().trim();
-      if (value != null && value.isNotEmpty) return value;
-    }
-    return '장소 미정';
-  }
-
   static bool _isRecent(dynamic dateStr) {
     if (dateStr == null) return false;
     try {
@@ -778,39 +728,10 @@ class HomeScreen extends ConsumerWidget {
   }
 
   static List<_WeeklyScheduleItem> _weeklyScheduleItems({
-    required Map<String, dynamic>? session,
     required List<Map<String, dynamic>> upcomingEvents,
     required List<Map<String, dynamic>> polls,
   }) {
     final items = <_WeeklyScheduleItem>[];
-    if (session != null) {
-      final targetDate = _dateKeyFrom(
-        session['targetDate'] ?? session['date'] ?? session['openedAt'],
-      );
-      final poll = _matchingPoll(
-        polls,
-        targetDate: targetDate,
-        title: session['title']?.toString(),
-      );
-      items.add(
-        _WeeklyScheduleItem(
-          title: session['title']?.toString().trim().isNotEmpty == true
-              ? session['title'].toString().trim()
-              : '주일 찬양 연습',
-          badge: '출석 진행 중',
-          accent: AppColors.secondaryContainer,
-          dateText: _formatSessionDate(session['openedAt']),
-          timeText: _formatSessionTime(session['openedAt']),
-          locationText: _formatSessionLocation(session),
-          targetDate: targetDate,
-          pollId: poll?['id']?.toString(),
-          needsAttendance: true,
-          needsSeating: _scheduleNeedsSeating(session),
-          isActive: true,
-        ),
-      );
-    }
-
     for (final event in upcomingEvents) {
       if (items.length >= 3) break;
       final targetDate = _dateKeyFrom(
@@ -969,7 +890,6 @@ class _WeeklyScheduleItem {
   final String? seatingChartId;
   final bool needsAttendance;
   final bool needsSeating;
-  final bool isActive;
 
   const _WeeklyScheduleItem({
     required this.title,
@@ -983,7 +903,6 @@ class _WeeklyScheduleItem {
     this.seatingChartId,
     this.needsAttendance = false,
     this.needsSeating = false,
-    this.isActive = false,
   });
 
   bool get canOpenPoll =>
@@ -1049,14 +968,12 @@ class _WeeklyScheduleItem {
 
 class _WeeklyScheduleCard extends StatelessWidget {
   final List<_WeeklyScheduleItem> schedules;
-  final int attendanceCount;
   final void Function(_WeeklyScheduleItem item)? onAttendance;
   final void Function(_WeeklyScheduleItem item)? onSeat;
   final VoidCallback onDetails;
 
   const _WeeklyScheduleCard({
     required this.schedules,
-    required this.attendanceCount,
     required this.onAttendance,
     required this.onSeat,
     required this.onDetails,
@@ -1064,7 +981,6 @@ class _WeeklyScheduleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeSchedule = schedules.where((item) => item.isActive).isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1116,7 +1032,7 @@ class _WeeklyScheduleCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '총 $attendanceCount회 출석',
+                  '관리자가 등록한 일정만 표시됩니다',
                   style: AppText.body(
                     12,
                     weight: FontWeight.w700,
@@ -1125,7 +1041,7 @@ class _WeeklyScheduleCard extends StatelessWidget {
                 ),
               ),
               Text(
-                activeSchedule ? '출석 상세' : '일정 보기',
+                '일정 보기',
                 style: AppText.body(
                   12,
                   weight: FontWeight.w900,
@@ -1188,9 +1104,7 @@ class _WeeklyScheduleRow extends StatelessWidget {
                         style: AppText.body(
                           10,
                           weight: FontWeight.w900,
-                          color: item.isActive
-                              ? AppColors.secondaryContainer
-                              : item.accent,
+                          color: item.accent,
                         ),
                       ),
                     ),
