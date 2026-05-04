@@ -140,6 +140,7 @@ class _PendingList extends ConsumerWidget {
     // 기본값은 항상 'member' (무분별한 관리자 승격 방지)
     String role = 'member';
     String part = user.requestedPart ?? user.part ?? 'soprano';
+    String partLeaderTitle = user.requestedPartLeaderTitle ?? 'leader';
 
     showDialog(
       context: context,
@@ -203,6 +204,22 @@ class _PendingList extends ConsumerWidget {
                         .toList(),
                     onChanged: (v) => setDialogState(() => part = v ?? part),
                   ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: partLeaderTitle,
+                    decoration: const InputDecoration(labelText: '담당 직책'),
+                    items: User.partLeaderTitleLabels.entries
+                        .map(
+                          (entry) => DropdownMenuItem(
+                            value: entry.key,
+                            child: Text(entry.value),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (v) => setDialogState(
+                      () => partLeaderTitle = v ?? partLeaderTitle,
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -217,6 +234,9 @@ class _PendingList extends ConsumerWidget {
                     user.id,
                     role: role,
                     partLeaderFor: role == 'part_leader' ? part : null,
+                    partLeaderTitle: role == 'part_leader'
+                        ? partLeaderTitle
+                        : null,
                   );
                   if (ctx.mounted) Navigator.pop(ctx);
                   ref.invalidate(pendingUsersProvider);

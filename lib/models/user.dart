@@ -11,10 +11,12 @@ class User {
   final String? phone;
   final String? profileImageUrl;
   final String? partLeaderFor;
+  final String? partLeaderTitle;
   final bool profileCompleted;
   // ── Approval workflow ──
   final String? requestedRole; // 'member' | 'part_leader' | 'church_admin'
   final String? requestedPart;
+  final String? requestedPartLeaderTitle;
   final String? approvalStatus; // 'pending' | 'approved' | 'rejected'
   final String? rejectionReason;
   // ── Multi-tenant ──
@@ -36,9 +38,11 @@ class User {
     this.phone,
     this.profileImageUrl,
     this.partLeaderFor,
+    this.partLeaderTitle,
     this.profileCompleted = false,
     this.requestedRole,
     this.requestedPart,
+    this.requestedPartLeaderTitle,
     this.approvalStatus,
     this.rejectionReason,
     this.churchId,
@@ -68,10 +72,16 @@ class User {
     'member': '찬양대원',
   };
 
+  static const partLeaderTitleLabels = {'leader': '파트장', 'assistant': '부파트장'};
+
+  static String partLeaderTitleLabel(String? value) {
+    return partLeaderTitleLabels[value] ?? partLeaderTitleLabels['leader']!;
+  }
+
   String get roleLabel {
     if (isPartLeader && partLeaderFor != null) {
       final pLabel = partLabels[partLeaderFor] ?? partLeaderFor;
-      return '$pLabel 파트장';
+      return '$pLabel ${partLeaderTitleLabel(partLeaderTitle)}';
     }
     return roleLabels[role] ?? '찬양대원';
   }
@@ -79,7 +89,7 @@ class User {
   String get requestedRoleLabel {
     if (requestedRole == 'part_leader' && requestedPart != null) {
       final pLabel = partLabels[requestedPart] ?? requestedPart;
-      return '$pLabel 파트장';
+      return '$pLabel ${partLeaderTitleLabel(requestedPartLeaderTitle)}';
     }
     return roleLabels[requestedRole] ?? '찬양대원';
   }
@@ -107,9 +117,11 @@ class User {
       phone: map['phone'] as String?,
       profileImageUrl: map['profileImageUrl'] as String?,
       partLeaderFor: map['partLeaderFor'] as String?,
+      partLeaderTitle: map['partLeaderTitle'] as String?,
       profileCompleted: map['profileCompleted'] as bool? ?? false,
       requestedRole: map['requestedRole'] as String?,
       requestedPart: map['requestedPart'] as String?,
+      requestedPartLeaderTitle: map['requestedPartLeaderTitle'] as String?,
       approvalStatus: map['approvalStatus'] as String?,
       rejectionReason: map['rejectionReason'] as String?,
       churchId: map['churchId'] as String?,

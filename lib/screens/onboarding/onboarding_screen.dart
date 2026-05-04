@@ -53,6 +53,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _phoneCtrl = TextEditingController();
   String _part = 'soprano';
   String _leaderPart = 'soprano';
+  String _leaderTitle = 'leader';
 
   // ── 교회 선택/검색 (찬양대원/파트장용)
   final _churchSearchCtrl = TextEditingController();
@@ -315,6 +316,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         'profileImageUrl': _uploadedImageUrl,
         'requestedRole': _requestedRole,
         'requestedPart': _isPartLeader ? _leaderPart : null,
+        'requestedPartLeaderTitle': _isPartLeader ? _leaderTitle : null,
       };
 
       if (_isChurchAdmin) {
@@ -330,6 +332,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           churchId: _selectedChurch!.id,
           requestedRole: _requestedRole,
           requestedPart: _isPartLeader ? _leaderPart : null,
+          requestedPartLeaderTitle: _isPartLeader ? _leaderTitle : null,
           profileData: profileData,
         );
       }
@@ -570,6 +573,22 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                               .toList(),
                           onChanged: (v) =>
                               setState(() => _leaderPart = v ?? _leaderPart),
+                        ),
+                        const SizedBox(height: 16),
+                        const _Label(text: '담당 직책 *'),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          initialValue: _leaderTitle,
+                          items: User.partLeaderTitleLabels.entries
+                              .map(
+                                (entry) => DropdownMenuItem(
+                                  value: entry.key,
+                                  child: Text(entry.value),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) =>
+                              setState(() => _leaderTitle = v ?? _leaderTitle),
                         ),
                       ],
                       const SizedBox(height: 16),

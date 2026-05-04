@@ -49,6 +49,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   final _phoneCtrl = TextEditingController();
   String _part = 'soprano';
   String _leaderPart = 'soprano';
+  String _leaderTitle = 'leader';
   Uint8List? _imageBytes;
   String? _uploadedImageUrl;
   bool _saving = false;
@@ -133,6 +134,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         'profileImageUrl': _uploadedImageUrl,
         'requestedRole': widget.requestedRole,
         'requestedPart': _isPartLeader ? _leaderPart : null,
+        'requestedPartLeaderTitle': _isPartLeader ? _leaderTitle : null,
       };
       switch (widget.mode) {
         case ProfileSetupMode.joinChurch:
@@ -140,6 +142,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             churchId: widget.churchId!,
             requestedRole: widget.requestedRole,
             requestedPart: _isPartLeader ? _leaderPart : null,
+            requestedPartLeaderTitle: _isPartLeader ? _leaderTitle : null,
             profileData: data,
           );
           break;
@@ -374,6 +377,22 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                       .toList(),
                   onChanged: (v) =>
                       setState(() => _leaderPart = v ?? _leaderPart),
+                ),
+                const SizedBox(height: 12),
+                _Label(text: '담당 직책 *'),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<String>(
+                  initialValue: _leaderTitle,
+                  items: User.partLeaderTitleLabels.entries
+                      .map(
+                        (entry) => DropdownMenuItem(
+                          value: entry.key,
+                          child: Text(entry.value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) =>
+                      setState(() => _leaderTitle = v ?? _leaderTitle),
                 ),
               ],
               const SizedBox(height: 20),

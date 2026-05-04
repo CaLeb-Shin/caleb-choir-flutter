@@ -132,11 +132,15 @@ class FirebaseService {
     String userId, {
     required String role,
     String? partLeaderFor,
+    String? partLeaderTitle,
   }) async {
     await _db.collection('users').doc(userId).update({
       'approvalStatus': 'approved',
       'role': role,
       'partLeaderFor': partLeaderFor,
+      'partLeaderTitle': role == 'part_leader'
+          ? (partLeaderTitle ?? 'leader')
+          : FieldValue.delete(),
       'rejectionReason': FieldValue.delete(),
       'approvedAt': FieldValue.serverTimestamp(),
     });
@@ -148,6 +152,7 @@ class FirebaseService {
       'rejectionReason': reason,
       'role': null,
       'partLeaderFor': null,
+      'partLeaderTitle': FieldValue.delete(),
       'rejectedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -923,11 +928,13 @@ class FirebaseService {
       await _db.collection('users').doc(userId).update({
         'role': 'member',
         'partLeaderFor': FieldValue.delete(),
+        'partLeaderTitle': FieldValue.delete(),
       });
     } else {
       await _db.collection('users').doc(userId).update({
         'role': 'part_leader',
         'partLeaderFor': part,
+        'partLeaderTitle': 'leader',
       });
     }
   }
@@ -1386,6 +1393,7 @@ class FirebaseService {
     required String churchId,
     required String requestedRole,
     String? requestedPart,
+    String? requestedPartLeaderTitle,
     required Map<String, dynamic> profileData,
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
@@ -1403,6 +1411,9 @@ class FirebaseService {
       if (isWhitelisted) 'role': 'admin',
       if (requestedPart != null && requestedPart.isNotEmpty)
         'requestedPart': requestedPart,
+      if (requestedPartLeaderTitle != null &&
+          requestedPartLeaderTitle.isNotEmpty)
+        'requestedPartLeaderTitle': requestedPartLeaderTitle,
       'rejectionReason': FieldValue.delete(),
       'createdAt': FieldValue.serverTimestamp(),
       if (isWhitelisted) 'approvedAt': FieldValue.serverTimestamp(),
