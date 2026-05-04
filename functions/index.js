@@ -192,10 +192,19 @@ exports.sendPushNotification = onDocumentCreated("notifications/{notificationId}
   const data = event.data?.data();
   if (!data) return;
 
-  const { title, body } = data;
+  const { title, body, churchId } = data;
 
-  // FCM 토큰이 있는 모든 사용자 조회
-  const usersSnapshot = await admin.firestore().collection("users").get();
+  if (!churchId) {
+    console.warn("Notification skipped: missing churchId");
+    return;
+  }
+
+  // 같은 교회 FCM 토큰만 조회
+  const usersSnapshot = await admin
+    .firestore()
+    .collection("users")
+    .where("churchId", "==", churchId)
+    .get();
   const tokens = [];
   usersSnapshot.docs.forEach((doc) => {
     const user = doc.data();

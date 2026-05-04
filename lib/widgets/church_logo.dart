@@ -21,23 +21,34 @@ class ChurchLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = imageUrl?.trim();
+    final hasImage = url != null && url.isNotEmpty;
+
+    Widget fallbackIcon() {
+      return Icon(Icons.church_rounded, color: iconColor, size: size * 0.5);
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: Container(
         width: size,
         height: size,
         color: backgroundColor,
-        child: url == null || url.isEmpty
-            ? Icon(Icons.church_rounded, color: iconColor, size: size * 0.5)
-            : Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  Icons.church_rounded,
-                  color: iconColor,
-                  size: size * 0.5,
+        child: hasImage
+            ? Padding(
+                padding: EdgeInsets.all(size * 0.12),
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.medium,
+                  webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return fallbackIcon();
+                  },
+                  errorBuilder: (context, error, stackTrace) => fallbackIcon(),
                 ),
-              ),
+              )
+            : fallbackIcon(),
       ),
     );
   }

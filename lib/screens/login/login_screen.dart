@@ -1,7 +1,4 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -37,12 +34,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool get _showLocalPreview {
     if (!kIsWeb) return false;
     return Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1';
-  }
-
-  bool get _isMobileWeb {
-    if (!kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.android;
   }
 
   GoogleAuthProvider _googleProvider() {
@@ -95,31 +86,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   bool _isLastLoginProvider(String provider) => _lastLoginProvider == provider;
 
-  Widget _recentLoginMarker({
+  Widget _recentLoginCheck({
     required Color color,
     required Color backgroundColor,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(color: backgroundColor, shape: BoxShape.circle),
+      child: Icon(Icons.check_rounded, size: 15, color: color),
+    );
+  }
+
+  Widget _recentLoginLabel({
+    required Color color,
+    required Color backgroundColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.check_rounded, size: 13, color: color),
-          const SizedBox(width: 3),
-          Text(
-            '최근 로그인',
-            style: TextStyle(
-              fontSize: 10,
-              height: 1,
-              color: color,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
+      child: Text(
+        '최근',
+        style: TextStyle(
+          fontSize: 10,
+          height: 1,
+          color: color,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -135,14 +131,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Row(
       children: [
         SizedBox(
-          width: 92,
+          width: 36,
           child: AnimatedSwitcher(
             duration: const Duration(milliseconds: 180),
             child: isRecent
                 ? Align(
-                    key: ValueKey('recent-$provider'),
+                    key: ValueKey('recent-check-$provider'),
                     alignment: Alignment.centerLeft,
-                    child: _recentLoginMarker(
+                    child: _recentLoginCheck(
                       color: markerColor,
                       backgroundColor: markerBackgroundColor,
                     ),
@@ -166,7 +162,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ],
           ),
         ),
-        const SizedBox(width: 92),
+        SizedBox(
+          width: 42,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: isRecent
+                ? Align(
+                    key: ValueKey('recent-label-$provider'),
+                    alignment: Alignment.centerRight,
+                    child: _recentLoginLabel(
+                      color: markerColor,
+                      backgroundColor: markerBackgroundColor,
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('empty-recent-label')),
+          ),
+        ),
       ],
     );
   }
@@ -274,29 +285,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (kIsWeb) {
         await _applyAuthPersistence();
         final provider = _googleProvider();
-        if (_isMobileWeb) {
-          await FirebaseAuth.instance.signInWithRedirect(provider);
-          return;
-        }
-        try {
-          final result = await FirebaseAuth.instance
-              .signInWithPopup(provider)
-              .timeout(const Duration(seconds: 18));
-          if (result.user != null) {
-            await _afterSuccessfulSignIn('google');
-          }
-        } on FirebaseAuthException catch (e) {
-          if (e.code == 'popup-blocked' ||
-              e.code == 'popup-closed-by-user' ||
-              e.code == 'cancelled-popup-request') {
-            await FirebaseAuth.instance.signInWithRedirect(provider);
-            return;
-          }
-          rethrow;
-        } on TimeoutException {
-          await FirebaseAuth.instance.signInWithRedirect(provider);
-          return;
-        }
+        await FirebaseAuth.instance.signInWithRedirect(provider);
+        return;
       } else {
         final googleUser = await GoogleSignIn().signIn();
         if (googleUser == null) {

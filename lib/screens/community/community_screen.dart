@@ -707,7 +707,7 @@ class _FeedReactionStrip extends StatelessWidget {
   }
 }
 
-class _FeedReactionButton extends StatelessWidget {
+class _FeedReactionButton extends StatefulWidget {
   final String type;
   final String emoji;
   final String label;
@@ -724,43 +724,108 @@ class _FeedReactionButton extends StatelessWidget {
   });
 
   @override
+  State<_FeedReactionButton> createState() => _FeedReactionButtonState();
+}
+
+class _FeedReactionButtonState extends State<_FeedReactionButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 620),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    widget.onTap();
+    _controller.forward(from: 0);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: '$label $count',
-      selected: active,
+      label: '${widget.label} ${widget.count}',
+      selected: widget.active,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          height: 26,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            color: active
-                ? AppColors.secondaryContainer
-                : Colors.black.withValues(alpha: 0.38),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: active
-                  ? Colors.white.withValues(alpha: 0.64)
-                  : Colors.white.withValues(alpha: 0.12),
+        onTap: _handleTap,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                final value = Curves.easeOutCubic.transform(_controller.value);
+                return Positioned(
+                  top: -4 - (value * 28),
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: (1 - value).clamp(0.0, 1.0),
+                      child: Transform.scale(
+                        scale: 0.7 + value * 0.55,
+                        child: Text(
+                          widget.emoji,
+                          style: const TextStyle(fontSize: 18),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(emoji, style: const TextStyle(fontSize: 12)),
-              const SizedBox(width: 3),
-              Text(
-                '$count',
-                style: AppText.body(
-                  10,
-                  weight: FontWeight.w900,
-                  color: active ? AppColors.primary : Colors.white,
+            AnimatedScale(
+              scale: widget.active ? 1.05 : 1,
+              duration: const Duration(milliseconds: 160),
+              child: Container(
+                height: 26,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                decoration: BoxDecoration(
+                  color: widget.active
+                      ? AppColors.secondaryContainer
+                      : Colors.black.withValues(alpha: 0.38),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: widget.active
+                        ? Colors.white.withValues(alpha: 0.64)
+                        : Colors.white.withValues(alpha: 0.12),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(widget.emoji, style: const TextStyle(fontSize: 12)),
+                    const SizedBox(width: 3),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child: Text(
+                        '${widget.count}',
+                        key: ValueKey('${widget.type}-${widget.count}'),
+                        style: AppText.body(
+                          10,
+                          weight: FontWeight.w900,
+                          color: widget.active
+                              ? AppColors.primary
+                              : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

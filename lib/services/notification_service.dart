@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'firebase_service.dart';
+
 class NotificationService {
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   static StreamSubscription<User?>? _authSubscription;
@@ -83,8 +85,14 @@ class NotificationService {
   /// 전체 멤버에게 알림 전송 (Cloud Function으로 위임)
   /// Cloud Function 'sendNotification' 호출
   static Future<void> sendToAll(String title, String body) async {
+    final churchId = FirebaseService.currentChurchId;
+    if (churchId == null) {
+      throw Exception('교회가 선택되지 않았거나 승인 대기 중입니다');
+    }
+
     // Cloud Function에서 처리 — 클라이언트에서는 Firestore에 알림 기록만 저장
     await FirebaseFirestore.instance.collection('notifications').add({
+      'churchId': churchId,
       'title': title,
       'body': body,
       'sentAt': FieldValue.serverTimestamp(),

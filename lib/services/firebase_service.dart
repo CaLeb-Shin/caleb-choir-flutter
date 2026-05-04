@@ -733,6 +733,7 @@ class FirebaseService {
   static Future<void> toggleReaction(String postId, String type) async {
     final userId = uid;
     if (userId == null) return;
+    if (!{'like', 'sad', 'pray'}.contains(type)) return;
     final ref = _db.collection('posts').doc(postId);
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);

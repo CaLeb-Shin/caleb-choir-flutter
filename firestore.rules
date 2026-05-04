@@ -144,6 +144,13 @@ service cloud.firestore {
         request.auth.uid == resource.data.userId ||
         (resource.data.keys().hasAll(['churchId']) && isChurchAdminOf(resource.data.churchId))
       );
+      allow update: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId'])
+        && sameChurch(resource.data.churchId)
+        && request.resource.data.get('churchId', '') == resource.data.churchId
+        && request.resource.data.get('userId', '') == resource.data.userId
+        && request.resource.data.reactions.keys().hasOnly(['like', 'sad', 'pray'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions']);
 
       // 서브컬렉션: posts/{postId}/comments
       match /comments/{commentId} {
@@ -232,7 +239,8 @@ service cloud.firestore {
         resource.data.get('toUserId', '') == request.auth.uid ||
         (resource.data.keys().hasAll(['churchId']) && canReadChurchContent(resource.data.churchId))
       );
-      allow create: if isSignedIn();
+      allow create: if request.resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(request.resource.data.churchId);
     }
   }
 }
