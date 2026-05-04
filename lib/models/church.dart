@@ -33,9 +33,16 @@ class Church {
   bool get isApproved => status == 'approved';
   bool get isRejected => status == 'rejected';
   String get displayName {
-    final choir = choirName?.trim();
+    final choir = _effectiveChoirName;
     if (choir == null || choir.isEmpty || choir == name) return name;
-    return '$name - $choir';
+    return '$name-$choir';
+  }
+
+  String? get _effectiveChoirName {
+    final choir = choirName?.trim();
+    if (choir != null && choir.isNotEmpty) return choir;
+    if (name.trim() == '예원교회') return '갈렙찬양대';
+    return null;
   }
 
   factory Church.fromMap(Map<String, dynamic> map) {
