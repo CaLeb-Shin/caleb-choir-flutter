@@ -70,13 +70,7 @@ class CalebChoirApp extends ConsumerWidget {
         if (!kIsWeb || child == null) return child ?? const SizedBox.shrink();
         final media = MediaQuery.of(context);
         final isWidePreview = media.size.width >= 700;
-        final wantsPreviewFrame =
-            Uri.base.host == 'localhost' ||
-            Uri.base.host == '127.0.0.1' ||
-            Uri.base.queryParameters['preview'] == '1' ||
-            Uri.base.queryParameters['login'] == '1' ||
-            Uri.base.queryParameters['onboarding'] == '1';
-        if (!wantsPreviewFrame || !isWidePreview) return child;
+        if (!isWidePreview) return child;
 
         return Scaffold(
           backgroundColor: const Color(0xFF000E24),
