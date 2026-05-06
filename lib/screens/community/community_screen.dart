@@ -314,8 +314,7 @@ class CommunityScreen extends ConsumerWidget {
   }
 
   static int _heartCount(Map<String, dynamic> post) {
-    final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
-    return ((reactions['like'] as List<dynamic>?) ?? []).length;
+    return reactionCounts(post)['like'] ?? 0;
   }
 }
 
@@ -560,7 +559,6 @@ class _PhotoPostTile extends StatelessWidget {
     final title = (post['title'] as String?) ?? '';
     final content = (post['content'] as String?) ?? '';
     final commentCount = (post['commentCount'] as int?) ?? 0;
-    final reactions = (post['reactions'] as Map<String, dynamic>?) ?? {};
 
     return Tappable(
       onTap: onTap,
@@ -603,7 +601,7 @@ class _PhotoPostTile extends StatelessWidget {
               top: 8,
               right: 8,
               child: _FeedReactionStrip(
-                reactions: reactions,
+                reactions: post,
                 myUid: myUid,
                 onReaction: onReaction,
               ),
@@ -689,7 +687,7 @@ class _FeedReactionStrip extends StatefulWidget {
 }
 
 class _FeedReactionStripState extends State<_FeedReactionStrip> {
-  Map<String, List<String>>? _optimisticReactions;
+  Map<String, dynamic>? _optimisticReactionState;
 
   Future<void> _handleReaction(
     String type,
@@ -698,21 +696,25 @@ class _FeedReactionStripState extends State<_FeedReactionStrip> {
     final userId = widget.myUid;
     if (userId == null) return;
     setState(() {
-      _optimisticReactions = toggledReactions(currentReactions, type, userId);
+      _optimisticReactionState = toggledReactionState(
+        currentReactions,
+        type,
+        userId,
+      );
     });
     try {
       await widget.onReaction(type);
       Future<void>.delayed(const Duration(milliseconds: 350), () {
-        if (mounted) setState(() => _optimisticReactions = null);
+        if (mounted) setState(() => _optimisticReactionState = null);
       });
     } catch (_) {
-      if (mounted) setState(() => _optimisticReactions = null);
+      if (mounted) setState(() => _optimisticReactionState = null);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final reactions = _optimisticReactions ?? widget.reactions;
+    final reactions = _optimisticReactionState ?? widget.reactions;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -721,10 +723,8 @@ class _FeedReactionStripState extends State<_FeedReactionStrip> {
             type: entry.key,
             emoji: entry.value.emoji,
             label: entry.value.label,
-            count: ((reactions[entry.key] as List<dynamic>?) ?? []).length,
-            active: ((reactions[entry.key] as List<dynamic>?) ?? []).contains(
-              widget.myUid,
-            ),
+            count: reactionCounts(reactions)[entry.key] ?? 0,
+            active: myReactionType(reactions, widget.myUid) == entry.key,
             onTap: () => _handleReaction(entry.key, reactions),
           ),
           if (entry.key != reactionMeta.keys.last) const SizedBox(width: 4),

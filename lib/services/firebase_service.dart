@@ -259,6 +259,82 @@ class FirebaseService {
     };
   }
 
+  static Map<String, int> _reactionCountsFrom(Map<String, dynamic> data) {
+    final countsRaw = data['reactionCounts'] as Map<String, dynamic>?;
+    final legacyRaw = data['reactions'] as Map<String, dynamic>?;
+    return {
+      for (final type in const ['like', 'sad', 'pray'])
+        type:
+            (countsRaw?[type] as num?)?.toInt() ??
+            ((legacyRaw?[type] as List<dynamic>?) ?? const []).length,
+    };
+  }
+
+  static String? _legacyReactionType(Map<String, dynamic> data, String userId) {
+    final reactionsRaw = data['reactions'] as Map<String, dynamic>?;
+    if (reactionsRaw == null) return null;
+    for (final type in const ['like', 'sad', 'pray']) {
+      final list = (reactionsRaw[type] as List<dynamic>?) ?? const [];
+      if (list.map((value) => value.toString()).contains(userId)) {
+        return type;
+      }
+    }
+    return null;
+  }
+
+  static Future<String?> _myReactionForPost(
+    String postId,
+    Map<String, dynamic> data,
+  ) async {
+    final userId = uid;
+    if (userId == null) return null;
+    try {
+      final doc = await _db
+          .collection('posts')
+          .doc(postId)
+          .collection('reactions')
+          .doc(userId)
+          .get();
+      final type = doc.data()?['type']?.toString();
+      if (type != null && {'like', 'sad', 'pray'}.contains(type)) {
+        return type;
+      }
+    } catch (_) {}
+    return _legacyReactionType(data, userId);
+  }
+
+  static Future<Map<String, dynamic>> _postWithAuthorAndReaction(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data();
+    final userData = await _safeUserData(data['userId']);
+    final myReaction = await _myReactionForPost(doc.id, data);
+    return {
+      'id': doc.id,
+      ...data,
+      ..._authorFields(data, userData),
+      'reactionCounts': _reactionCountsFrom(data),
+      'myReaction': myReaction,
+      'createdAt': _timestampIso(data['createdAt']),
+    };
+  }
+
+  static Future<Map<String, dynamic>> _postSnapshotWithAuthorAndReaction(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data()!;
+    final userData = await _safeUserData(data['userId']);
+    final myReaction = await _myReactionForPost(doc.id, data);
+    return {
+      'id': doc.id,
+      ...data,
+      ..._authorFields(data, userData),
+      'reactionCounts': _reactionCountsFrom(data),
+      'myReaction': myReaction,
+      'createdAt': _timestampIso(data['createdAt']),
+    };
+  }
+
   static Future<List<Map<String, dynamic>>> getAllMembers() async {
     final snapshot = await _db
         .collection('users')
@@ -307,12 +383,10 @@ class FirebaseService {
     final snapshot = await _db
         .collection('attendance_sessions')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('openedAt', descending: true)
         .limit(limit)
         .get();
-    final sessions =
-        snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
-          ..sort((a, b) => _timestampFieldDesc('openedAt', a, b));
-    return sessions.take(limit).toList();
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
   static Future<void> openSession(String title) async {
@@ -337,26 +411,21 @@ class FirebaseService {
   static Future<Map<String, dynamic>> checkIn(String sessionId) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final churchId = _requireChurchId();
+    final attendanceId = '${sessionId}_$uid';
+    final attendanceRef = _db.collection('attendance').doc(attendanceId);
 
-    // Check if already checked in
-    final existing = await _db
-        .collection('attendance')
-        .where('churchId', isEqualTo: churchId)
-        .where('userId', isEqualTo: uid)
-        .where('sessionId', isEqualTo: sessionId)
-        .limit(1)
-        .get();
-
-    if (existing.docs.isNotEmpty) {
+    final existing = await attendanceRef.get();
+    if (existing.exists) {
       return {'alreadyCheckedIn': true};
     }
 
-    await _db.collection('attendance').add({
+    await attendanceRef.set({
       'churchId': churchId,
       'userId': uid,
       'sessionId': sessionId,
+      ..._authorFields({'userId': uid}, await _safeUserData(uid)),
       'checkedInAt': FieldValue.serverTimestamp(),
-    });
+    }, SetOptions(merge: false));
 
     return {'alreadyCheckedIn': false};
   }
@@ -400,11 +469,14 @@ class FirebaseService {
     final attendees = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      final userDoc = await _db.collection('users').doc(data['userId']).get();
+      final userData = (data['userName'] == null || data['userPart'] == null)
+          ? await _safeUserData(data['userId'])
+          : null;
+      final author = _authorFields(data, userData);
       attendees.add({
         'id': doc.id,
-        'userName': userDoc.data()?['name'] ?? '',
-        'userPart': userDoc.data()?['part'] ?? '',
+        'userName': author['userName'] ?? '',
+        'userPart': author['userPart'] ?? '',
         'checkedInAt':
             (data['checkedInAt'] as Timestamp?)?.toDate().toIso8601String() ??
             '',
@@ -418,10 +490,9 @@ class FirebaseService {
     final snapshot = await _db
         .collection('videos')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
         .get();
-    final videos = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
-      ..sort(_createdAtDesc);
-    return videos;
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
   // ============ Awards data ============
@@ -433,6 +504,7 @@ class FirebaseService {
         .collection('posts')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .orderBy('createdAt', descending: true)
         .get();
     final posts = snapshot.docs.map((d) {
       final data = d.data();
@@ -440,10 +512,10 @@ class FirebaseService {
         'id': d.id,
         'userId': data['userId'],
         'reactions': data['reactions'] ?? {},
+        'reactionCounts': _reactionCountsFrom(data),
         'createdAt': (data['createdAt'] as Timestamp?)?.toDate(),
       };
     }).toList();
-    posts.sort(_createdAtDesc);
     return posts;
   }
 
@@ -455,6 +527,7 @@ class FirebaseService {
         .collection('attendance')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('checkedInAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .orderBy('checkedInAt', descending: true)
         .get();
     return snapshot.docs.map((d) {
       final data = d.data();
@@ -475,6 +548,7 @@ class FirebaseService {
         .collection('attendance_sessions')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('openedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .orderBy('openedAt', descending: true)
         .get();
     return snapshot.docs.map((d) {
       final data = d.data();
@@ -493,6 +567,7 @@ class FirebaseService {
         .collectionGroup('comments')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .orderBy('createdAt', descending: true)
         .get();
     return snapshot.docs.map((d) {
       final data = d.data();
@@ -509,20 +584,13 @@ class FirebaseService {
     final snapshot = await _db
         .collection('posts')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
         .limit(50)
         .get();
     final posts = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
-      final data = doc.data();
-      final userData = await _safeUserData(data['userId']);
-      posts.add({
-        'id': doc.id,
-        ...data,
-        ..._authorFields(data, userData),
-        'createdAt': _timestampIso(data['createdAt']),
-      });
+      posts.add(await _postWithAuthorAndReaction(doc));
     }
-    posts.sort(_createdAtDesc);
     return posts;
   }
 
@@ -530,21 +598,14 @@ class FirebaseService {
     return _db
         .collection('posts')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
         .limit(50)
         .snapshots()
         .asyncMap((snapshot) async {
           final posts = <Map<String, dynamic>>[];
           for (final doc in snapshot.docs) {
-            final data = doc.data();
-            final userData = await _safeUserData(data['userId']);
-            posts.add({
-              'id': doc.id,
-              ...data,
-              ..._authorFields(data, userData),
-              'createdAt': _timestampIso(data['createdAt']),
-            });
+            posts.add(await _postWithAuthorAndReaction(doc));
           }
-          posts.sort(_createdAtDesc);
           return posts;
         });
   }
@@ -552,14 +613,7 @@ class FirebaseService {
   static Future<Map<String, dynamic>?> getPost(String postId) async {
     final doc = await _db.collection('posts').doc(postId).get();
     if (!doc.exists) return null;
-    final data = doc.data()!;
-    final userData = await _safeUserData(data['userId']);
-    return {
-      'id': doc.id,
-      ...data,
-      ..._authorFields(data, userData),
-      'createdAt': _timestampIso(data['createdAt']),
-    };
+    return _postSnapshotWithAuthorAndReaction(doc);
   }
 
   static Stream<Map<String, dynamic>?> watchPost(String postId) {
@@ -567,14 +621,7 @@ class FirebaseService {
       doc,
     ) async {
       if (!doc.exists) return null;
-      final data = doc.data()!;
-      final userData = await _safeUserData(data['userId']);
-      return {
-        'id': doc.id,
-        ...data,
-        ..._authorFields(data, userData),
-        'createdAt': _timestampIso(data['createdAt']),
-      };
+      return _postSnapshotWithAuthorAndReaction(doc);
     });
   }
 
@@ -675,7 +722,7 @@ class FirebaseService {
       'content': content,
       'imageUrl': imageUrl,
       'mediaType': mediaType,
-      'reactions': <String, List<String>>{'like': [], 'sad': [], 'pray': []},
+      'reactionCounts': <String, int>{'like': 0, 'sad': 0, 'pray': 0},
       'commentCount': 0,
       'createdAt': FieldValue.serverTimestamp(),
     };
@@ -735,29 +782,43 @@ class FirebaseService {
     if (userId == null) return;
     if (!{'like', 'sad', 'pray'}.contains(type)) return;
     final ref = _db.collection('posts').doc(postId);
+    final reactionRef = ref.collection('reactions').doc(userId);
     await _db.runTransaction((tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) return;
-      final reactionsRaw =
-          (snap.data()?['reactions'] as Map<String, dynamic>?) ?? {};
+      final data = snap.data() ?? {};
+      final churchId = data['churchId']?.toString();
+      if (churchId == null || churchId != _requireChurchId()) return;
 
-      final reactionTypes = {'like', 'sad', 'pray', type};
-      final lists = <String, List<String>>{};
-      for (final reactionType in reactionTypes) {
-        lists[reactionType] = List<String>.from(
-          (reactionsRaw[reactionType] as List<dynamic>?) ?? [],
-        );
+      final reactionSnap = await tx.get(reactionRef);
+      final previousType =
+          reactionSnap.data()?['type']?.toString() ??
+          _legacyReactionType(data, userId);
+      final counts = _reactionCountsFrom(data);
+      final nextType = previousType == type ? null : type;
+
+      if (previousType != null && counts.containsKey(previousType)) {
+        counts[previousType] = (counts[previousType]! - 1)
+            .clamp(0, 1 << 30)
+            .toInt();
+      }
+      if (nextType != null) {
+        counts[nextType] = (counts[nextType] ?? 0) + 1;
+        tx.set(reactionRef, {
+          'churchId': churchId,
+          'postId': postId,
+          'userId': userId,
+          'type': nextType,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } else if (reactionSnap.exists) {
+        tx.delete(reactionRef);
       }
 
-      final wasActive = lists[type]?.contains(userId) ?? false;
-      for (final list in lists.values) {
-        list.remove(userId);
-      }
-      if (!wasActive) {
-        lists[type]!.add(userId);
-      }
-
-      tx.update(ref, {'reactions': lists});
+      tx.update(ref, {
+        'reactionCounts': counts,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     });
   }
 
@@ -767,6 +828,8 @@ class FirebaseService {
         .collection('posts')
         .doc(postId)
         .collection('comments')
+        .orderBy('createdAt')
+        .limit(100)
         .get();
     final comments = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
@@ -792,6 +855,10 @@ class FirebaseService {
       'churchId': _requireChurchId(),
       'postId': postId,
       'userId': uid,
+      ..._authorFields({
+        'userId': uid,
+        'userName': currentUser?.displayName,
+      }, await _safeUserData(uid)),
       'content': content,
       'createdAt': FieldValue.serverTimestamp(),
     });
@@ -812,8 +879,9 @@ class FirebaseService {
     final snapshot = await _db
         .collection('announcements')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
         .get();
-    final announcements = snapshot.docs
+    return snapshot.docs
         .map(
           (d) => {
             'id': d.id,
@@ -826,8 +894,6 @@ class FirebaseService {
           },
         )
         .toList();
-    announcements.sort(_createdAtDesc);
-    return announcements;
   }
 
   // ============ Sheet Music ============
@@ -835,10 +901,9 @@ class FirebaseService {
     final snapshot = await _db
         .collection('sheet_music')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
         .get();
-    final items = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
-      ..sort(_createdAtDesc);
-    return items;
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
   // ============ Events ============
@@ -953,6 +1018,10 @@ class FirebaseService {
     final churchId = _requireChurchId();
     final session = await getActiveSession();
     if (session == null) throw Exception('열린 출석 세션이 없습니다');
+    final sessionId = session['id']?.toString();
+    if (sessionId == null || sessionId.isEmpty) {
+      throw Exception('출석 세션 정보가 올바르지 않습니다');
+    }
 
     final userDoc = await _db.collection('users').doc(userId).get();
     if (!userDoc.exists) throw Exception('해당 단원을 찾을 수 없습니다');
@@ -964,22 +1033,19 @@ class FirebaseService {
       throw Exception('담당 파트 단원만 출석 처리할 수 있습니다');
     }
 
-    final existing = await _db
+    final attendanceRef = _db
         .collection('attendance')
-        .where('churchId', isEqualTo: churchId)
-        .where('userId', isEqualTo: userId)
-        .where('sessionId', isEqualTo: session['id'])
-        .limit(1)
-        .get();
-
-    if (existing.docs.isNotEmpty) {
+        .doc('${sessionId}_$userId');
+    final existing = await attendanceRef.get();
+    if (existing.exists) {
       return {'alreadyCheckedIn': true, 'userName': userData['name'] ?? ''};
     }
 
-    await _db.collection('attendance').add({
+    await attendanceRef.set({
       'churchId': churchId,
       'userId': userId,
-      'sessionId': session['id'],
+      'sessionId': sessionId,
+      ..._authorFields({'userId': userId}, userData),
       'checkedInAt': FieldValue.serverTimestamp(),
       'checkedInBy': uid,
       'scannerMode': scannerMode,
@@ -1020,50 +1086,41 @@ class FirebaseService {
     final snapshot = await _db
         .collection('polls')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
         .get();
-    final polls = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
-      ..sort(_createdAtDesc);
-    return polls;
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
   static Stream<List<Map<String, dynamic>>> watchPolls() {
     return _db
         .collection('polls')
         .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          final polls =
-              snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
-                ..sort(_createdAtDesc);
-          return polls;
+          return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
         });
   }
 
   static Future<void> vote(String pollId, String choice) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final churchId = _requireChurchId();
-    final existing = await _db
-        .collection('poll_votes')
-        .where('churchId', isEqualTo: churchId)
-        .where('pollId', isEqualTo: pollId)
-        .where('userId', isEqualTo: uid)
-        .limit(1)
-        .get();
-
-    if (existing.docs.isNotEmpty) {
-      await existing.docs.first.reference.update({
-        'choice': choice,
-        'votedAt': FieldValue.serverTimestamp(),
-      });
-    } else {
-      await _db.collection('poll_votes').add({
+    final voteRef = _db.collection('poll_votes').doc('${pollId}_$uid');
+    final userData = await _safeUserData(uid);
+    await _db.runTransaction((tx) async {
+      final poll = await tx.get(_db.collection('polls').doc(pollId));
+      if (!poll.exists) throw Exception('투표를 찾을 수 없습니다');
+      final pollData = poll.data() ?? {};
+      if (pollData['churchId'] != churchId) throw Exception('다른 교회 투표입니다');
+      tx.set(voteRef, {
         'churchId': churchId,
         'pollId': pollId,
         'userId': uid,
+        ..._authorFields({'userId': uid}, userData),
         'choice': choice,
         'votedAt': FieldValue.serverTimestamp(),
-      });
-    }
+      }, SetOptions(merge: true));
+    });
   }
 
   static Future<List<Map<String, dynamic>>> getPollVotes(String pollId) async {
@@ -1075,12 +1132,15 @@ class FirebaseService {
     final votes = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      final userDoc = await _db.collection('users').doc(data['userId']).get();
+      final userData = (data['userName'] == null || data['userPart'] == null)
+          ? await _safeUserData(data['userId'])
+          : null;
+      final author = _authorFields(data, userData);
       votes.add({
         'id': doc.id,
         ...data,
-        'userName': userDoc.data()?['name'] ?? '',
-        'userPart': userDoc.data()?['part'] ?? '',
+        'userName': author['userName'] ?? '',
+        'userPart': author['userPart'] ?? '',
       });
     }
     return votes;
@@ -1132,14 +1192,13 @@ class FirebaseService {
   }) async {
     var query = _db
         .collection('seating_charts')
-        .where('churchId', isEqualTo: _requireChurchId());
+        .where('churchId', isEqualTo: _requireChurchId())
+        .orderBy('createdAt', descending: true);
     if (publishedOnly) {
       query = query.where('isPublished', isEqualTo: true);
     }
     final snapshot = await query.get();
-    final charts = snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList()
-      ..sort(_createdAtDesc);
-    return charts;
+    return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
   static Future<List<Map<String, dynamic>>> getSeatAssignments(

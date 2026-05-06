@@ -159,6 +159,28 @@ service cloud.firestore {
         && request.resource.data.keys().hasAll(['commentCount'])
         && request.resource.data.commentCount is int
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount']);
+      allow update: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId'])
+        && sameChurch(resource.data.churchId)
+        && request.resource.data.keys().hasAll(['reactionCounts'])
+        && request.resource.data.reactionCounts.keys().hasOnly(['like', 'sad', 'pray'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactionCounts', 'updatedAt']);
+
+      match /reactions/{reactionUserId} {
+        allow read: if resource.data.keys().hasAll(['churchId'])
+          && canReadChurchContent(resource.data.churchId);
+        allow create, update: if isSignedIn()
+          && reactionUserId == request.auth.uid
+          && request.resource.data.keys().hasAll(['churchId', 'postId', 'userId', 'type'])
+          && request.resource.data.postId == docId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.type in ['like', 'sad', 'pray']
+          && sameChurch(request.resource.data.churchId);
+        allow delete: if isSignedIn()
+          && reactionUserId == request.auth.uid
+          && resource.data.keys().hasAll(['churchId'])
+          && sameChurch(resource.data.churchId);
+      }
 
       // 서브컬렉션: posts/{postId}/comments
       match /comments/{commentId} {

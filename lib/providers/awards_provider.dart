@@ -49,12 +49,17 @@ class AwardsState {
   UserAwardCounts countsFor(String? uid) =>
       counts[uid ?? ''] ?? const UserAwardCounts();
 
-  bool isCurrentWeeklyCaleb(String? uid) => uid != null && uid == currentWeeklyCalebUid;
-  bool isCurrentMonthlyCaleb(String? uid) => uid != null && uid == currentMonthlyCalebUid;
-  bool isAttendanceChampion(String? uid) => uid != null && uid == currentAttendanceChampionUid;
+  bool isCurrentWeeklyCaleb(String? uid) =>
+      uid != null && uid == currentWeeklyCalebUid;
+  bool isCurrentMonthlyCaleb(String? uid) =>
+      uid != null && uid == currentMonthlyCalebUid;
+  bool isAttendanceChampion(String? uid) =>
+      uid != null && uid == currentAttendanceChampionUid;
   bool isPrayKing(String? uid) => uid != null && uid == currentPrayKingUid;
-  bool isCommentKing(String? uid) => uid != null && uid == currentCommentKingUid;
-  bool isPerfectAttendance(String? uid) => uid != null && perfectAttendanceUids.contains(uid);
+  bool isCommentKing(String? uid) =>
+      uid != null && uid == currentCommentKingUid;
+  bool isPerfectAttendance(String? uid) =>
+      uid != null && perfectAttendanceUids.contains(uid);
   bool isNewcomer(String? uid) => uid != null && newcomerUids.contains(uid);
 }
 
@@ -73,9 +78,10 @@ DateTime _startOfWeek(DateTime d) {
 DateTime _startOfMonth(DateTime d) => DateTime(d.year, d.month, 1);
 
 int _likesOnPost(Map<String, dynamic> post) {
+  final counts = post['reactionCounts'] as Map<String, dynamic>?;
+  if (counts != null) return (counts['like'] as num?)?.toInt() ?? 0;
   final reactions = (post['reactions'] as Map<String, dynamic>?) ?? const {};
-  final likes = (reactions['like'] as List<dynamic>?) ?? const [];
-  return likes.length;
+  return ((reactions['like'] as List<dynamic>?) ?? const []).length;
 }
 
 /// Picks the user with the most aggregated likes within [posts]. Returns null if no posts.
@@ -101,8 +107,11 @@ int _likesOnPost(Map<String, dynamic> post) {
 final awardsProvider = FutureProvider<AwardsState>((ref) async {
   final now = DateTime.now();
   // Reach back ~6 months for past weekly/monthly winners.
-  final since = DateTime(now.year, now.month - 6, 1)
-      .subtract(const Duration(days: 1));
+  final since = DateTime(
+    now.year,
+    now.month - 6,
+    1,
+  ).subtract(const Duration(days: 1));
 
   // Parallel fetches.
   final results = await Future.wait([

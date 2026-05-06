@@ -17,35 +17,53 @@ const reactionMeta = <String, ({String label, String emoji})>{
   'pray': (label: '기도해요', emoji: '🙏'),
 };
 
-Map<String, List<String>> normalizedReactions(Map<String, dynamic> reactions) {
+Map<String, int> reactionCounts(Map<String, dynamic> state) {
+  final countsRaw = state['reactionCounts'] as Map<String, dynamic>?;
+  final legacyRaw = state['reactions'] as Map<String, dynamic>?;
   return {
     for (final type in reactionMeta.keys)
-      type: List<String>.from(
-        ((reactions[type] as List<dynamic>?) ?? const []).map(
-          (uid) => uid.toString(),
-        ),
-      ),
+      type:
+          (countsRaw?[type] as num?)?.toInt() ??
+          ((legacyRaw?[type] as List<dynamic>?) ?? const []).length,
   };
 }
 
-Map<String, List<String>> toggledReactions(
-  Map<String, dynamic> reactions,
+String? myReactionType(Map<String, dynamic> state, String? uid) {
+  final myReaction = state['myReaction']?.toString();
+  if (myReaction != null && reactionMeta.containsKey(myReaction)) {
+    return myReaction;
+  }
+  if (uid == null || uid.isEmpty) return null;
+  final legacyRaw = state['reactions'] as Map<String, dynamic>?;
+  if (legacyRaw == null) return null;
+  for (final type in reactionMeta.keys) {
+    final list = (legacyRaw[type] as List<dynamic>?) ?? const [];
+    if (list.map((value) => value.toString()).contains(uid)) return type;
+  }
+  return null;
+}
+
+Map<String, dynamic> toggledReactionState(
+  Map<String, dynamic> state,
   String type,
   String? uid,
 ) {
-  final next = normalizedReactions(reactions);
+  final counts = reactionCounts(state);
   if (uid == null || uid.isEmpty || !reactionMeta.containsKey(type)) {
-    return next;
+    return {'reactionCounts': counts, 'myReaction': myReactionType(state, uid)};
   }
 
-  final wasActive = next[type]?.contains(uid) ?? false;
-  for (final list in next.values) {
-    list.remove(uid);
+  final previousType = myReactionType(state, uid);
+  final nextType = previousType == type ? null : type;
+  if (previousType != null && counts.containsKey(previousType)) {
+    counts[previousType] = (counts[previousType]! - 1)
+        .clamp(0, 1 << 30)
+        .toInt();
   }
-  if (!wasActive) {
-    next[type]!.add(uid);
+  if (nextType != null) {
+    counts[nextType] = (counts[nextType] ?? 0) + 1;
   }
-  return next;
+  return {'reactionCounts': counts, 'myReaction': nextType};
 }
 
 class PostDetailScreen extends ConsumerStatefulWidget {
@@ -59,7 +77,7 @@ class PostDetailScreen extends ConsumerStatefulWidget {
 class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
   final _commentCtrl = TextEditingController();
   bool _sending = false;
-  Map<String, List<String>>? _optimisticReactions;
+  Map<String, dynamic>? _optimisticReactionState;
 
   @override
   void dispose() {
@@ -74,18 +92,22 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     final userId = FirebaseService.uid;
     if (userId == null) return;
     setState(() {
-      _optimisticReactions = toggledReactions(currentReactions, type, userId);
+      _optimisticReactionState = toggledReactionState(
+        currentReactions,
+        type,
+        userId,
+      );
     });
     try {
       await FirebaseService.toggleReaction(widget.postId, type);
       ref.invalidate(postProvider(widget.postId));
       ref.invalidate(postsProvider);
       Future<void>.delayed(const Duration(milliseconds: 350), () {
-        if (mounted) setState(() => _optimisticReactions = null);
+        if (mounted) setState(() => _optimisticReactionState = null);
       });
     } catch (e) {
       if (mounted) {
-        setState(() => _optimisticReactions = null);
+        setState(() => _optimisticReactionState = null);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('반응 저장 실패: $e')));
@@ -177,7 +199,13 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           if (post == null) return const Center(child: Text('삭제된 게시물입니다'));
           final serverReactions =
               (post['reactions'] as Map<String, dynamic>?) ?? {};
-          final reactions = _optimisticReactions ?? serverReactions;
+          final reactionState =
+              _optimisticReactionState ??
+              {
+                'reactionCounts': post['reactionCounts'],
+                'myReaction': post['myReaction'],
+                'reactions': serverReactions,
+              };
           final imageUrl = _postImageUrl(post);
           final mediaType = (post['mediaType'] as String?) ?? 'photo';
           final videoUrl = _postVideoUrl(post);
@@ -242,7 +270,7 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
                     ],
                     const SizedBox(height: 20),
                     _ReactionRow(
-                      reactions: reactions,
+                      reactions: reactionState,
                       myUid: myUid,
                       onTap: _toggleReaction,
                     ),
@@ -563,10 +591,8 @@ class _ReactionRow extends StatelessWidget {
             type: entry.key,
             emoji: entry.value.emoji,
             label: entry.value.label,
-            count: ((reactions[entry.key] as List<dynamic>?) ?? []).length,
-            active: ((reactions[entry.key] as List<dynamic>?) ?? []).contains(
-              myUid,
-            ),
+            count: reactionCounts(reactions)[entry.key] ?? 0,
+            active: myReactionType(reactions, myUid) == entry.key,
             onTap: () => onTap(entry.key, reactions),
           ),
           if (entry.key != reactionMeta.keys.last) const SizedBox(width: 8),
