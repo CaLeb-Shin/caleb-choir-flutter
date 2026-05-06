@@ -49,16 +49,29 @@ class UserBadges extends ConsumerWidget {
         }
         final c = awards.countsFor(userId);
         if (c.weeklyCalebWins > 0) {
-          pills.add(_BadgeSpec('주간갈렙 ${c.weeklyCalebWins}회', _BadgeStyle.weeklyCount));
+          pills.add(
+            _BadgeSpec('주간갈렙 ${c.weeklyCalebWins}회', _BadgeStyle.weeklyCount),
+          );
         }
         if (c.monthlyCalebWins > 0) {
-          pills.add(_BadgeSpec('월간갈렙 ${c.monthlyCalebWins}회', _BadgeStyle.monthlyCount));
+          pills.add(
+            _BadgeSpec('월간갈렙 ${c.monthlyCalebWins}회', _BadgeStyle.monthlyCount),
+          );
         }
         if (pills.isEmpty) return const SizedBox.shrink();
         final shown = pills.take(max).toList();
-        return Wrap(spacing: 4, runSpacing: 3, children: [
-          for (final p in shown) _Pill(spec: p, height: height),
-        ]);
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < shown.length; i++) ...[
+              if (i > 0) const SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 74),
+                child: _Pill(spec: shown[i], height: height),
+              ),
+            ],
+          ],
+        );
       },
       orElse: () => const SizedBox.shrink(),
     );
@@ -66,8 +79,15 @@ class UserBadges extends ConsumerWidget {
 }
 
 enum _BadgeStyle {
-  weeklyActive, monthlyActive, champion, prayKing, commentKing, perfect, newcomer,
-  weeklyCount, monthlyCount,
+  weeklyActive,
+  monthlyActive,
+  champion,
+  prayKing,
+  commentKing,
+  perfect,
+  newcomer,
+  weeklyCount,
+  monthlyCount,
 }
 
 class _BadgeSpec {
@@ -86,12 +106,18 @@ class _Pill extends StatelessWidget {
     final (bg, fg) = _colors(spec.style);
     return Container(
       height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: fg.withValues(alpha: 0.08)),
+      ),
       alignment: Alignment.center,
       child: Text(
         spec.label,
-        style: AppText.body(10, weight: FontWeight.w700, color: fg),
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: AppText.body(9, weight: FontWeight.w800, color: fg),
       ),
     );
   }
@@ -113,9 +139,15 @@ class _Pill extends StatelessWidget {
       case _BadgeStyle.newcomer:
         return (const Color(0xFFECFCCB), const Color(0xFF4D7C0F)); // lime
       case _BadgeStyle.weeklyCount:
-        return (const Color(0xFFFEF9C3), const Color(0xFF854D0E)); // soft yellow
+        return (
+          const Color(0xFFFEF9C3),
+          const Color(0xFF854D0E),
+        ); // soft yellow
       case _BadgeStyle.monthlyCount:
-        return (const Color(0xFFFAE8FF), const Color(0xFF86198F)); // soft purple
+        return (
+          const Color(0xFFFAE8FF),
+          const Color(0xFF86198F),
+        ); // soft purple
     }
   }
 }

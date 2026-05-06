@@ -737,11 +737,22 @@ class HomeScreen extends ConsumerWidget {
       final targetDate = _dateKeyFrom(
         event['eventDate'] ?? event['date'] ?? event['targetDate'],
       );
-      final poll = _matchingPoll(
-        polls,
-        targetDate: targetDate,
-        title: event['title']?.toString(),
-      );
+      final directPollId = event['pollId']?.toString();
+      final poll = directPollId == null || directPollId.isEmpty
+          ? _matchingPoll(
+              polls,
+              targetDate: targetDate,
+              title: event['title']?.toString(),
+            )
+          : polls.cast<Map<String, dynamic>?>().firstWhere(
+                  (poll) => poll?['id']?.toString() == directPollId,
+                  orElse: () => null,
+                ) ??
+                _matchingPoll(
+                  polls,
+                  targetDate: targetDate,
+                  title: event['title']?.toString(),
+                );
       items.add(_WeeklyScheduleItem.fromEvent(event, poll: poll));
     }
     return items;
@@ -939,7 +950,7 @@ class _WeeklyScheduleItem {
           : _formatShortTime(date),
       locationText: _eventLocation(event),
       targetDate: date?.toIso8601String().split('T').first,
-      pollId: poll?['id']?.toString(),
+      pollId: poll?['id']?.toString() ?? event['pollId']?.toString(),
       seatingChartId: event['seatingChartId']?.toString(),
       needsAttendance:
           HomeScreen._scheduleNeedsAttendance(event) || poll != null,

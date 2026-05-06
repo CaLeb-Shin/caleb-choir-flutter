@@ -763,23 +763,31 @@ class _CommentTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
-                  runSpacing: 2,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      comment['userName'] ?? '',
-                      style: AppText.body(13, weight: FontWeight.w700),
+                    Flexible(
+                      child: Text(
+                        comment['userName'] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(13, weight: FontWeight.w800),
+                      ),
                     ),
-                    UserBadges(userId: comment['userId'] as String?, max: 2),
-                    Text(
-                      _PostHeader._timeAgo(comment['createdAt']),
-                      style: AppText.body(11, color: AppColors.muted),
+                    const SizedBox(width: 6),
+                    UserBadges(
+                      userId: comment['userId'] as String?,
+                      height: 16,
+                      max: 2,
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
+                Text(
+                  _PostHeader._timeAgo(comment['createdAt']),
+                  style: AppText.body(11, color: AppColors.muted),
+                ),
+                const SizedBox(height: 3),
                 Text(
                   comment['content'] ?? '',
                   style: AppText.body(13, height: 1.5),
