@@ -194,7 +194,6 @@ class CommunityScreen extends ConsumerWidget {
                                     postId,
                                     type,
                                   );
-                                  ref.invalidate(postsProvider);
                                 },
                                 onTap: () => Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -689,6 +688,20 @@ class _FeedReactionStrip extends StatefulWidget {
 class _FeedReactionStripState extends State<_FeedReactionStrip> {
   Map<String, dynamic>? _optimisticReactionState;
 
+  @override
+  void didUpdateWidget(covariant _FeedReactionStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final optimisticReactionState = _optimisticReactionState;
+    if (optimisticReactionState != null &&
+        reactionStateMatches(
+          optimisticReactionState,
+          widget.reactions,
+          widget.myUid,
+        )) {
+      _optimisticReactionState = null;
+    }
+  }
+
   Future<void> _handleReaction(
     String type,
     Map<String, dynamic> currentReactions,
@@ -704,9 +717,6 @@ class _FeedReactionStripState extends State<_FeedReactionStrip> {
     });
     try {
       await widget.onReaction(type);
-      Future<void>.delayed(const Duration(milliseconds: 350), () {
-        if (mounted) setState(() => _optimisticReactionState = null);
-      });
     } catch (_) {
       if (mounted) setState(() => _optimisticReactionState = null);
     }

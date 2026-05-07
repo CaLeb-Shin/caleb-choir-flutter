@@ -66,6 +66,20 @@ Map<String, dynamic> toggledReactionState(
   return {'reactionCounts': counts, 'myReaction': nextType};
 }
 
+bool reactionStateMatches(
+  Map<String, dynamic> a,
+  Map<String, dynamic> b,
+  String? uid,
+) {
+  if (myReactionType(a, uid) != myReactionType(b, uid)) return false;
+  final aCounts = reactionCounts(a);
+  final bCounts = reactionCounts(b);
+  for (final type in reactionMeta.keys) {
+    if ((aCounts[type] ?? 0) != (bCounts[type] ?? 0)) return false;
+  }
+  return true;
+}
+
 class PostDetailScreen extends ConsumerStatefulWidget {
   final String postId;
   const PostDetailScreen({super.key, required this.postId});
@@ -100,11 +114,6 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
     });
     try {
       await FirebaseService.toggleReaction(widget.postId, type);
-      ref.invalidate(postProvider(widget.postId));
-      ref.invalidate(postsProvider);
-      Future<void>.delayed(const Duration(milliseconds: 350), () {
-        if (mounted) setState(() => _optimisticReactionState = null);
-      });
     } catch (e) {
       if (mounted) {
         setState(() => _optimisticReactionState = null);
@@ -199,13 +208,31 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           if (post == null) return const Center(child: Text('삭제된 게시물입니다'));
           final serverReactions =
               (post['reactions'] as Map<String, dynamic>?) ?? {};
+          final serverReactionState = {
+            'reactionCounts': post['reactionCounts'],
+            'myReaction': post['myReaction'],
+            'reactions': serverReactions,
+          };
+          final optimisticReactionState = _optimisticReactionState;
           final reactionState =
-              _optimisticReactionState ??
-              {
-                'reactionCounts': post['reactionCounts'],
-                'myReaction': post['myReaction'],
-                'reactions': serverReactions,
-              };
+              optimisticReactionState != null &&
+                  !reactionStateMatches(
+                    optimisticReactionState,
+                    serverReactionState,
+                    myUid,
+                  )
+              ? optimisticReactionState
+              : serverReactionState;
+          if (optimisticReactionState != null &&
+              reactionStateMatches(
+                optimisticReactionState,
+                serverReactionState,
+                myUid,
+              )) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _optimisticReactionState = null);
+            });
+          }
           final imageUrl = _postImageUrl(post);
           final mediaType = (post['mediaType'] as String?) ?? 'photo';
           final videoUrl = _postVideoUrl(post);
