@@ -99,6 +99,7 @@ class AttendanceScreen extends ConsumerWidget {
                     context,
                   ).showSnackBar(SnackBar(content: Text('투표 실패: $e')));
                 }
+                rethrow;
               }
             },
           ),
@@ -901,7 +902,7 @@ class _ActiveAttendanceCard extends StatelessWidget {
   }
 }
 
-class _InlinePollCard extends ConsumerWidget {
+class _InlinePollCard extends ConsumerStatefulWidget {
   final Map<String, dynamic> poll;
   final User? profile;
   final bool highlighted;
@@ -915,17 +916,35 @@ class _InlinePollCard extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_InlinePollCard> createState() => _InlinePollCardState();
+}
+
+class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
+  String? _pendingChoice;
+  String? _optimisticChoice;
+
+  @override
+  Widget build(BuildContext context) {
+    final poll = widget.poll;
     final pollId = poll['id']?.toString() ?? '';
     final votes = ref.watch(pollVotesProvider(pollId)).valueOrNull ?? [];
     final members = ref.watch(membersProvider).valueOrNull ?? [];
-    final attend = votes.where((vote) => vote['choice'] == 'attend').length;
-    final absent = votes.where((vote) => vote['choice'] == 'absent').length;
-    final voted = attend + absent;
     final myVote = votes
-        .where((vote) => vote['userId'] == profile?.id)
+        .where((vote) => vote['userId'] == widget.profile?.id)
         .firstOrNull;
     final myChoice = myVote?['choice']?.toString();
+    final effectiveChoice = _optimisticChoice ?? myChoice;
+    var attend = votes.where((vote) => vote['choice'] == 'attend').length;
+    var absent = votes.where((vote) => vote['choice'] == 'absent').length;
+    if (_optimisticChoice != null && _optimisticChoice != myChoice) {
+      if (myChoice == 'attend') attend--;
+      if (myChoice == 'absent') absent--;
+      if (_optimisticChoice == 'attend') attend++;
+      if (_optimisticChoice == 'absent') absent++;
+      attend = attend < 0 ? 0 : attend;
+      absent = absent < 0 ? 0 : absent;
+    }
+    final voted = attend + absent;
     final scopePart = poll['scopePart']?.toString();
     final scopeLabel = scopePart == null
         ? '전체'
@@ -941,10 +960,10 @@ class _InlinePollCard extends ConsumerWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: highlighted ? AppColors.secondarySoft : AppColors.card,
+        color: widget.highlighted ? AppColors.secondarySoft : AppColors.card,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: highlighted
+          color: widget.highlighted
               ? AppColors.secondaryContainer.withValues(alpha: 0.8)
               : AppColors.border.withValues(alpha: 0.35),
         ),
@@ -979,9 +998,9 @@ class _InlinePollCard extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              if (myChoice != null)
+              if (effectiveChoice != null)
                 Text(
-                  myChoice == 'attend' ? '내 투표: 참석' : '내 투표: 불참',
+                  effectiveChoice == 'attend' ? '내 투표: 참석' : '내 투표: 불참',
                   style: AppText.body(
                     12,
                     weight: FontWeight.w900,
@@ -1005,7 +1024,8 @@ class _InlinePollCard extends ConsumerWidget {
                   label: '참석',
                   count: attend,
                   choice: 'attend',
-                  selected: myChoice == 'attend',
+                  selected: effectiveChoice == 'attend',
+                  pending: _pendingChoice == 'attend',
                   color: AppColors.success,
                 ),
               ),
@@ -1015,7 +1035,8 @@ class _InlinePollCard extends ConsumerWidget {
                   label: '불참',
                   count: absent,
                   choice: 'absent',
-                  selected: myChoice == 'absent',
+                  selected: effectiveChoice == 'absent',
+                  pending: _pendingChoice == 'absent',
                   color: AppColors.error,
                 ),
               ),
@@ -1032,7 +1053,7 @@ class _InlinePollCard extends ConsumerWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            myChoice == null
+            effectiveChoice == null
                 ? '$voted명 투표 · $notVoted명 미투표 · 내 투표: 아직 미투표'
                 : '$voted명 투표 · $notVoted명 미투표',
             style: AppText.body(11, color: AppColors.muted),
@@ -1047,6 +1068,7 @@ class _InlinePollCard extends ConsumerWidget {
     String? scopePart,
     int votedCount,
   ) {
+    final poll = widget.poll;
     final explicit = _intValue(
       poll['eligibleCount'] ??
           poll['targetCount'] ??
@@ -1130,6 +1152,7 @@ class _InlinePollCard extends ConsumerWidget {
     required int count,
     required String choice,
     required bool selected,
+    required bool pending,
     required Color color,
   }) {
     final foreground = selected ? Colors.white : color;
@@ -1138,7 +1161,7 @@ class _InlinePollCard extends ConsumerWidget {
         : color.withValues(alpha: 0.68);
 
     return ElevatedButton(
-      onPressed: () => onVote(poll['id'].toString(), choice),
+      onPressed: _pendingChoice == null ? () => _handleVote(choice) : null,
       style: ElevatedButton.styleFrom(
         backgroundColor: selected ? color : Colors.white,
         foregroundColor: foreground,
@@ -1152,7 +1175,23 @@ class _InlinePollCard extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: AppText.body(14, weight: FontWeight.w900)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (pending) ...[
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: foreground,
+                  ),
+                ),
+                const SizedBox(width: 5),
+              ],
+              Text(label, style: AppText.body(14, weight: FontWeight.w900)),
+            ],
+          ),
           const SizedBox(height: 2),
           Text(
             '$count명',
@@ -1161,6 +1200,25 @@ class _InlinePollCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _handleVote(String choice) async {
+    final pollId = widget.poll['id']?.toString();
+    if (pollId == null || pollId.isEmpty || _pendingChoice != null) return;
+    setState(() {
+      _pendingChoice = choice;
+      _optimisticChoice = choice;
+    });
+    try {
+      await widget.onVote(pollId, choice);
+      if (mounted) setState(() => _pendingChoice = null);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pendingChoice = null;
+        _optimisticChoice = null;
+      });
+    }
   }
 }
 
