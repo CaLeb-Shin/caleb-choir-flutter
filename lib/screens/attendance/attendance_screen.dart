@@ -84,15 +84,6 @@ class AttendanceScreen extends ConsumerWidget {
                 await FirebaseService.vote(pollId, choice);
                 ref.invalidate(pollsProvider);
                 ref.invalidate(pollVotesProvider(pollId));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        choice == 'attend' ? '참석으로 투표했습니다' : '불참으로 투표했습니다',
-                      ),
-                    ),
-                  );
-                }
               } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(
@@ -1025,7 +1016,6 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                   count: attend,
                   choice: 'attend',
                   selected: effectiveChoice == 'attend',
-                  pending: _pendingChoice == 'attend',
                   color: AppColors.success,
                 ),
               ),
@@ -1036,7 +1026,6 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                   count: absent,
                   choice: 'absent',
                   selected: effectiveChoice == 'absent',
-                  pending: _pendingChoice == 'absent',
                   color: AppColors.error,
                 ),
               ),
@@ -1152,7 +1141,6 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
     required int count,
     required String choice,
     required bool selected,
-    required bool pending,
     required Color color,
   }) {
     final foreground = selected ? Colors.white : color;
@@ -1161,7 +1149,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
         : color.withValues(alpha: 0.68);
 
     return ElevatedButton(
-      onPressed: _pendingChoice == null ? () => _handleVote(choice) : null,
+      onPressed: () => _handleVote(choice),
       style: ElevatedButton.styleFrom(
         backgroundColor: selected ? color : Colors.white,
         foregroundColor: foreground,
@@ -1175,23 +1163,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (pending) ...[
-                SizedBox(
-                  width: 12,
-                  height: 12,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: foreground,
-                  ),
-                ),
-                const SizedBox(width: 5),
-              ],
-              Text(label, style: AppText.body(14, weight: FontWeight.w900)),
-            ],
-          ),
+          Text(label, style: AppText.body(14, weight: FontWeight.w900)),
           const SizedBox(height: 2),
           Text(
             '$count명',
