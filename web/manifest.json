@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#000E24",
     "theme_color": "#000E24",
-    "description": "Church Choir Note",
+    "description": "교회찬양대의 모든 것! 일정,출석,배치도,악보 관리까지 한번에!",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
