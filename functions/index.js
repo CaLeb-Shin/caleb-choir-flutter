@@ -18,6 +18,129 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const NAVER_CLIENT_ID = defineSecret("NAVER_CLIENT_ID");
 const NAVER_CLIENT_SECRET = defineSecret("NAVER_CLIENT_SECRET");
 const KAKAO_REST_API_KEY = "1f9fa5991d000ee260fa27298f20ad8d";
+const BOOTSTRAP_ADMIN_EMAIL = "sinbun001@gmail.com";
+
+const isChurchAdmin = async (scanner, churchId, authToken = {}) => {
+  if (!scanner || !churchId) return false;
+  if (scanner.isPlatformAdmin === true) return true;
+  if ((authToken.email || "").toLowerCase() === BOOTSTRAP_ADMIN_EMAIL) {
+    return true;
+  }
+  if (
+    scanner.churchId === churchId &&
+    ["admin", "church_admin"].includes(scanner.role)
+  ) {
+    return true;
+  }
+
+  const churchDoc = await admin.firestore().collection("churches").doc(churchId).get();
+  const adminUids = churchDoc.exists ? churchDoc.data()?.adminUids || [] : [];
+  return adminUids.includes(scanner.uid);
+};
+
+const canScanAttendance = async ({ scanner, targetUser, churchId, authToken }) => {
+  if (await isChurchAdmin(scanner, churchId, authToken)) {
+    return true;
+  }
+
+  if (scanner?.role !== "part_leader") {
+    return false;
+  }
+
+  const scannerPart = scanner.partLeaderFor || scanner.part || null;
+  return Boolean(scannerPart && targetUser?.part === scannerPart);
+};
+
+const authorFields = (userData = {}) => ({
+  userName: userData.name || "",
+  userPart: userData.part || "",
+  userGeneration: userData.generation || "",
+  userImageUrl: userData.profileImageUrl || userData.imageUrl || null,
+});
+
+exports.scanAttendanceQr = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  }
+
+  const { churchId, sessionId, userId, scannerMode } = request.data || {};
+  if (!churchId || !sessionId || !userId) {
+    throw new HttpsError("invalid-argument", "출석 QR 정보가 올바르지 않습니다.");
+  }
+
+  const db = admin.firestore();
+  const scannerUid = request.auth.uid;
+  const scannerRef = db.collection("users").doc(scannerUid);
+  const targetRef = db.collection("users").doc(String(userId));
+  const sessionRef = db.collection("attendance_sessions").doc(String(sessionId));
+
+  const [scannerDoc, targetDoc, sessionDoc] = await Promise.all([
+    scannerRef.get(),
+    targetRef.get(),
+    sessionRef.get(),
+  ]);
+
+  if (!scannerDoc.exists) {
+    throw new HttpsError("permission-denied", "승인된 프로필을 찾을 수 없습니다.");
+  }
+  if (!targetDoc.exists) {
+    throw new HttpsError("not-found", "해당 단원을 찾을 수 없습니다.");
+  }
+  if (!sessionDoc.exists) {
+    throw new HttpsError("not-found", "출석 세션을 찾을 수 없습니다.");
+  }
+
+  const scanner = { uid: scannerUid, ...scannerDoc.data() };
+  const targetUser = targetDoc.data() || {};
+  const session = sessionDoc.data() || {};
+
+  if (
+    scanner.churchId !== churchId ||
+    targetUser.churchId !== churchId ||
+    session.churchId !== churchId
+  ) {
+    throw new HttpsError("permission-denied", "다른 교회 출석 QR입니다.");
+  }
+  if (session.isOpen !== true) {
+    throw new HttpsError("failed-precondition", "마감된 출석 세션입니다.");
+  }
+
+  const permitted = await canScanAttendance({
+    scanner,
+    targetUser,
+    churchId,
+    authToken: request.auth.token,
+  });
+  if (!permitted) {
+    throw new HttpsError("permission-denied", "이 단원을 출석 처리할 권한이 없습니다.");
+  }
+
+  const attendanceRef = db.collection("attendance").doc(`${sessionId}_${userId}`);
+  const result = await db.runTransaction(async (transaction) => {
+    const existing = await transaction.get(attendanceRef);
+    if (existing.exists) {
+      return { alreadyCheckedIn: true };
+    }
+
+    transaction.set(attendanceRef, {
+      churchId,
+      userId: String(userId),
+      sessionId: String(sessionId),
+      ...authorFields(targetUser),
+      checkedInAt: admin.firestore.FieldValue.serverTimestamp(),
+      checkedInBy: scannerUid,
+      scannerMode:
+        scannerMode ||
+        (scanner.role === "part_leader" ? "mobile_part_leader" : "mobile_admin"),
+    });
+    return { alreadyCheckedIn: false };
+  });
+
+  return {
+    ...result,
+    userName: targetUser.name || "",
+  };
+});
 
 /**
  * 카카오 액세스 토큰 또는 웹 authorization code를 검증하고 Firebase Custom Token을 생성한다.

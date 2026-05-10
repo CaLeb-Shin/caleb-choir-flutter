@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
@@ -9,6 +10,7 @@ typedef UploadProgress = void Function(double progress);
 class FirebaseService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static final fb.FirebaseAuth _auth = fb.FirebaseAuth.instance;
+  static final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   /// 자동 관리자 이메일 화이트리스트
   static const adminEmails = {'sinbun001@gmail.com'};
@@ -1023,35 +1025,39 @@ class FirebaseService {
       throw Exception('출석 세션 정보가 올바르지 않습니다');
     }
 
-    final userDoc = await _db.collection('users').doc(userId).get();
-    if (!userDoc.exists) throw Exception('해당 단원을 찾을 수 없습니다');
-    final userData = userDoc.data() ?? {};
-    if (userData['churchId'] != churchId) {
-      throw Exception('다른 교회 단원 QR입니다');
-    }
-    if (allowedPart != null && userData['part'] != allowedPart) {
-      throw Exception('담당 파트 단원만 출석 처리할 수 있습니다');
-    }
+    try {
+      final callable = _functions.httpsCallable('scanAttendanceQr');
+      final payload = <String, dynamic>{
+        'churchId': churchId,
+        'sessionId': sessionId,
+        'userId': userId,
+        'scannerMode': scannerMode,
+      };
+      if (allowedPart != null) payload['allowedPart'] = allowedPart;
 
-    final attendanceRef = _db
-        .collection('attendance')
-        .doc('${sessionId}_$userId');
-    final existing = await attendanceRef.get();
-    if (existing.exists) {
-      return {'alreadyCheckedIn': true, 'userName': userData['name'] ?? ''};
+      final response = await callable.call<Map<String, dynamic>>(payload);
+      return Map<String, dynamic>.from(response.data);
+    } on FirebaseFunctionsException catch (e) {
+      throw Exception(_attendanceScanErrorMessage(e));
     }
+  }
 
-    await attendanceRef.set({
-      'churchId': churchId,
-      'userId': userId,
-      'sessionId': sessionId,
-      ..._authorFields({'userId': userId}, userData),
-      'checkedInAt': FieldValue.serverTimestamp(),
-      'checkedInBy': uid,
-      'scannerMode': scannerMode,
-    });
+  static String _attendanceScanErrorMessage(FirebaseFunctionsException e) {
+    final message = e.message?.trim();
+    if (message != null && message.isNotEmpty) return message;
 
-    return {'alreadyCheckedIn': false, 'userName': userData['name'] ?? ''};
+    switch (e.code) {
+      case 'permission-denied':
+        return '이 단원을 출석 처리할 권한이 없습니다';
+      case 'not-found':
+        return '출석 QR 정보를 찾을 수 없습니다';
+      case 'failed-precondition':
+        return '마감된 출석 세션입니다';
+      case 'unauthenticated':
+        return '로그인이 필요합니다';
+      default:
+        return '출석 처리 중 오류가 발생했습니다';
+    }
   }
 
   // ============ Polls (참석 투표) ============

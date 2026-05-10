@@ -36,7 +36,8 @@ class AttendanceScreen extends ConsumerWidget {
         ((profile?.isAdmin ?? false) || (profile?.isOfficer ?? false)) &&
         !viewAsMember;
     final canScanAttendance =
-        (profile?.hasManagePermission ?? false) && !viewAsMember;
+        ((profile?.isAdmin ?? false) || (profile?.isPartLeader ?? false)) &&
+        !viewAsMember;
     final scannerPart = profile?.isPartLeader == true
         ? profile?.partLeaderFor
         : null;
@@ -269,7 +270,9 @@ class AttendanceScreen extends ConsumerWidget {
                                                 context,
                                               ).showSnackBar(
                                                 SnackBar(
-                                                  content: Text('출석 실패: $e'),
+                                                  content: Text(
+                                                    '출석 실패: ${_cleanErrorMessage(e)}',
+                                                  ),
                                                 ),
                                               );
                                             }
@@ -1200,4 +1203,11 @@ class _AttendanceQr {
   final String? userId;
 
   const _AttendanceQr({this.churchId, this.sessionId, this.userId});
+}
+
+String _cleanErrorMessage(Object error) {
+  final text = error.toString().trim();
+  const prefix = 'Exception: ';
+  if (text.startsWith(prefix)) return text.substring(prefix.length);
+  return text;
 }
