@@ -521,14 +521,15 @@ class _PartResourceRow extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            constraints: const BoxConstraints(minWidth: 68),
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            constraints: const BoxConstraints(minWidth: 58),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
             decoration: BoxDecoration(
               color: tone.accent.withValues(alpha: 0.11),
               borderRadius: BorderRadius.circular(999),
             ),
             child: Text(
               partLabel,
+              textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppText.body(
