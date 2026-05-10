@@ -342,7 +342,7 @@ class HomeScreen extends ConsumerWidget {
                               context,
                               '영상',
                               const VideosScreen(),
-                              navIndex: 2,
+                              navIndex: 0,
                             ),
                           ),
                         ),
@@ -662,8 +662,12 @@ class HomeScreen extends ConsumerWidget {
         icon: Icons.play_circle_rounded,
         label: '영상',
         hasNew: hasNewVideos,
-        onTap: () =>
-            _openSection(context, '영상', const VideosScreen(), navIndex: 2),
+        onTap: () => _openSection(
+          context,
+          '영상',
+          const VideosScreen(),
+          navIndex: 0,
+        ),
       ),
       MiniActionTile(
         icon: Icons.campaign_rounded,

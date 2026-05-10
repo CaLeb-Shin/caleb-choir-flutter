@@ -16,7 +16,7 @@ class AppBottomNavBar extends ConsumerWidget {
   static const _items = [
     (_NavGlyph.home, '홈'),
     (_NavGlyph.score, '악보&음원'),
-    (_NavGlyph.video, '영상'),
+    (_NavGlyph.store, '스토어'),
     (_NavGlyph.attendance, '출석&투표'),
     (_NavGlyph.community, '소통'),
     (_NavGlyph.profile, '마이'),
@@ -164,7 +164,7 @@ class AppBottomNavBar extends ConsumerWidget {
   }
 }
 
-enum _NavGlyph { home, score, video, attendance, community, profile }
+enum _NavGlyph { home, score, store, attendance, community, profile }
 
 class _CalebNavGlyph extends StatelessWidget {
   final _NavGlyph glyph;
@@ -256,15 +256,18 @@ class _CalebNavGlyphPainter extends CustomPainter {
           stroke,
         );
         canvas.drawCircle(p(0.77, 0.70), w * 0.055, accent);
-      case _NavGlyph.video:
-        canvas.drawCircle(p(0.50, 0.50), w * 0.34, stroke);
-        final play = Path()
-          ..moveTo(w * 0.44, h * 0.36)
-          ..lineTo(w * 0.44, h * 0.64)
-          ..lineTo(w * 0.66, h * 0.50)
-          ..close();
-        canvas.drawPath(play, fill);
-        canvas.drawCircle(p(0.70, 0.72), w * 0.045, accent);
+      case _NavGlyph.store:
+        final bag = RRect.fromRectAndRadius(
+          Rect.fromLTWH(w * 0.22, h * 0.35, w * 0.56, h * 0.46),
+          Radius.circular(w * 0.11),
+        );
+        canvas.drawRRect(bag, stroke);
+        final handle = Path()
+          ..moveTo(w * 0.36, h * 0.38)
+          ..cubicTo(w * 0.37, h * 0.20, w * 0.63, h * 0.20, w * 0.64, h * 0.38);
+        canvas.drawPath(handle, stroke);
+        canvas.drawLine(p(0.34, 0.53), p(0.66, 0.53), stroke);
+        canvas.drawCircle(p(0.70, 0.70), w * 0.045, accent);
       case _NavGlyph.attendance:
         final rect = RRect.fromRectAndRadius(
           Rect.fromLTWH(w * 0.18, h * 0.24, w * 0.64, h * 0.58),

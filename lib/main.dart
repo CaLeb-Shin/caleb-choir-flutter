@@ -14,11 +14,11 @@ import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/approval/pending_approval_screen.dart';
 import 'screens/approval/rejected_screen.dart';
 import 'screens/home/home_screen.dart';
-import 'screens/videos/videos_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
 import 'screens/community/community_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
+import 'screens/store/store_screen.dart';
 import 'widgets/app_bottom_nav_bar.dart';
 import 'widgets/app_logo_title.dart';
 
@@ -166,13 +166,13 @@ class _MainShellState extends ConsumerState<MainShell> {
   final _screens = const [
     HomeScreen(),
     SheetMusicScreen(),
-    VideosScreen(),
+    StoreScreen(),
     AttendanceScreen(),
     CommunityScreen(),
     ProfileScreen(),
   ];
 
-  static const _titles = ['홈', '악보&음원', '영상', '출석&투표', '소통', '마이'];
+  static const _titles = ['홈', '악보&음원', '스토어', '출석&투표', '소통', '마이'];
 
   @override
   Widget build(BuildContext context) {

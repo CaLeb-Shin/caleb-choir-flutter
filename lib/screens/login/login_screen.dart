@@ -285,7 +285,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (kIsWeb) {
         await _applyAuthPersistence();
         final provider = _googleProvider();
-        await FirebaseAuth.instance.signInWithRedirect(provider);
+        final result = await FirebaseAuth.instance.signInWithPopup(provider);
+        if (result.user != null) {
+          await _afterSuccessfulSignIn('google');
+        }
         return;
       } else {
         final googleUser = await GoogleSignIn().signIn();
@@ -387,6 +390,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
     if (e.code == 'popup-closed-by-user') {
       return 'Google 로그인 창이 닫혔습니다.\n다시 시도해주세요.';
+    }
+    if (e.code == 'popup-blocked') {
+      return '브라우저가 Google 로그인 창을 차단했습니다.\n팝업 허용 후 다시 시도해주세요.';
+    }
+    if (e.code == 'operation-not-allowed') {
+      return 'Firebase에서 Google 로그인이 아직 활성화되지 않았습니다.\nAuthentication > Sign-in method에서 Google을 켜주세요.';
     }
     return 'Google 로그인에 실패했습니다.\n다시 시도해주세요.';
   }
