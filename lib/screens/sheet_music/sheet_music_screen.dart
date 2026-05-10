@@ -46,7 +46,8 @@ class SheetMusicScreen extends ConsumerWidget {
                 child: CircularProgressIndicator(),
               ),
             ),
-            error: (_, __) => const Center(child: Text('악보를 불러올 수 없습니다')),
+            error: (error, stackTrace) =>
+                const Center(child: Text('악보를 불러올 수 없습니다')),
             data: (sheets) {
               if (sheets.isEmpty) {
                 return Container(
@@ -215,24 +216,17 @@ class SheetMusicScreen extends ConsumerWidget {
                             ],
                             const SizedBox(height: 14),
                             Column(
-                              children: group.items
+                              children: _resourcesForGroup(group)
                                   .map(
-                                    (sheet) => _PartResourceRow(
-                                      partLabel: _partDisplay(
-                                        sheet['sheetPart'],
-                                      ),
-                                      hasFile:
-                                          (sheet['fileUrl'] as String?)
-                                              ?.isNotEmpty ==
-                                          true,
-                                      hasAudio:
-                                          (sheet['audioUrl'] as String?)
-                                              ?.isNotEmpty ==
-                                          true,
+                                    (resource) => _PartResourceRow(
+                                      partLabel: resource.partLabel,
+                                      sheetLabel: resource.sheetLabel,
+                                      hasFile: resource.hasSheet,
+                                      hasAudio: resource.hasAudio,
                                       onOpenFile: () =>
-                                          _openUrl(sheet['fileUrl']),
+                                          _openUrl(resource.sheetUrl),
                                       onOpenAudio: () =>
-                                          _openUrl(sheet['audioUrl']),
+                                          _openUrl(resource.audioUrl),
                                     ),
                                   )
                                   .toList(),
@@ -328,6 +322,30 @@ class _SheetMusicGroup {
   });
 }
 
+class _PartResource {
+  final String partLabel;
+  final String sheetLabel;
+  final String? sheetUrl;
+  final String? audioUrl;
+
+  const _PartResource({
+    required this.partLabel,
+    required this.sheetLabel,
+    this.sheetUrl,
+    this.audioUrl,
+  });
+
+  bool get hasSheet => sheetUrl != null && sheetUrl!.isNotEmpty;
+  bool get hasAudio => audioUrl != null && audioUrl!.isNotEmpty;
+}
+
+const _choirPartOrder = [
+  {'value': 'soprano', 'label': '소프라노'},
+  {'value': 'alto', 'label': '알토'},
+  {'value': 'tenor', 'label': '테너'},
+  {'value': 'bass', 'label': '베이스'},
+];
+
 List<_SheetMusicGroup> _groupSheetMusic(List<Map<String, dynamic>> sheets) {
   final groups = <String, _SheetMusicGroup>{};
 
@@ -372,6 +390,62 @@ List<_SheetMusicGroup> _groupSheetMusic(List<Map<String, dynamic>> sheets) {
   return list;
 }
 
+List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
+  final main = group.items.firstWhere(
+    (sheet) => (sheet['sheetPart']?.toString() ?? 'all') == 'all',
+    orElse: () => group.items.first,
+  );
+  final mainSheetUrl = _stringValue(main['fileUrl']);
+  final mainAudioUrl = _stringValue(main['audioUrl']);
+  final partFiles = _mapValue(main['partFiles']);
+  final mainIsAll = (main['sheetPart']?.toString() ?? 'all') == 'all';
+  final hasSeparatePartRows = group.items.any(
+    (sheet) => (sheet['sheetPart']?.toString() ?? 'all') != 'all',
+  );
+  final hasBundledParts = mainIsAll && !hasSeparatePartRows;
+
+  if (!hasBundledParts) {
+    return group.items.map((sheet) {
+      final part = sheet['sheetPart']?.toString() ?? 'all';
+      return _PartResource(
+        partLabel: _partDisplay(part),
+        sheetLabel: part == 'all' ? '총보 보기' : '악보 보기',
+        sheetUrl: _stringValue(sheet['fileUrl']),
+        audioUrl: _stringValue(sheet['audioUrl']),
+      );
+    }).toList();
+  }
+
+  return [
+    _PartResource(
+      partLabel: '총보 / 전체',
+      sheetLabel: '총보 보기',
+      sheetUrl: mainSheetUrl,
+      audioUrl: mainAudioUrl,
+    ),
+    ..._choirPartOrder.map((part) {
+      final files = _mapValue(partFiles[part['value']]);
+      final partSheetUrl = _stringValue(files['sheetUrl']);
+      final partAudioUrl = _stringValue(files['guideAudioUrl']);
+      final hasPartSheet = partSheetUrl.isNotEmpty;
+
+      return _PartResource(
+        partLabel: part['label']!,
+        sheetLabel: hasPartSheet ? '파트 악보' : '총보 보기',
+        sheetUrl: hasPartSheet ? partSheetUrl : mainSheetUrl,
+        audioUrl: partAudioUrl,
+      );
+    }),
+  ];
+}
+
+Map<String, dynamic> _mapValue(dynamic value) {
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return <String, dynamic>{};
+}
+
+String _stringValue(dynamic value) => value?.toString() ?? '';
+
 String _songTitle(Map<String, dynamic> sheet) {
   final songTitle = sheet['songTitle']?.toString().trim();
   if (songTitle != null && songTitle.isNotEmpty) return songTitle;
@@ -410,6 +484,7 @@ String _partDisplay(dynamic rawPart) {
 
 class _PartResourceRow extends StatelessWidget {
   final String partLabel;
+  final String sheetLabel;
   final bool hasFile;
   final bool hasAudio;
   final VoidCallback onOpenFile;
@@ -417,6 +492,7 @@ class _PartResourceRow extends StatelessWidget {
 
   const _PartResourceRow({
     required this.partLabel,
+    required this.sheetLabel,
     required this.hasFile,
     required this.hasAudio,
     required this.onOpenFile,
@@ -456,7 +532,7 @@ class _PartResourceRow extends StatelessWidget {
               children: [
                 _ResourcePill(
                   icon: Icons.description_rounded,
-                  label: hasFile ? '악보 보기' : '악보 없음',
+                  label: hasFile ? sheetLabel : '악보 없음',
                   enabled: hasFile,
                   onTap: onOpenFile,
                 ),
