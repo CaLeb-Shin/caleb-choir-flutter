@@ -219,6 +219,7 @@ class SheetMusicScreen extends ConsumerWidget {
                               children: _resourcesForGroup(group)
                                   .map(
                                     (resource) => _PartResourceRow(
+                                      partKey: resource.partKey,
                                       partLabel: resource.partLabel,
                                       sheetLabel: resource.sheetLabel,
                                       hasFile: resource.hasSheet,
@@ -323,12 +324,14 @@ class _SheetMusicGroup {
 }
 
 class _PartResource {
+  final String partKey;
   final String partLabel;
   final String sheetLabel;
   final String? sheetUrl;
   final String? audioUrl;
 
   const _PartResource({
+    required this.partKey,
     required this.partLabel,
     required this.sheetLabel,
     this.sheetUrl,
@@ -408,6 +411,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
     return group.items.map((sheet) {
       final part = sheet['sheetPart']?.toString() ?? 'all';
       return _PartResource(
+        partKey: part,
         partLabel: _partDisplay(part),
         sheetLabel: part == 'all' ? '총보 보기' : '악보 보기',
         sheetUrl: _stringValue(sheet['fileUrl']),
@@ -418,6 +422,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
 
   return [
     _PartResource(
+      partKey: 'all',
       partLabel: '총보 / 전체',
       sheetLabel: '총보 보기',
       sheetUrl: mainSheetUrl,
@@ -430,6 +435,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
       final hasPartSheet = partSheetUrl.isNotEmpty;
 
       return _PartResource(
+        partKey: part['value']!,
         partLabel: part['label']!,
         sheetLabel: hasPartSheet ? '파트 악보' : '총보 보기',
         sheetUrl: hasPartSheet ? partSheetUrl : mainSheetUrl,
@@ -483,6 +489,7 @@ String _partDisplay(dynamic rawPart) {
 }
 
 class _PartResourceRow extends StatelessWidget {
+  final String partKey;
   final String partLabel;
   final String sheetLabel;
   final bool hasFile;
@@ -491,6 +498,7 @@ class _PartResourceRow extends StatelessWidget {
   final VoidCallback onOpenAudio;
 
   const _PartResourceRow({
+    required this.partKey,
     required this.partLabel,
     required this.sheetLabel,
     required this.hasFile,
@@ -501,26 +509,32 @@ class _PartResourceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tone = _toneForPart(partKey);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.surfaceLow,
+        color: tone.background,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border.withValues(alpha: 0.22)),
+        border: Border.all(color: tone.border),
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: 68,
+          Container(
+            constraints: const BoxConstraints(minWidth: 68),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+            decoration: BoxDecoration(
+              color: tone.accent.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(999),
+            ),
             child: Text(
               partLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppText.body(
-                13,
-                weight: FontWeight.w800,
-                color: AppColors.primary,
+                12,
+                weight: FontWeight.w900,
+                color: tone.accent,
               ),
             ),
           ),
@@ -535,12 +549,14 @@ class _PartResourceRow extends StatelessWidget {
                   label: hasFile ? sheetLabel : '악보 없음',
                   enabled: hasFile,
                   onTap: onOpenFile,
+                  accent: tone.accent,
                 ),
                 _ResourcePill(
                   icon: Icons.headphones_rounded,
                   label: hasAudio ? '음원 듣기' : '음원 없음',
                   enabled: hasAudio,
                   onTap: onOpenAudio,
+                  accent: tone.accent,
                 ),
               ],
             ),
@@ -556,18 +572,20 @@ class _ResourcePill extends StatelessWidget {
   final String label;
   final bool enabled;
   final VoidCallback onTap;
+  final Color accent;
 
   const _ResourcePill({
     required this.icon,
     required this.label,
     required this.enabled,
     required this.onTap,
+    required this.accent,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: enabled ? AppColors.primarySoft : Colors.white,
+      color: enabled ? accent.withValues(alpha: 0.09) : Colors.white,
       borderRadius: BorderRadius.circular(999),
       child: InkWell(
         onTap: enabled ? onTap : null,
@@ -577,11 +595,7 @@ class _ResourcePill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                size: 14,
-                color: enabled ? AppColors.primary : AppColors.muted,
-              ),
+              Icon(icon, size: 14, color: enabled ? accent : AppColors.muted),
               const SizedBox(width: 5),
               Text(
                 label,
@@ -596,5 +610,52 @@ class _ResourcePill extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _PartTone {
+  final Color background;
+  final Color border;
+  final Color accent;
+
+  const _PartTone({
+    required this.background,
+    required this.border,
+    required this.accent,
+  });
+}
+
+_PartTone _toneForPart(String partKey) {
+  switch (partKey) {
+    case 'soprano':
+      return const _PartTone(
+        background: Color(0xFFFFFBF1),
+        border: Color(0xFFF3DEAC),
+        accent: Color(0xFF9B6A16),
+      );
+    case 'alto':
+      return const _PartTone(
+        background: Color(0xFFF5FBF2),
+        border: Color(0xFFCDE6C5),
+        accent: Color(0xFF3F7C45),
+      );
+    case 'tenor':
+      return const _PartTone(
+        background: Color(0xFFF2F8FF),
+        border: Color(0xFFC9DDF5),
+        accent: Color(0xFF32679A),
+      );
+    case 'bass':
+      return const _PartTone(
+        background: Color(0xFFF8F5FF),
+        border: Color(0xFFD9CFF5),
+        accent: Color(0xFF6652A4),
+      );
+    default:
+      return const _PartTone(
+        background: Color(0xFFFFF8E8),
+        border: Color(0xFFECD59A),
+        accent: Color(0xFF8A661B),
+      );
   }
 }

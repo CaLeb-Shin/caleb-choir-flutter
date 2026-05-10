@@ -711,7 +711,7 @@ final pollsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       },
     ]);
   }
-  return FirebaseService.watchPolls();
+  return FirebaseService.watchPolls().map(_dedupePolls);
 });
 
 final pollVotesProvider =
@@ -738,6 +738,62 @@ final pollVotesProvider =
       }
       return FirebaseService.getPollVotes(pollId);
     });
+
+List<Map<String, dynamic>> _dedupePolls(List<Map<String, dynamic>> polls) {
+  final deduped = <String, Map<String, dynamic>>{};
+  for (final poll in polls) {
+    final key = _pollDedupeKey(poll);
+    final existing = deduped[key];
+    if (existing == null || _pollPriority(poll) > _pollPriority(existing)) {
+      deduped[key] = poll;
+    }
+  }
+  return deduped.values.toList();
+}
+
+String _pollDedupeKey(Map<String, dynamic> poll) {
+  final scope = poll['scopePart']?.toString() ?? 'all';
+  final sourceEventId =
+      poll['sourceEventId']?.toString() ?? poll['sourceScheduleId']?.toString();
+  if (sourceEventId != null && sourceEventId.isNotEmpty) {
+    return 'event:$sourceEventId:$scope';
+  }
+
+  final targetDate = _dateKey(poll['targetDate']);
+  final title = poll['title']?.toString().trim();
+  if (targetDate != null && title != null && title.isNotEmpty) {
+    return 'date:$targetDate:title:$title:scope:$scope';
+  }
+
+  return 'id:${poll['id']}';
+}
+
+int _pollPriority(Map<String, dynamic> poll) {
+  var score = 0;
+  if (poll['sourceEventId'] != null || poll['sourceScheduleId'] != null) {
+    score += 100;
+  }
+  if (poll['sourceSessionId'] != null ||
+      poll['sourceAttendanceSessionId'] != null) {
+    score += 40;
+  }
+  if (poll['source'] == 'schedule') score += 20;
+  if (poll['isOpen'] == true) score += 10;
+  return score;
+}
+
+String? _dateKey(dynamic value) {
+  if (value is Timestamp) {
+    final date = value.toDate();
+    return '${date.year.toString().padLeft(4, '0')}-'
+        '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
+  }
+  final raw = value?.toString();
+  if (raw == null || raw.isEmpty) return null;
+  if (raw.length >= 10) return raw.substring(0, 10).replaceAll('.', '-');
+  return raw.replaceAll('.', '-');
+}
 
 // ─── Seating ───
 final seatingChartsProvider = FutureProvider<List<Map<String, dynamic>>>((
