@@ -280,7 +280,12 @@ class HomeScreen extends ConsumerWidget {
                       color: AppColors.border.withValues(alpha: 0.3),
                     ),
                   ),
-                  child: _buildActionGrid(context, ref, profile.isAdmin),
+                  child: _buildActionGrid(
+                    context,
+                    ref,
+                    isAdmin: profile.isAdmin,
+                    canViewMembers: profile.hasManagePermission,
+                  ),
                 ),
                 const SizedBox(height: 10),
 
@@ -595,7 +600,12 @@ class HomeScreen extends ConsumerWidget {
     }
   }
 
-  Widget _buildActionGrid(BuildContext context, WidgetRef ref, bool isAdmin) {
+  Widget _buildActionGrid(
+    BuildContext context,
+    WidgetRef ref, {
+    required bool isAdmin,
+    required bool canViewMembers,
+  }) {
     // 관리자 pending 개수 (가입 승인 대기)
     final pendingCount = isAdmin
         ? (ref.watch(pendingUsersProvider).valueOrNull?.length ?? 0)
@@ -663,7 +673,7 @@ class HomeScreen extends ConsumerWidget {
         label: '영상',
         hasNew: hasNewVideos,
         onTap: () =>
-            _openSection(context, '영상', const VideosScreen(), navIndex: 0),
+            _openSection(context, '영상', const VideosScreen(), navIndex: 2),
       ),
       MiniActionTile(
         icon: Icons.campaign_rounded,
@@ -687,24 +697,25 @@ class HomeScreen extends ConsumerWidget {
         hasNew: hasNewEvents,
         onTap: () => _openSection(context, '일정', const EventsScreen()),
       ),
-      MiniActionTile(
-        icon: Icons.people_rounded,
-        label: '단원 명부',
-        badgeCount: pendingCount > 0 ? pendingCount : null,
-        onTap: () {
-          if (isAdmin && pendingCount > 0) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ApprovalsScreen()),
-            );
-          } else {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const MembersScreen()),
-            );
-          }
-        },
-      ),
+      if (canViewMembers)
+        MiniActionTile(
+          icon: Icons.people_rounded,
+          label: '단원 명부',
+          badgeCount: pendingCount > 0 ? pendingCount : null,
+          onTap: () {
+            if (isAdmin && pendingCount > 0) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ApprovalsScreen()),
+              );
+            } else {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MembersScreen()),
+              );
+            }
+          },
+        ),
       MiniActionTile(
         icon: Icons.storefront_rounded,
         label: '스토어',
