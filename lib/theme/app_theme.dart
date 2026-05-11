@@ -44,40 +44,59 @@ class AppColors {
 
 // ─── Typography Helpers ───
 class AppText {
-  /// Noto Serif KR — 헤드라인, 제목
+  static const _fallbackFonts = [
+    'Apple SD Gothic Neo',
+    'Noto Sans CJK KR',
+    'Noto Sans KR',
+    'Malgun Gothic',
+    'Arial',
+    'sans-serif',
+  ];
+
+  static TextStyle _inter(TextStyle style) {
+    return style.copyWith(fontFamilyFallback: _fallbackFonts);
+  }
+
+  /// Inter — 헤드라인, 제목
   static TextStyle headline(
     double size, {
     FontWeight weight = FontWeight.w700,
     Color? color,
   }) {
-    return GoogleFonts.notoSerifKr(
-      fontSize: size,
-      fontWeight: weight,
-      color: color ?? AppColors.ink,
+    return _inter(
+      GoogleFonts.inter(
+        fontSize: size,
+        fontWeight: weight,
+        color: color ?? AppColors.ink,
+      ),
     );
   }
 
-  /// Noto Sans KR — Korean-first body text
+  /// Inter — body text
   static TextStyle body(
     double size, {
     FontWeight weight = FontWeight.w400,
     Color? color,
     double? height,
   }) {
-    return GoogleFonts.notoSansKr(
-      fontSize: size,
-      fontWeight: weight,
-      color: color ?? AppColors.ink,
-      height: height,
+    return _inter(
+      GoogleFonts.inter(
+        fontSize: size,
+        fontWeight: weight,
+        color: color ?? AppColors.ink,
+        height: height,
+      ),
     );
   }
 
   /// 라벨 — 대문자 트래킹
   static TextStyle label({Color? color}) {
-    return GoogleFonts.notoSansKr(
-      fontSize: 11,
-      fontWeight: FontWeight.w700,
-      color: color ?? AppColors.secondary,
+    return _inter(
+      GoogleFonts.inter(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: color ?? AppColors.secondary,
+      ),
     );
   }
 }
@@ -85,11 +104,17 @@ class AppText {
 // ─── Theme ───
 class AppTheme {
   static ThemeData get light {
-    final textTheme = GoogleFonts.notoSansKrTextTheme();
+    final textTheme = GoogleFonts.interTextTheme().apply(
+      bodyColor: AppColors.ink,
+      displayColor: AppColors.ink,
+      fontFamilyFallback: AppText._fallbackFonts,
+    );
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: GoogleFonts.inter().fontFamily,
+      fontFamilyFallback: AppText._fallbackFonts,
       textTheme: textTheme,
       colorScheme: ColorScheme.fromSeed(
         seedColor: AppColors.primary,
@@ -105,10 +130,10 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.notoSansKr(
+        titleTextStyle: AppText.body(
+          20,
+          weight: FontWeight.w700,
           color: AppColors.ink,
-          fontSize: 20,
-          fontWeight: FontWeight.w700,
         ),
       ),
       cardTheme: CardThemeData(
@@ -128,10 +153,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: GoogleFonts.notoSansKr(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: AppText.body(15, weight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -142,18 +164,16 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          textStyle: GoogleFonts.notoSansKr(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
+          textStyle: AppText.body(15, weight: FontWeight.w600),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.card,
-        hintStyle: GoogleFonts.notoSansKr(
+        hintStyle: AppText.body(
+          14,
           color: AppColors.muted,
-          fontWeight: FontWeight.w400,
+          weight: FontWeight.w400,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

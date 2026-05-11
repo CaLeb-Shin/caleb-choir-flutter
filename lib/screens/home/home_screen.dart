@@ -662,12 +662,8 @@ class HomeScreen extends ConsumerWidget {
         icon: Icons.play_circle_rounded,
         label: '영상',
         hasNew: hasNewVideos,
-        onTap: () => _openSection(
-          context,
-          '영상',
-          const VideosScreen(),
-          navIndex: 0,
-        ),
+        onTap: () =>
+            _openSection(context, '영상', const VideosScreen(), navIndex: 0),
       ),
       MiniActionTile(
         icon: Icons.campaign_rounded,
@@ -707,6 +703,16 @@ class HomeScreen extends ConsumerWidget {
               MaterialPageRoute(builder: (_) => const MembersScreen()),
             );
           }
+        },
+      ),
+      MiniActionTile(
+        icon: Icons.storefront_rounded,
+        label: '스토어',
+        tone: 'secondary',
+        onTap: () {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('스토어 준비중!')));
         },
       ),
     ];

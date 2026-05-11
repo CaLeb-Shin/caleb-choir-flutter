@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.calebchoir" "\0"
-            VALUE "FileDescription", "caleb_choir" "\0"
+            VALUE "FileDescription", "C.C Note" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "caleb_choir" "\0"
+            VALUE "InternalName", "C.C Note" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.calebchoir. All rights reserved." "\0"
             VALUE "OriginalFilename", "caleb_choir.exe" "\0"
-            VALUE "ProductName", "caleb_choir" "\0"
+            VALUE "ProductName", "C.C Note" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

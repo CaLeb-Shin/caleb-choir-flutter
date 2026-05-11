@@ -25,6 +25,9 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  static const _webGoogleClientId =
+      '714127777029-h8h9er18rk9cfh0bid8cfalpnddhis9b.apps.googleusercontent.com';
+
   String? _error;
   bool _loading = false;
   String? _loadingProvider;
@@ -36,9 +39,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1';
   }
 
-  GoogleAuthProvider _googleProvider() {
-    return GoogleAuthProvider()
-      ..setCustomParameters({'prompt': 'select_account'});
+  GoogleSignIn _googleSignIn() {
+    return GoogleSignIn(clientId: kIsWeb ? _webGoogleClientId : null);
   }
 
   @override
@@ -282,31 +284,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _loadingProvider = 'google';
     });
     try {
-      if (kIsWeb) {
-        await _applyAuthPersistence();
-        final provider = _googleProvider();
-        final result = await FirebaseAuth.instance.signInWithPopup(provider);
-        if (result.user != null) {
-          await _afterSuccessfulSignIn('google');
-        }
+      await _applyAuthPersistence();
+      final googleUser = await _googleSignIn().signIn();
+      if (googleUser == null) {
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
         return;
-      } else {
-        final googleUser = await GoogleSignIn().signIn();
-        if (googleUser == null) {
-          setState(() {
-            _loading = false;
-            _loadingProvider = null;
-          });
-          return;
-        }
-        final googleAuth = await googleUser.authentication;
-        final credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-        await FirebaseAuth.instance.signInWithCredential(credential);
-        await _afterSuccessfulSignIn('google');
       }
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      await FirebaseAuth.instance.signInWithCredential(credential);
+      await _afterSuccessfulSignIn('google');
     } on FirebaseAuthException catch (e) {
       debugPrint('Google sign-in error: $e');
       setState(() => _error = _googleErrorMessage(e));
