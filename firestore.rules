@@ -45,11 +45,15 @@ service cloud.firestore {
     }
     function canUseHarmonyPart(cid, part) {
       return part != null
-        && sameChurch(cid)
         && (
           isChurchAdminOf(cid) ||
-          myData().get('part', '') == part ||
-          myData().get('partLeaderFor', '') == part
+          (
+            sameChurch(cid) &&
+            (
+              myData().get('part', '') == part ||
+              myData().get('partLeaderFor', '') == part
+            )
+          )
         );
     }
     function postChurchId(postId) {
