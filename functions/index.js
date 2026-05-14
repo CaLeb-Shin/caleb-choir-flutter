@@ -315,21 +315,29 @@ exports.sendPushNotification = onDocumentCreated("notifications/{notificationId}
   const data = event.data?.data();
   if (!data) return;
 
-  const { title, body, churchId } = data;
+  const { title, body, churchId, toUserId } = data;
 
   if (!churchId) {
     console.warn("Notification skipped: missing churchId");
     return;
   }
 
-  // 같은 교회 FCM 토큰만 조회
-  const usersSnapshot = await admin
-    .firestore()
-    .collection("users")
-    .where("churchId", "==", churchId)
-    .get();
+  let userDocs = [];
+  if (toUserId) {
+    const userDoc = await admin.firestore().collection("users").doc(String(toUserId)).get();
+    if (userDoc.exists && userDoc.data()?.churchId === churchId) {
+      userDocs = [userDoc];
+    }
+  } else {
+    const usersSnapshot = await admin
+      .firestore()
+      .collection("users")
+      .where("churchId", "==", churchId)
+      .get();
+    userDocs = usersSnapshot.docs;
+  }
   const tokens = [];
-  usersSnapshot.docs.forEach((doc) => {
+  userDocs.forEach((doc) => {
     const user = doc.data();
     const token = user.fcmToken;
     if (token) tokens.push(token);

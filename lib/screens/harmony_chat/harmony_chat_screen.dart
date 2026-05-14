@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +22,7 @@ class HarmonyChatScreen extends ConsumerWidget {
     final profile = ref.watch(profileProvider).valueOrNull;
     final notesAsync = ref.watch(harmonyNotesProvider);
     final relaysAsync = ref.watch(harmonyRelaysProvider);
+    final guideAsync = ref.watch(latestPartGuideProvider);
     final part = profile?.partLeaderFor ?? profile?.part ?? '';
     final partLabel = User.partLabels[part] ?? '내 파트';
 
@@ -47,6 +49,13 @@ class HarmonyChatScreen extends ConsumerWidget {
             style: AppText.body(14, color: AppColors.muted),
           ),
           const SizedBox(height: 20),
+          _TodayGuideCard(
+            part: part,
+            partLabel: partLabel,
+            guideAsync: guideAsync,
+            ref: ref,
+          ),
+          const SizedBox(height: 16),
           _PartRoomHeader(partLabel: partLabel),
           const SizedBox(height: 16),
           _RelaySection(
@@ -186,6 +195,157 @@ class _PartRoomHeader extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _TodayGuideCard extends StatefulWidget {
+  const _TodayGuideCard({
+    required this.part,
+    required this.partLabel,
+    required this.guideAsync,
+    required this.ref,
+  });
+
+  final String part;
+  final String partLabel;
+  final AsyncValue<Map<String, dynamic>?> guideAsync;
+  final WidgetRef ref;
+
+  @override
+  State<_TodayGuideCard> createState() => _TodayGuideCardState();
+}
+
+class _TodayGuideCardState extends State<_TodayGuideCard> {
+  bool _isCreating = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.guideAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (guide) {
+        if (widget.part.isEmpty || guide == null) {
+          return const SizedBox.shrink();
+        }
+        final title =
+            guide['songTitle']?.toString() ??
+            guide['title']?.toString() ??
+            '파트 가이드';
+        final date = guide['sheetDate']?.toString() ?? '';
+        final comment = guide['guide']?.toString() ?? '';
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBF0),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFE7D39A)),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.secondary.withValues(alpha: 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEAD9A8),
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_motion_rounded,
+                      color: AppColors.secondary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '오늘의 릴레이',
+                          style: AppText.body(
+                            12,
+                            weight: FontWeight.w900,
+                            color: AppColors.secondary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$title · ${widget.partLabel}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.body(17, weight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                date.isEmpty
+                    ? '파트 가이드 음원으로 한 소절씩 이어 불러요'
+                    : '$date 가이드 음원으로 한 소절씩 이어 불러요',
+                style: AppText.body(13, color: AppColors.onSurfaceVariant),
+              ),
+              if (comment.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  comment,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(12, color: AppColors.muted, height: 1.35),
+                ),
+              ],
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _isCreating ? null : () => _createRelay(guide),
+                  icon: const Icon(Icons.playlist_add_rounded, size: 18),
+                  label: Text(_isCreating ? '릴레이 준비 중...' : '가이드로 릴레이 열기'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _createRelay(Map<String, dynamic> guide) async {
+    setState(() => _isCreating = true);
+    try {
+      await FirebaseService.createHarmonyRelayFromGuide(
+        part: widget.part,
+        guide: guide,
+      );
+      widget.ref.invalidate(harmonyRelaysProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('오늘의 릴레이를 열었어요. 다음 사람이 지목됩니다.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCreating = false);
+    }
   }
 }
 
@@ -340,6 +500,10 @@ class _RelayCard extends StatelessWidget {
     final title = relay['title']?.toString() ?? '릴레이';
     final segmentLabel = relay['segmentLabel']?.toString() ?? '소절';
     final guide = relay['guide']?.toString() ?? '';
+    final guideAudioUrl = relay['guideAudioUrl']?.toString() ?? '';
+    final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
+    final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
+    final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
     final latest = clips.isEmpty ? null : clips.last;
 
     return Container(
@@ -378,7 +542,21 @@ class _RelayCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(title, style: AppText.body(16, weight: FontWeight.w900)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppText.body(16, weight: FontWeight.w900),
+                ),
+              ),
+              if (assigneeName.isNotEmpty)
+                _TurnPill(
+                  label: isMyTurn ? '내 차례' : '$assigneeName 지목',
+                  active: isMyTurn,
+                ),
+            ],
+          ),
           if (guide.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
@@ -416,6 +594,8 @@ class _RelayCard extends StatelessWidget {
                       part: part,
                       partLabel: partLabel,
                       relayTitle: title,
+                      guideAudioUrl: guideAudioUrl,
+                      segmentLabel: segmentLabel,
                       ref: ref,
                     ),
                   ),
@@ -517,6 +697,34 @@ class _ScorePill extends StatelessWidget {
           11,
           weight: FontWeight.w900,
           color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _TurnPill extends StatelessWidget {
+  const _TurnPill({required this.label, required this.active});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: active ? AppColors.secondary : AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppText.body(
+          11,
+          weight: FontWeight.w900,
+          color: active ? Colors.white : AppColors.primary,
         ),
       ),
     );
@@ -807,6 +1015,8 @@ class _RelayClipSheet extends StatefulWidget {
     required this.part,
     required this.partLabel,
     required this.relayTitle,
+    required this.guideAudioUrl,
+    required this.segmentLabel,
     required this.ref,
   });
 
@@ -814,6 +1024,8 @@ class _RelayClipSheet extends StatefulWidget {
   final String part;
   final String partLabel;
   final String relayTitle;
+  final String guideAudioUrl;
+  final String segmentLabel;
   final WidgetRef ref;
 
   @override
@@ -823,12 +1035,15 @@ class _RelayClipSheet extends StatefulWidget {
 class _RelayClipSheetState extends State<_RelayClipSheet> {
   final _noteController = TextEditingController();
   final _recorder = AudioRecorder();
+  final _guidePlayer = AudioPlayer();
   final List<int> _recordedBytes = [];
   StreamSubscription<Uint8List>? _recordingSub;
   Timer? _recordingTimer;
   Uint8List? _audioBytes;
   bool _isRecording = false;
   bool _isSubmitting = false;
+  bool _isGuidePlaying = false;
+  bool _isGuidedFlow = false;
   int _recordSeconds = 0;
   double _progress = 0;
 
@@ -840,6 +1055,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     _recordingTimer?.cancel();
     _recordingSub?.cancel();
     unawaited(_recorder.dispose());
+    unawaited(_guidePlayer.dispose());
     _noteController.dispose();
     super.dispose();
   }
@@ -882,6 +1098,72 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                 widget.relayTitle,
                 style: AppText.body(13, color: AppColors.muted),
               ),
+              if (widget.guideAudioUrl.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: AppColors.border.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.segmentLabel,
+                        style: AppText.body(
+                          12,
+                          color: AppColors.secondary,
+                          weight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '가이드를 먼저 듣고, 같은 구간이 다시 나올 때 이어서 녹음해요.',
+                        style: AppText.body(
+                          12,
+                          color: AppColors.muted,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _isRecording || _isGuidePlaying
+                                  ? null
+                                  : _playGuideOnce,
+                              icon: const Icon(
+                                Icons.play_arrow_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('가이드 듣기'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton.tonalIcon(
+                              onPressed:
+                                  _isSubmitting ||
+                                      _isRecording ||
+                                      _isGuidePlaying
+                                  ? null
+                                  : _listenThenRecord,
+                              icon: const Icon(Icons.repeat_rounded, size: 18),
+                              label: const Text('듣고 녹음'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               Container(
                 width: double.infinity,
@@ -910,7 +1192,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _isRecording
+                      _isGuidePlaying
+                          ? (_isGuidedFlow ? '가이드를 먼저 듣는 중...' : '가이드 재생 중...')
+                          : _isRecording
                           ? '녹음 중 ${_formatDuration(_recordSeconds)}'
                           : _audioBytes == null
                           ? '릴레이 소절을 녹음해주세요'
@@ -964,6 +1248,65 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   Future<void> _startRecording() async {
+    await _startRecordingInternal(playGuide: false);
+  }
+
+  Future<void> _playGuideOnce() async {
+    if (widget.guideAudioUrl.isEmpty) return;
+    try {
+      setState(() => _isGuidePlaying = true);
+      await _playGuideAndWait();
+    } catch (_) {
+      _showMessage('가이드 음원을 재생할 수 없습니다.');
+    } finally {
+      if (mounted) setState(() => _isGuidePlaying = false);
+    }
+  }
+
+  Future<void> _listenThenRecord() async {
+    if (widget.guideAudioUrl.isEmpty) {
+      await _startRecording();
+      return;
+    }
+    try {
+      setState(() {
+        _isGuidePlaying = true;
+        _isGuidedFlow = true;
+      });
+      await _playGuideAndWait();
+      if (!mounted) return;
+      setState(() => _isGuidePlaying = false);
+      await _startRecordingInternal(playGuide: true);
+    } catch (_) {
+      _showMessage('가이드 재생 후 녹음을 시작하지 못했습니다.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGuidePlaying = false;
+          _isGuidedFlow = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _playGuideAndWait() async {
+    final completer = Completer<void>();
+    StreamSubscription<void>? sub;
+    sub = _guidePlayer.onPlayerComplete.listen((_) {
+      if (!completer.isCompleted) completer.complete();
+    });
+    await _guidePlayer.stop();
+    await _guidePlayer.play(UrlSource(widget.guideAudioUrl));
+    await completer.future.timeout(
+      const Duration(seconds: 45),
+      onTimeout: () async {
+        await _guidePlayer.stop();
+      },
+    );
+    await sub.cancel();
+  }
+
+  Future<void> _startRecordingInternal({required bool playGuide}) async {
     try {
       final hasPermission = await _recorder.hasPermission();
       if (!hasPermission) {
@@ -971,11 +1314,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         return;
       }
       final stream = await _recorder.startStream(
-        const RecordConfig(
+        RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: _sampleRate,
           numChannels: _channels,
-          echoCancel: true,
+          echoCancel: !playGuide,
           noiseSuppress: true,
           autoGain: true,
         ),
@@ -992,6 +1335,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _recordSeconds = 0;
         _audioBytes = null;
       });
+      if (playGuide && widget.guideAudioUrl.isNotEmpty) {
+        unawaited(_guidePlayer.play(UrlSource(widget.guideAudioUrl)));
+      }
     } catch (_) {
       _showMessage('녹음을 시작할 수 없습니다. 마이크 권한을 확인해주세요.');
     }
@@ -1000,6 +1346,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _stopRecording() async {
     if (!_isRecording) return;
     try {
+      await _guidePlayer.stop();
       await _recorder.stop();
       await Future<void>.delayed(const Duration(milliseconds: 80));
       await _recordingSub?.cancel();

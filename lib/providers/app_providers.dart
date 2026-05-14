@@ -336,6 +336,11 @@ const _previewHarmonyRelays = [
     'title': '후렴 첫 소절 릴레이',
     'segmentLabel': '후렴 1마디',
     'guide': '첫 음을 너무 밀지 말고, 숨을 같이 들이마신 느낌으로 이어주세요.',
+    'guideAudioUrl':
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    'guideAudioFileName': 'soprano_guide.mp3',
+    'currentAssigneeId': 'preview-soprano-3',
+    'currentAssigneeName': '정소절',
     'clipCount': 2,
     'createdAt': '2026-04-28T10:40:00',
     'lastClipAt': '2026-04-28T10:55:00',
@@ -728,6 +733,32 @@ final harmonyRelaysProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   }
   if (part.isEmpty) return Stream.value(const []);
   return FirebaseService.watchHarmonyRelays(part: part);
+});
+
+final latestPartGuideProvider = FutureProvider<Map<String, dynamic>?>((ref) {
+  final profile = ref.watch(profileProvider).valueOrNull;
+  final part = profile?.partLeaderFor ?? profile?.part ?? '';
+  if (part.isEmpty) return Future.value(null);
+  if (ref.watch(localPreviewModeProvider)) {
+    final preview = _previewSheetMusic.firstWhere(
+      (sheet) => sheet['sheetPart'] == part && (sheet['audioUrl'] ?? '') != '',
+      orElse: () => const {},
+    );
+    if (preview.isEmpty) return Future.value(null);
+    return Future.value({
+      'sheetMusicId': preview['id'],
+      'title': preview['songTitle'] ?? preview['title'],
+      'songTitle': preview['songTitle'] ?? preview['title'],
+      'sheetDate': preview['sheetDate'],
+      'part': part,
+      'guideAudioUrl': preview['audioUrl'],
+      'guideAudioFileName': preview['audioFileName'],
+      'guide': preview['conductorComment'] ?? '',
+      'composer': preview['composer'] ?? '',
+      'sheetUrl': preview['fileUrl'] ?? '',
+    });
+  }
+  return FirebaseService.getLatestPartGuideForRelay(part: part);
 });
 
 final postProvider = StreamProvider.family<Map<String, dynamic>?, String>((

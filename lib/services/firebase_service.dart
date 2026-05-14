@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -854,11 +855,136 @@ class FirebaseService {
         });
   }
 
+  static Future<Map<String, dynamic>?> getLatestPartGuideForRelay({
+    required String part,
+  }) async {
+    if (part.trim().isEmpty) return null;
+    final sheets = await getSheetMusic();
+    sheets.sort((a, b) {
+      final aDate = _dateSortValue(a['sheetDate'], fallback: a['createdAt']);
+      final bDate = _dateSortValue(b['sheetDate'], fallback: b['createdAt']);
+      return bDate.compareTo(aDate);
+    });
+
+    for (final sheet in sheets) {
+      final sheetPart = sheet['sheetPart']?.toString() ?? 'all';
+      final songTitle = _firstNotEmpty([
+        sheet['songTitle']?.toString(),
+        sheet['title']?.toString(),
+        '파트 가이드',
+      ]);
+      final sheetDate = sheet['sheetDate']?.toString() ?? '';
+      final conductorComment = sheet['conductorComment']?.toString() ?? '';
+
+      if (sheetPart == part) {
+        final guideUrl = sheet['audioUrl']?.toString() ?? '';
+        if (guideUrl.isNotEmpty) {
+          return {
+            'sheetMusicId': sheet['id'],
+            'title': songTitle,
+            'songTitle': songTitle,
+            'sheetDate': sheetDate,
+            'part': part,
+            'guideAudioUrl': guideUrl,
+            'guideAudioFileName': sheet['audioFileName']?.toString() ?? '',
+            'guide': conductorComment,
+            'composer': sheet['composer']?.toString() ?? '',
+            'sheetUrl': sheet['fileUrl']?.toString() ?? '',
+          };
+        }
+      }
+
+      final partFiles = _asStringMap(sheet['partFiles']);
+      final partFile = _asStringMap(partFiles[part]);
+      final guideUrl = partFile['guideAudioUrl']?.toString() ?? '';
+      if (guideUrl.isNotEmpty) {
+        final mainSheetUrl = sheet['fileUrl']?.toString() ?? '';
+        final partSheetUrl = partFile['sheetUrl']?.toString() ?? '';
+        return {
+          'sheetMusicId': sheet['id'],
+          'title': songTitle,
+          'songTitle': songTitle,
+          'sheetDate': sheetDate,
+          'part': part,
+          'guideAudioUrl': guideUrl,
+          'guideAudioFileName': partFile['guideAudioName']?.toString() ?? '',
+          'guide': conductorComment,
+          'composer': sheet['composer']?.toString() ?? '',
+          'sheetUrl': partSheetUrl.isNotEmpty ? partSheetUrl : mainSheetUrl,
+        };
+      }
+    }
+    return null;
+  }
+
+  static Future<String> createHarmonyRelayFromGuide({
+    required String part,
+    required Map<String, dynamic> guide,
+  }) async {
+    final sourceId = guide['sheetMusicId']?.toString() ?? '';
+    if (sourceId.isNotEmpty) {
+      final existing = await _db
+          .collection('harmony_relays')
+          .where('sourceSheetMusicId', isEqualTo: sourceId)
+          .get();
+      for (final doc in existing.docs) {
+        final data = doc.data();
+        if (data['churchId'] == _requireChurchId() && data['part'] == part) {
+          return doc.id;
+        }
+      }
+    }
+    final title = _firstNotEmpty([
+      guide['songTitle']?.toString(),
+      guide['title']?.toString(),
+      '오늘의 가이드',
+    ]);
+    final sheetDate = guide['sheetDate']?.toString() ?? '';
+    final segmentLabel = sheetDate.isNotEmpty ? '$sheetDate 1소절' : '오늘의 1소절';
+    final assignee = await _pickHarmonyAssignee(
+      part: part,
+      excludeUserIds: {uid},
+    );
+
+    final relayId = await createHarmonyRelay(
+      part: part,
+      title: '$title 릴레이',
+      segmentLabel: segmentLabel,
+      guide: guide['guide']?.toString(),
+      guideAudioUrl: guide['guideAudioUrl']?.toString(),
+      guideAudioFileName: guide['guideAudioFileName']?.toString(),
+      sourceSheetMusicId: guide['sheetMusicId']?.toString(),
+      sourceTitle: title,
+      sourceDate: sheetDate,
+      sourceSheetUrl: guide['sheetUrl']?.toString(),
+      currentAssigneeId: assignee?['id']?.toString(),
+      currentAssigneeName: assignee?['name']?.toString(),
+    );
+
+    if (assignee != null) {
+      await _createRelayNotification(
+        toUserId: assignee['id'].toString(),
+        relayId: relayId,
+        title: '파트 릴레이가 도착했어요',
+        body: '$title 한 소절을 이어서 불러주세요.',
+      );
+    }
+    return relayId;
+  }
+
   static Future<String> createHarmonyRelay({
     required String part,
     required String title,
     required String segmentLabel,
     String? guide,
+    String? guideAudioUrl,
+    String? guideAudioFileName,
+    String? sourceSheetMusicId,
+    String? sourceTitle,
+    String? sourceDate,
+    String? sourceSheetUrl,
+    String? currentAssigneeId,
+    String? currentAssigneeName,
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
     final userData = await _safeUserData(uid);
@@ -869,6 +995,17 @@ class FirebaseService {
       'title': title.trim(),
       'segmentLabel': segmentLabel.trim(),
       'guide': guide?.trim() ?? '',
+      'guideAudioUrl': guideAudioUrl?.trim() ?? '',
+      'guideAudioFileName': guideAudioFileName?.trim() ?? '',
+      'sourceSheetMusicId': sourceSheetMusicId?.trim() ?? '',
+      'sourceTitle': sourceTitle?.trim() ?? '',
+      'sourceDate': sourceDate?.trim() ?? '',
+      'sourceSheetUrl': sourceSheetUrl?.trim() ?? '',
+      'currentAssigneeId': currentAssigneeId?.trim() ?? '',
+      'currentAssigneeName': currentAssigneeName?.trim() ?? '',
+      'assignedAt': currentAssigneeId?.trim().isNotEmpty == true
+          ? FieldValue.serverTimestamp()
+          : null,
       'clipCount': 0,
       ..._authorFields({
         'userId': uid,
@@ -912,12 +1049,91 @@ class FirebaseService {
       'updatedAt': FieldValue.serverTimestamp(),
     };
     final doc = await _db.collection('harmony_relay_clips').add(clipData);
+    final assignee = await _pickHarmonyAssignee(
+      part: part,
+      excludeUserIds: {uid},
+    );
     await _db.collection('harmony_relays').doc(relayId).update({
       'clipCount': FieldValue.increment(1),
       'lastClipAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      'currentAssigneeId': assignee?['id'] ?? '',
+      'currentAssigneeName': assignee?['name'] ?? '',
+      'assignedAt': assignee == null ? null : FieldValue.serverTimestamp(),
     });
+    if (assignee != null) {
+      await _createRelayNotification(
+        toUserId: assignee['id'].toString(),
+        relayId: relayId,
+        title: '다음 릴레이 차례예요',
+        body:
+            '${userData?['name'] ?? currentUser?.displayName ?? '파트원'}님이 소절을 이어 불렀어요.',
+      );
+    }
     return doc.id;
+  }
+
+  static Future<Map<String, dynamic>?> _pickHarmonyAssignee({
+    required String part,
+    Set<String?> excludeUserIds = const {},
+  }) async {
+    final churchId = _requireChurchId();
+    final snapshot = await _db
+        .collection('users')
+        .where('churchId', isEqualTo: churchId)
+        .get();
+    final candidates = snapshot.docs
+        .where((doc) {
+          final data = doc.data();
+          return data['part'] == part &&
+              data['approvalStatus'] == 'approved' &&
+              !excludeUserIds.contains(doc.id);
+        })
+        .map((doc) => {'id': doc.id, ...doc.data()})
+        .toList();
+    if (candidates.isEmpty) return null;
+    return candidates[Random().nextInt(candidates.length)];
+  }
+
+  static Future<void> _createRelayNotification({
+    required String toUserId,
+    required String relayId,
+    required String title,
+    required String body,
+  }) async {
+    await _db.collection('notifications').add({
+      'churchId': _requireChurchId(),
+      'toUserId': toUserId,
+      'title': title,
+      'body': body,
+      'type': 'harmony_relay',
+      'relayId': relayId,
+      'sentAt': FieldValue.serverTimestamp(),
+      'sentBy': uid,
+    });
+  }
+
+  static DateTime _dateSortValue(dynamic value, {dynamic fallback}) {
+    if (value is Timestamp) return value.toDate();
+    final text = value?.toString() ?? '';
+    final parsed = DateTime.tryParse(text);
+    if (parsed != null) return parsed;
+    if (fallback is Timestamp) return fallback.toDate();
+    return DateTime.tryParse(fallback?.toString() ?? '') ??
+        DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  static Map<String, dynamic> _asStringMap(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return <String, dynamic>{};
+  }
+
+  static String _firstNotEmpty(List<String?> values) {
+    for (final value in values) {
+      final trimmed = value?.trim() ?? '';
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return '';
   }
 
   static int _relayScore(int durationSeconds) {
