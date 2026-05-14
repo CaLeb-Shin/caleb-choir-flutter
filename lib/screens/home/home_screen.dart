@@ -8,6 +8,7 @@ import '../attendance/attendance_screen.dart';
 import '../community/community_screen.dart';
 import '../seating/seating_screen.dart';
 import '../events/events_screen.dart';
+import '../harmony_chat/harmony_chat_screen.dart';
 import '../sheet_music/sheet_music_screen.dart';
 import '../videos/videos_screen.dart';
 import '../admin/members_screen.dart';
@@ -78,6 +79,8 @@ class HomeScreen extends ConsumerWidget {
             ref.invalidate(recentSheetMusicProvider);
             ref.invalidate(recentVideosProvider);
             ref.invalidate(pollsProvider);
+            ref.invalidate(harmonyNotesProvider);
+            ref.invalidate(harmonyRelaysProvider);
             ref.invalidate(seatingChartsProvider);
             if (currentSeatingChart != null) {
               ref.invalidate(
@@ -620,6 +623,13 @@ class HomeScreen extends ConsumerWidget {
         (ref.watch(recentVideosProvider).valueOrNull ?? []).isNotEmpty;
     final posts = ref.watch(postsProvider).valueOrNull ?? [];
     final hasNewPosts = posts.any((p) => _isRecent(p['createdAt']));
+    final harmonyNotes = ref.watch(harmonyNotesProvider).valueOrNull ?? [];
+    final harmonyRelays = ref.watch(harmonyRelaysProvider).valueOrNull ?? [];
+    final hasNewHarmonyNotes =
+        harmonyNotes.any((n) => _isRecent(n['createdAt'])) ||
+        harmonyRelays.any(
+          (r) => _isRecent(r['createdAt']) || _isRecent(r['lastClipAt']),
+        );
     final events = ref.watch(eventsProvider).valueOrNull ?? [];
     final now = DateTime.now();
     final hasNewEvents = events.any((e) {
@@ -691,6 +701,13 @@ class HomeScreen extends ConsumerWidget {
             _openSection(context, '커뮤니티', const CommunityScreen(), navIndex: 4),
       ),
       MiniActionTile(
+        icon: Icons.graphic_eq_rounded,
+        label: '하모니챗',
+        tone: 'secondary',
+        hasNew: hasNewHarmonyNotes,
+        onTap: () => _openSection(context, '하모니챗', const HarmonyChatScreen()),
+      ),
+      MiniActionTile(
         icon: Icons.calendar_today_rounded,
         label: '일정',
         tone: 'secondary',
@@ -718,6 +735,7 @@ class HomeScreen extends ConsumerWidget {
         ),
       MiniActionTile(
         icon: Icons.storefront_rounded,
+        customIcon: const StoreMenuGlyph(),
         label: '스토어',
         tone: 'secondary',
         onTap: () {

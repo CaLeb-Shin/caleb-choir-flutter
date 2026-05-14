@@ -705,6 +705,236 @@ class FirebaseService {
     return task;
   }
 
+  static String _safeStorageName(String fileName) {
+    final cleaned = fileName
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^0-9A-Za-z가-힣._-]'), '');
+    return cleaned.isEmpty ? 'audio_note.m4a' : cleaned;
+  }
+
+  // ============ Harmony Chat ============
+  static Stream<List<Map<String, dynamic>>> watchHarmonyNotes({
+    required String part,
+  }) {
+    if (part.trim().isEmpty) return Stream.value(const []);
+    return _db
+        .collection('harmony_notes')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .where('part', isEqualTo: part)
+        .limit(80)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final notes = <Map<String, dynamic>>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final userData = await _safeUserData(data['userId']);
+            notes.add({
+              'id': doc.id,
+              ...data,
+              ..._authorFields(data, userData),
+              'createdAt': _timestampIso(data['createdAt']),
+            });
+          }
+          notes.sort(_createdAtDesc);
+          return notes;
+        });
+  }
+
+  static Future<String> uploadHarmonyAudio(
+    Uint8List bytes, {
+    required String fileName,
+    required String contentType,
+    UploadProgress? onProgress,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    if (bytes.length > 50 * 1024 * 1024) {
+      throw Exception('음성 파일은 50MB 이하로 올려주세요');
+    }
+    final churchId = _requireChurchId();
+    final safeName = _safeStorageName(fileName);
+    final ref = FirebaseStorage.instance
+        .ref()
+        .child('churches')
+        .child(churchId)
+        .child('harmony_audio')
+        .child(uid!)
+        .child('${DateTime.now().millisecondsSinceEpoch}_$safeName');
+    final task = ref.putData(
+      bytes,
+      SettableMetadata(
+        contentType: contentType,
+        customMetadata: {
+          'churchId': churchId,
+          'userId': uid!,
+          'originalName': fileName,
+        },
+      ),
+    );
+    await _waitUpload(task, onProgress: onProgress);
+    return ref.getDownloadURL();
+  }
+
+  static Future<String> createHarmonyNote({
+    required String part,
+    required String title,
+    required String audioUrl,
+    required String audioFileName,
+    String? prompt,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final userData = await _safeUserData(uid);
+    final data = {
+      'churchId': _requireChurchId(),
+      'userId': uid,
+      'part': part,
+      'title': title.trim(),
+      'prompt': prompt?.trim() ?? '',
+      'audioUrl': audioUrl,
+      'audioFileName': audioFileName,
+      ..._authorFields({
+        'userId': uid,
+        'userName': currentUser?.displayName,
+      }, userData),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    final doc = await _db.collection('harmony_notes').add(data);
+    return doc.id;
+  }
+
+  static Future<void> deleteHarmonyNote(String noteId) async {
+    await _db.collection('harmony_notes').doc(noteId).delete();
+  }
+
+  static Stream<List<Map<String, dynamic>>> watchHarmonyRelays({
+    required String part,
+  }) {
+    if (part.trim().isEmpty) return Stream.value(const []);
+    return _db
+        .collection('harmony_relays')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .where('part', isEqualTo: part)
+        .limit(30)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final relays = <Map<String, dynamic>>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final clipsSnapshot = await _db
+                .collection('harmony_relay_clips')
+                .where('churchId', isEqualTo: _requireChurchId())
+                .where('relayId', isEqualTo: doc.id)
+                .get();
+            final clips = <Map<String, dynamic>>[];
+            for (final clipDoc in clipsSnapshot.docs) {
+              final clipData = clipDoc.data();
+              final userData = await _safeUserData(clipData['userId']);
+              clips.add({
+                'id': clipDoc.id,
+                ...clipData,
+                ..._authorFields(clipData, userData),
+                'createdAt': _timestampIso(clipData['createdAt']),
+              });
+            }
+            clips.sort((a, b) => _timestampFieldAsc('createdAt', a, b));
+            relays.add({
+              'id': doc.id,
+              ...data,
+              'clips': clips,
+              'createdAt': _timestampIso(data['createdAt']),
+              'lastClipAt': _timestampIso(data['lastClipAt']),
+            });
+          }
+          relays.sort((a, b) {
+            final byLast = _timestampFieldDesc('lastClipAt', a, b);
+            return byLast == 0 ? _createdAtDesc(a, b) : byLast;
+          });
+          return relays;
+        });
+  }
+
+  static Future<String> createHarmonyRelay({
+    required String part,
+    required String title,
+    required String segmentLabel,
+    String? guide,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final userData = await _safeUserData(uid);
+    final data = {
+      'churchId': _requireChurchId(),
+      'userId': uid,
+      'part': part,
+      'title': title.trim(),
+      'segmentLabel': segmentLabel.trim(),
+      'guide': guide?.trim() ?? '',
+      'clipCount': 0,
+      ..._authorFields({
+        'userId': uid,
+        'userName': currentUser?.displayName,
+      }, userData),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    final doc = await _db.collection('harmony_relays').add(data);
+    return doc.id;
+  }
+
+  static Future<String> addHarmonyRelayClip({
+    required String relayId,
+    required String part,
+    required String audioUrl,
+    required String audioFileName,
+    required int durationSeconds,
+    String? note,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final userData = await _safeUserData(uid);
+    final score = _relayScore(durationSeconds);
+    final feedback = _relayFeedback(durationSeconds);
+    final clipData = {
+      'churchId': _requireChurchId(),
+      'relayId': relayId,
+      'userId': uid,
+      'part': part,
+      'audioUrl': audioUrl,
+      'audioFileName': audioFileName,
+      'durationSeconds': durationSeconds,
+      'note': note?.trim() ?? '',
+      'autoScore': score,
+      'autoFeedback': feedback,
+      ..._authorFields({
+        'userId': uid,
+        'userName': currentUser?.displayName,
+      }, userData),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    final doc = await _db.collection('harmony_relay_clips').add(clipData);
+    await _db.collection('harmony_relays').doc(relayId).update({
+      'clipCount': FieldValue.increment(1),
+      'lastClipAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return doc.id;
+  }
+
+  static int _relayScore(int durationSeconds) {
+    if (durationSeconds <= 0) return 70;
+    if (durationSeconds < 4) return 74;
+    if (durationSeconds < 8) return 82;
+    if (durationSeconds < 18) return 90;
+    return 86;
+  }
+
+  static String _relayFeedback(int durationSeconds) {
+    if (durationSeconds < 4) return '조금 짧아요. 다음에는 소절 끝까지 더 길게 이어보세요.';
+    if (durationSeconds < 8) return '진입이 좋아요. 끝 음을 조금만 더 붙잡으면 안정적입니다.';
+    if (durationSeconds < 18) return '호흡 길이와 연결감이 좋습니다. 다음 사람이 받기 편해요.';
+    return '충분히 길게 불렀어요. 핵심 소절만 더 또렷하게 잘라보면 좋아요.';
+  }
+
   static Future<String> createPost({
     required String title,
     String? content,

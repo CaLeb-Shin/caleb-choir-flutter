@@ -59,6 +59,20 @@ service firebase.storage {
       allow delete: if isChurchAdminOf(churchId);
     }
 
+    match /churches/{churchId}/harmony_audio/{userId}/{fileName} {
+      allow read: if sameChurch(churchId) || isChurchAdminOf(churchId);
+      allow create, update: if isSignedIn()
+        && request.auth.uid == userId
+        && sameChurch(churchId)
+        && request.resource.size < 50 * 1024 * 1024
+        && (
+          request.resource.contentType.matches('audio/.*')
+          || request.resource.contentType == 'application/octet-stream'
+        );
+      allow delete: if isSignedIn()
+        && (request.auth.uid == userId || isChurchAdminOf(churchId));
+    }
+
     match /churches/{churchId}/post_images/{fileName} {
       allow read: if isSignedIn();
       allow create, update: if isChurchAdminOf(churchId)

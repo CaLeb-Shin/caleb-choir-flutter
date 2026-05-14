@@ -5,6 +5,7 @@ import 'interactive.dart';
 /// 갈렙 로고 톤을 닮은 홈 그리드용 메뉴 타일.
 class MiniActionTile extends StatelessWidget {
   final IconData icon;
+  final Widget? customIcon;
   final String label;
   final VoidCallback onTap;
   final int? badgeCount;
@@ -18,6 +19,7 @@ class MiniActionTile extends StatelessWidget {
   const MiniActionTile({
     super.key,
     required this.icon,
+    this.customIcon,
     required this.label,
     required this.onTap,
     this.badgeCount,
@@ -44,6 +46,7 @@ class MiniActionTile extends StatelessWidget {
             children: [
               _CalebMenuIcon(
                 icon: icon,
+                customIcon: customIcon,
                 accentColor: accentColor,
                 haloColor: haloColor,
               ),
@@ -126,11 +129,13 @@ class MiniActionTile extends StatelessWidget {
 
 class _CalebMenuIcon extends StatelessWidget {
   final IconData icon;
+  final Widget? customIcon;
   final Color accentColor;
   final Color haloColor;
 
   const _CalebMenuIcon({
     required this.icon,
+    this.customIcon,
     required this.accentColor,
     required this.haloColor,
   });
@@ -197,7 +202,7 @@ class _CalebMenuIcon extends StatelessWidget {
             Center(
               child: Transform.translate(
                 offset: const Offset(-1, -1),
-                child: Icon(icon, size: 19, color: Colors.white),
+                child: customIcon ?? Icon(icon, size: 19, color: Colors.white),
               ),
             ),
             Positioned(
@@ -220,5 +225,63 @@ class _CalebMenuIcon extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class StoreMenuGlyph extends StatelessWidget {
+  final Color color;
+
+  const StoreMenuGlyph({super.key, this.color = Colors.white});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 21,
+      child: CustomPaint(painter: _StoreMenuGlyphPainter(color)),
+    );
+  }
+}
+
+class _StoreMenuGlyphPainter extends CustomPainter {
+  final Color color;
+
+  const _StoreMenuGlyphPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.1
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final bag = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w * 0.20, h * 0.36, w * 0.60, h * 0.46),
+      Radius.circular(w * 0.11),
+    );
+    canvas.drawRRect(bag, stroke);
+
+    final handle = Path()
+      ..moveTo(w * 0.35, h * 0.39)
+      ..cubicTo(w * 0.36, h * 0.18, w * 0.64, h * 0.18, w * 0.65, h * 0.39);
+    canvas.drawPath(handle, stroke);
+
+    final tag = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w * 0.48, h * 0.48, w * 0.18, h * 0.15),
+      Radius.circular(w * 0.03),
+    );
+    canvas.drawRRect(tag, fill);
+    canvas.drawCircle(Offset(w * 0.34, h * 0.56), w * 0.025, fill);
+  }
+
+  @override
+  bool shouldRepaint(covariant _StoreMenuGlyphPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }

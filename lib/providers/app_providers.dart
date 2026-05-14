@@ -299,6 +299,75 @@ const _previewPosts = [
   },
 ];
 
+const _previewHarmonyNotes = [
+  {
+    'id': 'preview-harmony-1',
+    'churchId': 'preview-church',
+    'part': 'soprano',
+    'title': '후렴 시작 호흡 맞추기',
+    'prompt': '첫 박을 너무 급하게 잡지 말고, 같이 숨 들이마신 뒤 들어가요.',
+    'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    'audioFileName': 'soprano_harmony_note.mp3',
+    'userId': 'preview-soprano-1',
+    'userName': '윤소프',
+    'userPart': 'soprano',
+    'createdAt': '2026-04-28T10:20:00',
+  },
+  {
+    'id': 'preview-harmony-2',
+    'churchId': 'preview-church',
+    'part': 'bass',
+    'title': '베이스 진입음 확인',
+    'prompt': '두 번째 줄은 말하듯 낮게 시작하면 전체가 더 안정적으로 들려요.',
+    'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+    'audioFileName': 'bass_harmony_note.mp3',
+    'userId': 'preview-bass-1',
+    'userName': '김베이스',
+    'userPart': 'bass',
+    'createdAt': '2026-04-28T09:55:00',
+  },
+];
+
+const _previewHarmonyRelays = [
+  {
+    'id': 'preview-relay-soprano-1',
+    'churchId': 'preview-church',
+    'part': 'soprano',
+    'title': '후렴 첫 소절 릴레이',
+    'segmentLabel': '후렴 1마디',
+    'guide': '첫 음을 너무 밀지 말고, 숨을 같이 들이마신 느낌으로 이어주세요.',
+    'clipCount': 2,
+    'createdAt': '2026-04-28T10:40:00',
+    'lastClipAt': '2026-04-28T10:55:00',
+    'clips': [
+      {
+        'id': 'preview-relay-clip-1',
+        'userName': '윤소프',
+        'userPart': 'soprano',
+        'audioUrl':
+            'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+        'audioFileName': 'relay_1.wav',
+        'durationSeconds': 7,
+        'autoScore': 82,
+        'autoFeedback': '진입이 좋아요. 끝 음을 조금만 더 붙잡으면 안정적입니다.',
+        'createdAt': '2026-04-28T10:45:00',
+      },
+      {
+        'id': 'preview-relay-clip-2',
+        'userName': '오높음',
+        'userPart': 'soprano',
+        'audioUrl':
+            'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+        'audioFileName': 'relay_2.wav',
+        'durationSeconds': 12,
+        'autoScore': 90,
+        'autoFeedback': '호흡 길이와 연결감이 좋습니다. 다음 사람이 받기 편해요.',
+        'createdAt': '2026-04-28T10:55:00',
+      },
+    ],
+  },
+];
+
 const _previewComments = [
   {
     'id': 'preview-comment-1',
@@ -635,6 +704,30 @@ final videosProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
 final postsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   if (ref.watch(localPreviewModeProvider)) return Stream.value(_previewPosts);
   return FirebaseService.watchPosts();
+});
+
+final harmonyNotesProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  final profile = ref.watch(profileProvider).valueOrNull;
+  final part = profile?.partLeaderFor ?? profile?.part ?? '';
+  if (ref.watch(localPreviewModeProvider)) {
+    return Stream.value(
+      _previewHarmonyNotes.where((note) => note['part'] == part).toList(),
+    );
+  }
+  if (part.isEmpty) return Stream.value(const []);
+  return FirebaseService.watchHarmonyNotes(part: part);
+});
+
+final harmonyRelaysProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
+  final profile = ref.watch(profileProvider).valueOrNull;
+  final part = profile?.partLeaderFor ?? profile?.part ?? '';
+  if (ref.watch(localPreviewModeProvider)) {
+    return Stream.value(
+      _previewHarmonyRelays.where((relay) => relay['part'] == part).toList(),
+    );
+  }
+  if (part.isEmpty) return Stream.value(const []);
+  return FirebaseService.watchHarmonyRelays(part: part);
 });
 
 final postProvider = StreamProvider.family<Map<String, dynamic>?, String>((
