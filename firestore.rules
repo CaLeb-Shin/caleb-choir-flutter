@@ -56,6 +56,20 @@ service cloud.firestore {
           )
         );
     }
+    function canVoteHarmonyMvp(cid, part) {
+      return part != null
+        && (
+          isChurchAdminOf(cid) ||
+          (
+            sameChurch(cid) &&
+            myRole() == 'part_leader' &&
+            (
+              myData().get('part', '') == part ||
+              myData().get('partLeaderFor', '') == part
+            )
+          )
+        );
+    }
     function postChurchId(postId) {
       return get(/databases/$(database)/documents/posts/$(postId)).data.churchId;
     }
@@ -258,7 +272,16 @@ service cloud.firestore {
             'guideAudioFileName',
             'mrAudioUrl',
             'mrAudioFileName',
-            'sourceSheetUrl'
+            'sourceSheetUrl',
+            'missionTotalSegments',
+            'segmentOrder',
+            'segmentStartSec',
+            'segmentEndSec',
+            'segmentDurationSec',
+            'status',
+            'completedBy',
+            'completedByName',
+            'completedAt'
           ]);
       allow delete: if isSignedIn()
         && resource.data.keys().hasAll(['churchId', 'userId'])
@@ -279,6 +302,28 @@ service cloud.firestore {
         && resource.data.keys().hasAll(['churchId', 'userId'])
         && (
           request.auth.uid == resource.data.userId ||
+          isChurchAdminOf(resource.data.churchId)
+        );
+    }
+
+    match /harmony_relay_votes/{docId} {
+      allow read: if resource.data.keys().hasAll(['churchId', 'part'])
+        && canUseHarmonyPart(resource.data.churchId, resource.data.part);
+      allow create, update: if isSignedIn()
+        && request.resource.data.keys().hasAll([
+          'churchId',
+          'missionGroupId',
+          'part',
+          'voterId',
+          'nomineeUserId',
+          'nomineeName'
+        ])
+        && request.resource.data.voterId == request.auth.uid
+        && canVoteHarmonyMvp(request.resource.data.churchId, request.resource.data.part);
+      allow delete: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId', 'voterId'])
+        && (
+          request.auth.uid == resource.data.voterId ||
           isChurchAdminOf(resource.data.churchId)
         );
     }

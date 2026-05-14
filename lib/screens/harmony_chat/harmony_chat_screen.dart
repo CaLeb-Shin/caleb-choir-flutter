@@ -456,20 +456,31 @@ class _RelaySection extends StatelessWidget {
                   ),
                 );
               }
+              final missionGroups = _groupMissionRelays(relays);
               return Column(
-                children: relays
-                    .map(
-                      (relay) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _RelayCard(
-                          relay: relay,
-                          part: part,
-                          partLabel: partLabel,
-                          ref: ref,
-                        ),
+                children: missionGroups.map((group) {
+                  if (group.isMission) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _RelayMissionCard(
+                        relays: group.relays,
+                        part: part,
+                        partLabel: partLabel,
+                        ref: ref,
                       ),
-                    )
-                    .toList(),
+                    );
+                  }
+                  final relay = group.relays.first;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _RelayCard(
+                      relay: relay,
+                      part: part,
+                      partLabel: partLabel,
+                      ref: ref,
+                    ),
+                  );
+                }).toList(),
               );
             },
           ),
@@ -477,6 +488,461 @@ class _RelaySection extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RelayMissionGroup {
+  const _RelayMissionGroup({
+    required this.key,
+    required this.relays,
+    required this.isMission,
+  });
+
+  final String key;
+  final List<Map<String, dynamic>> relays;
+  final bool isMission;
+}
+
+List<_RelayMissionGroup> _groupMissionRelays(
+  List<Map<String, dynamic>> relays,
+) {
+  final groups = <String, List<Map<String, dynamic>>>{};
+  final legacy = <_RelayMissionGroup>[];
+  for (final relay in relays) {
+    final key = relay['missionGroupId']?.toString() ?? '';
+    if (key.isEmpty ||
+        ((relay['missionTotalSegments'] as num?)?.toInt() ?? 1) <= 1) {
+      legacy.add(
+        _RelayMissionGroup(
+          key: relay['id'].toString(),
+          relays: [relay],
+          isMission: false,
+        ),
+      );
+      continue;
+    }
+    groups.putIfAbsent(key, () => []).add(relay);
+  }
+  final missionGroups = groups.entries.map((entry) {
+    final sorted = [...entry.value]
+      ..sort((a, b) {
+        final aOrder = (a['segmentOrder'] as num?)?.toInt() ?? 0;
+        final bOrder = (b['segmentOrder'] as num?)?.toInt() ?? 0;
+        return aOrder.compareTo(bOrder);
+      });
+    return _RelayMissionGroup(key: entry.key, relays: sorted, isMission: true);
+  }).toList();
+  return [...missionGroups, ...legacy];
+}
+
+class _RelayMissionCard extends StatelessWidget {
+  const _RelayMissionCard({
+    required this.relays,
+    required this.part,
+    required this.partLabel,
+    required this.ref,
+  });
+
+  final List<Map<String, dynamic>> relays;
+  final String part;
+  final String partLabel;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = relays.first;
+    final title = _firstText([
+      first['sourceTitle']?.toString(),
+      first['title']?.toString().replaceAll(' 릴레이', ''),
+      '하모니 릴레이',
+    ]);
+    final missionGroupId = first['missionGroupId']?.toString() ?? '';
+    final total =
+        (first['missionTotalSegments'] as num?)?.toInt() ?? relays.length;
+    final completed = relays.where(_relayCompleted).length;
+    final ratio = total == 0 ? 0.0 : (completed / total).clamp(0.0, 1.0);
+    final isComplete = completed >= total && total > 0;
+    final profile = ref.watch(profileProvider).valueOrNull;
+    final role = profile?.role ?? '';
+    final canVote =
+        role == 'admin' ||
+        role == 'church_admin' ||
+        (role == 'part_leader' &&
+            ((profile?.partLeaderFor ?? profile?.part ?? '') == part));
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isComplete ? const Color(0xFFFFFBF0) : AppColors.bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isComplete
+              ? const Color(0xFFE7D39A)
+              : AppColors.border.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: isComplete
+                      ? const Color(0xFFEAD9A8)
+                      : AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  isComplete
+                      ? Icons.workspace_premium_rounded
+                      : Icons.route_rounded,
+                  color: isComplete ? AppColors.secondary : AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppText.body(16, weight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$partLabel · $completed/$total 소절 완료',
+                      style: AppText.body(12, color: AppColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              _TurnPill(
+                label: isComplete ? '완주' : '${((ratio) * 100).round()}%',
+                active: isComplete,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 8,
+              value: ratio,
+              backgroundColor: AppColors.border.withValues(alpha: 0.35),
+              color: isComplete ? AppColors.secondary : AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...relays.map(
+            (relay) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _MissionSegmentTile(
+                relay: relay,
+                part: part,
+                partLabel: partLabel,
+                ref: ref,
+              ),
+            ),
+          ),
+          if (isComplete) ...[
+            const SizedBox(height: 8),
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 520),
+              tween: Tween(begin: 0, end: 1),
+              builder: (context, value, child) => Transform.scale(
+                scale: 0.96 + value * 0.04,
+                child: Opacity(opacity: value, child: child),
+              ),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryContainer,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '파트 완주',
+                      style: AppText.body(
+                        18,
+                        weight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '모든 소절이 이어졌어요. 이제 파트장이 가장 꾸준히 참여한 단원을 골라주세요.',
+                      style: AppText.body(
+                        12,
+                        color: Colors.white.withValues(alpha: 0.76),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (canVote && missionGroupId.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _HarmonyMvpVotePanel(
+                missionGroupId: missionGroupId,
+                part: part,
+                relays: relays,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MissionSegmentTile extends StatelessWidget {
+  const _MissionSegmentTile({
+    required this.relay,
+    required this.part,
+    required this.partLabel,
+    required this.ref,
+  });
+
+  final Map<String, dynamic> relay;
+  final String part;
+  final String partLabel;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final clips = ((relay['clips'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final title = relay['title']?.toString() ?? '릴레이';
+    final segmentLabel = relay['segmentLabel']?.toString() ?? '소절';
+    final guideAudioUrl = relay['guideAudioUrl']?.toString() ?? '';
+    final mrAudioUrl = relay['mrAudioUrl']?.toString() ?? '';
+    final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
+    final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
+    final completed = _relayCompleted(relay);
+    final latest = clips.isEmpty ? null : clips.last;
+    final singer =
+        latest?['userName']?.toString() ??
+        relay['completedByName']?.toString() ??
+        '';
+    final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _RelayClipSheet(
+          relayId: relay['id'].toString(),
+          part: part,
+          partLabel: partLabel,
+          relayTitle: title,
+          guideAudioUrl: guideAudioUrl,
+          mrAudioUrl: mrAudioUrl,
+          segmentLabel: segmentLabel,
+          segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
+          segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
+          ref: ref,
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: completed ? AppColors.primarySoft : AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: completed
+                ? AppColors.primary.withValues(alpha: 0.20)
+                : AppColors.border.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: completed ? AppColors.primary : AppColors.bg,
+              child: Icon(
+                completed ? Icons.check_rounded : Icons.mic_rounded,
+                size: 18,
+                color: completed ? Colors.white : AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    segmentLabel,
+                    style: AppText.body(13, weight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    completed
+                        ? '${singer.isEmpty ? '파트원' : singer} 완료'
+                        : assigneeName.isEmpty
+                        ? '다음 주자 대기'
+                        : '다음 $assigneeName',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.body(11, color: AppColors.muted),
+                  ),
+                ],
+              ),
+            ),
+            if (isMyTurn && !completed)
+              _TurnPill(label: '내 차례', active: true)
+            else
+              Icon(
+                completed
+                    ? Icons.play_circle_outline_rounded
+                    : Icons.chevron_right_rounded,
+                color: AppColors.muted,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HarmonyMvpVotePanel extends StatelessWidget {
+  const _HarmonyMvpVotePanel({
+    required this.missionGroupId,
+    required this.part,
+    required this.relays,
+  });
+
+  final String missionGroupId;
+  final String part;
+  final List<Map<String, dynamic>> relays;
+
+  @override
+  Widget build(BuildContext context) {
+    final candidates = _relayVoteCandidates(relays);
+    if (candidates.isEmpty) return const SizedBox.shrink();
+    return StreamBuilder<Map<String, int>>(
+      stream: FirebaseService.watchHarmonyMvpVotes(
+        missionGroupId: missionGroupId,
+      ),
+      builder: (context, snapshot) {
+        final votes = snapshot.data ?? const <String, int>{};
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.72),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border.withValues(alpha: 0.4)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '완주 MVP 투표',
+                style: AppText.body(14, weight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: candidates.map((candidate) {
+                  final count = votes[candidate.id] ?? 0;
+                  return ActionChip(
+                    avatar: CircleAvatar(
+                      backgroundColor: AppColors.primarySoft,
+                      child: Text(
+                        candidate.name.characters.first,
+                        style: AppText.body(10, weight: FontWeight.w900),
+                      ),
+                    ),
+                    label: Text('${candidate.name} $count'),
+                    onPressed: () async {
+                      try {
+                        await FirebaseService.voteHarmonyMvp(
+                          missionGroupId: missionGroupId,
+                          part: part,
+                          nomineeUserId: candidate.id,
+                          nomineeName: candidate.name,
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('${candidate.name}님에게 투표했어요.'),
+                            ),
+                          );
+                        }
+                      } catch (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                error.toString().replaceFirst(
+                                  'Exception: ',
+                                  '',
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RelayVoteCandidate {
+  const _RelayVoteCandidate({required this.id, required this.name});
+
+  final String id;
+  final String name;
+}
+
+List<_RelayVoteCandidate> _relayVoteCandidates(
+  List<Map<String, dynamic>> relays,
+) {
+  final candidates = <String, _RelayVoteCandidate>{};
+  for (final relay in relays) {
+    final clips = ((relay['clips'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>();
+    for (final clip in clips) {
+      final id = clip['userId']?.toString() ?? '';
+      final name = clip['userName']?.toString() ?? '';
+      if (id.isNotEmpty && name.isNotEmpty) {
+        candidates[id] = _RelayVoteCandidate(id: id, name: name);
+      }
+    }
+  }
+  return candidates.values.toList();
+}
+
+bool _relayCompleted(Map<String, dynamic> relay) {
+  final clips = ((relay['clips'] as List?) ?? const []);
+  return clips.isNotEmpty || relay['status']?.toString() == 'completed';
+}
+
+String _firstText(List<String?> values) {
+  for (final value in values) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return '';
 }
 
 class _RelayCard extends StatelessWidget {
@@ -598,6 +1064,10 @@ class _RelayCard extends StatelessWidget {
                       guideAudioUrl: guideAudioUrl,
                       mrAudioUrl: mrAudioUrl,
                       segmentLabel: segmentLabel,
+                      segmentStartSec:
+                          (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
+                      segmentEndSec:
+                          (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
                       ref: ref,
                     ),
                   ),
@@ -1020,6 +1490,8 @@ class _RelayClipSheet extends StatefulWidget {
     required this.guideAudioUrl,
     required this.mrAudioUrl,
     required this.segmentLabel,
+    required this.segmentStartSec,
+    required this.segmentEndSec,
     required this.ref,
   });
 
@@ -1030,6 +1502,8 @@ class _RelayClipSheet extends StatefulWidget {
   final String guideAudioUrl;
   final String mrAudioUrl;
   final String segmentLabel;
+  final double segmentStartSec;
+  final double segmentEndSec;
   final WidgetRef ref;
 
   @override
@@ -1043,6 +1517,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   final List<int> _recordedBytes = [];
   StreamSubscription<Uint8List>? _recordingSub;
   Timer? _recordingTimer;
+  Timer? _segmentStopTimer;
   Uint8List? _audioBytes;
   bool _isRecording = false;
   bool _isSubmitting = false;
@@ -1055,9 +1530,22 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   static const _sampleRate = 44100;
   static const _channels = 1;
 
+  Duration get _segmentStart {
+    final milliseconds = (widget.segmentStartSec * 1000).round();
+    return Duration(milliseconds: milliseconds < 0 ? 0 : milliseconds);
+  }
+
+  Duration get _segmentDuration {
+    if (widget.segmentEndSec <= widget.segmentStartSec) return Duration.zero;
+    final milliseconds =
+        ((widget.segmentEndSec - widget.segmentStartSec) * 1000).round();
+    return Duration(milliseconds: milliseconds < 0 ? 0 : milliseconds);
+  }
+
   @override
   void dispose() {
     _recordingTimer?.cancel();
+    _segmentStopTimer?.cancel();
     _recordingSub?.cancel();
     unawaited(_recorder.dispose());
     unawaited(_guidePlayer.dispose());
@@ -1311,13 +1799,24 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       if (!completer.isCompleted) completer.complete();
     });
     await _guidePlayer.stop();
-    await _guidePlayer.play(UrlSource(audioUrl));
+    final segmentDuration = _segmentDuration;
+    _segmentStopTimer?.cancel();
+    await _guidePlayer.play(UrlSource(audioUrl), position: _segmentStart);
+    if (segmentDuration > Duration.zero) {
+      _segmentStopTimer = Timer(segmentDuration, () async {
+        await _guidePlayer.stop();
+        if (!completer.isCompleted) completer.complete();
+      });
+    }
     await completer.future.timeout(
-      const Duration(seconds: 45),
+      segmentDuration > Duration.zero
+          ? segmentDuration + const Duration(seconds: 3)
+          : const Duration(seconds: 45),
       onTimeout: () async {
         await _guidePlayer.stop();
       },
     );
+    _segmentStopTimer?.cancel();
     await sub.cancel();
   }
 
@@ -1354,7 +1853,16 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       });
       if (hasBacking) {
         await _guidePlayer.stop();
-        unawaited(_guidePlayer.play(UrlSource(backingUrl)));
+        final segmentDuration = _segmentDuration;
+        _segmentStopTimer?.cancel();
+        unawaited(
+          _guidePlayer.play(UrlSource(backingUrl), position: _segmentStart),
+        );
+        if (segmentDuration > Duration.zero) {
+          _segmentStopTimer = Timer(segmentDuration, () {
+            unawaited(_stopRecording());
+          });
+        }
       }
     } catch (_) {
       _showMessage('녹음을 시작할 수 없습니다. 마이크 권한을 확인해주세요.');
@@ -1364,6 +1872,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _stopRecording() async {
     if (!_isRecording) return;
     try {
+      _segmentStopTimer?.cancel();
+      _segmentStopTimer = null;
       await _guidePlayer.stop();
       await _recorder.stop();
       await Future<void>.delayed(const Duration(milliseconds: 80));

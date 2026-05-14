@@ -6,6 +6,8 @@ const crypto = require("crypto");
 const os = require("os");
 const path = require("path");
 const fs = require("fs/promises");
+const { execFile } = require("child_process");
+const { promisify } = require("util");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
 
@@ -14,6 +16,7 @@ const { onObjectFinalized } = require("firebase-functions/v2/storage");
 
 admin.initializeApp();
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+const execFileAsync = promisify(execFile);
 
 const NAVER_CLIENT_ID = defineSecret("NAVER_CLIENT_ID");
 const NAVER_CLIENT_SECRET = defineSecret("NAVER_CLIENT_SECRET");
@@ -57,6 +60,273 @@ const authorFields = (userData = {}) => ({
   userGeneration: userData.generation || "",
   userImageUrl: userData.profileImageUrl || userData.imageUrl || null,
 });
+
+const HARMONY_PARTS = ["soprano", "alto", "tenor", "bass"];
+const HARMONY_PART_LABELS = {
+  soprano: "소프라노",
+  alto: "알토",
+  tenor: "테너",
+  bass: "베이스",
+};
+
+const parseFfmpegDuration = (text = "") => {
+  const match = text.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  return (
+    Number(match[1]) * 3600 +
+    Number(match[2]) * 60 +
+    Number(match[3])
+  );
+};
+
+const parseSilences = (text = "") => {
+  const starts = [];
+  const ends = [];
+  for (const match of text.matchAll(/silence_start:\s*([\d.]+)/g)) {
+    starts.push(Number(match[1]));
+  }
+  for (const match of text.matchAll(/silence_end:\s*([\d.]+)\s*\|\s*silence_duration:\s*([\d.]+)/g)) {
+    ends.push({
+      end: Number(match[1]),
+      duration: Number(match[2]),
+      start: Number(match[1]) - Number(match[2]),
+    });
+  }
+  return ends.length > 0
+    ? ends
+    : starts.map((start) => ({ start, end: start, duration: 0 }));
+};
+
+const pushSegment = (segments, startSec, endSec) => {
+  const start = Math.max(0, Number(startSec.toFixed(2)));
+  const end = Math.max(start, Number(endSec.toFixed(2)));
+  if (end - start < 4) return;
+  segments.push({
+    id: `seg-${String(segments.length + 1).padStart(2, "0")}`,
+    order: segments.length + 1,
+    label: `${segments.length + 1}소절`,
+    startSec: start,
+    endSec: end,
+    durationSec: Number((end - start).toFixed(2)),
+  });
+};
+
+const splitLongRegion = (segments, startSec, endSec) => {
+  const duration = endSec - startSec;
+  if (duration <= 0) return;
+  if (duration <= 28) {
+    pushSegment(segments, startSec, endSec);
+    return;
+  }
+  const chunkCount = Math.min(12, Math.max(2, Math.round(duration / 18)));
+  const chunk = duration / chunkCount;
+  for (let index = 0; index < chunkCount; index += 1) {
+    pushSegment(segments, startSec + chunk * index, startSec + chunk * (index + 1));
+  }
+};
+
+const fallbackSegments = (durationSec) => {
+  const safeDuration = Math.max(20, durationSec || 80);
+  const count = Math.min(14, Math.max(4, Math.round(safeDuration / 18)));
+  const chunk = safeDuration / count;
+  const segments = [];
+  for (let index = 0; index < count; index += 1) {
+    pushSegment(segments, chunk * index, chunk * (index + 1));
+  }
+  return segments;
+};
+
+const buildSegmentsFromSilence = (silences, durationSec) => {
+  if (!durationSec || durationSec < 8 || silences.length === 0) {
+    return fallbackSegments(durationSec);
+  }
+  const segments = [];
+  let cursor = 0;
+  const sortedSilences = silences
+    .filter((item) => Number.isFinite(item.start) && Number.isFinite(item.end))
+    .sort((a, b) => a.start - b.start);
+
+  for (const silence of sortedSilences) {
+    if (silence.duration >= 0.35 && silence.start - cursor >= 4) {
+      splitLongRegion(segments, cursor, Math.max(cursor, silence.start));
+      cursor = Math.max(cursor, silence.end);
+    }
+  }
+  if (durationSec - cursor >= 4) {
+    splitLongRegion(segments, cursor, durationSec);
+  }
+
+  if (segments.length < 3) return fallbackSegments(durationSec);
+  return segments.slice(0, 18).map((segment, index) => ({
+    ...segment,
+    id: `seg-${String(index + 1).padStart(2, "0")}`,
+    order: index + 1,
+    label: `${index + 1}소절`,
+  }));
+};
+
+const tempAudioPath = (url) => {
+  const cleanPath = new URL(url).pathname;
+  const ext = path.extname(cleanPath).split("?")[0] || ".audio";
+  return path.join(
+    os.tmpdir(),
+    `harmony_${Date.now()}_${crypto.randomBytes(5).toString("hex")}${ext}`,
+  );
+};
+
+const analyzeAudioUrl = async (audioUrl) => {
+  if (!audioUrl) return { durationSec: 0, source: "none", segments: [] };
+  const inputPath = tempAudioPath(audioUrl);
+  try {
+    const response = await axios.get(audioUrl, {
+      responseType: "arraybuffer",
+      timeout: 90000,
+      maxContentLength: 80 * 1024 * 1024,
+    });
+    await fs.writeFile(inputPath, response.data);
+    const result = await execFileAsync(
+      ffmpegInstaller.path,
+      [
+        "-hide_banner",
+        "-i",
+        inputPath,
+        "-af",
+        "silencedetect=noise=-34dB:d=0.45",
+        "-f",
+        "null",
+        "-",
+      ],
+      { timeout: 180000, maxBuffer: 12 * 1024 * 1024 },
+    );
+    const stderr = result.stderr || "";
+    const durationSec = parseFfmpegDuration(stderr);
+    const silences = parseSilences(stderr);
+    const segments = buildSegmentsFromSilence(silences, durationSec);
+    return {
+      durationSec: Number((durationSec || 0).toFixed(2)),
+      source: silences.length > 0 ? "ffmpeg-silencedetect" : "duration-fallback",
+      segments,
+    };
+  } catch (error) {
+    const stderr = error?.stderr || "";
+    const durationSec = parseFfmpegDuration(stderr);
+    if (durationSec > 0) {
+      return {
+        durationSec: Number(durationSec.toFixed(2)),
+        source: "duration-fallback",
+        segments: fallbackSegments(durationSec),
+      };
+    }
+    console.error("Harmony audio analysis failed:", error);
+    throw new HttpsError("internal", "음원 구간 분석에 실패했습니다.");
+  } finally {
+    await fs.unlink(inputPath).catch(() => {});
+  }
+};
+
+exports.analyzeSheetMusicForHarmony = onCall(
+  { memory: "1GiB", timeoutSeconds: 540 },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+    }
+    const { churchId, sheetMusicId } = request.data || {};
+    if (!churchId || !sheetMusicId) {
+      throw new HttpsError("invalid-argument", "악보 정보가 올바르지 않습니다.");
+    }
+
+    const db = admin.firestore();
+    const [adminDoc, sheetDoc] = await Promise.all([
+      db.collection("users").doc(request.auth.uid).get(),
+      db.collection("sheet_music").doc(String(sheetMusicId)).get(),
+    ]);
+    if (!adminDoc.exists) {
+      throw new HttpsError("permission-denied", "관리자 프로필을 찾을 수 없습니다.");
+    }
+    if (!sheetDoc.exists) {
+      throw new HttpsError("not-found", "악보를 찾을 수 없습니다.");
+    }
+    const adminUser = { uid: request.auth.uid, ...adminDoc.data() };
+    const sheet = sheetDoc.data() || {};
+    if (sheet.churchId !== churchId) {
+      throw new HttpsError("permission-denied", "다른 교회 악보입니다.");
+    }
+    if (!(await isChurchAdmin(adminUser, churchId, request.auth.token))) {
+      throw new HttpsError("permission-denied", "악보 분석 권한이 없습니다.");
+    }
+
+    const sheetRef = sheetDoc.ref;
+    await sheetRef.update({
+      harmonyAnalysisStatus: "processing",
+      harmonyAnalysisStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    try {
+      const partFiles = sheet.partFiles || {};
+      const globalGuideUrl = sheet.audioUrl || "";
+      const parts = {};
+
+      for (const part of HARMONY_PARTS) {
+        const partFile = partFiles[part] || {};
+        const audioUrl = partFile.guideAudioUrl || globalGuideUrl;
+        if (!audioUrl) continue;
+        const analyzed = await analyzeAudioUrl(audioUrl);
+        parts[part] = analyzed.segments.map((segment) => ({
+          ...segment,
+          part,
+          partLabel: HARMONY_PART_LABELS[part] || part,
+          audioSource: partFile.guideAudioUrl ? "part-guide" : "global-guide",
+          sourceAudioUrl: audioUrl,
+        }));
+      }
+
+      const totalSegments = Object.values(parts).reduce(
+        (total, segments) => total + segments.length,
+        0,
+      );
+      if (totalSegments === 0) {
+        throw new HttpsError(
+          "failed-precondition",
+          "분석할 가이드 음원이 없습니다.",
+        );
+      }
+
+      await sheetRef.update({
+        harmonyAnalysisStatus: "ready",
+        harmonySegments: {
+          version: 1,
+          source: "ffmpeg-silencedetect",
+          generatedAt: admin.firestore.Timestamp.now(),
+          partCount: Object.keys(parts).length,
+          totalSegments,
+          parts,
+        },
+        harmonyAnalysisError: admin.firestore.FieldValue.delete(),
+        harmonyAnalysisFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return {
+        status: "ready",
+        partCount: Object.keys(parts).length,
+        totalSegments,
+      };
+    } catch (error) {
+      const message =
+        error instanceof HttpsError
+          ? error.message
+          : error?.message || "음원 구간 분석에 실패했습니다.";
+      await sheetRef.update({
+        harmonyAnalysisStatus: "failed",
+        harmonyAnalysisError: message,
+        harmonyAnalysisFinishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("internal", message);
+    }
+  },
+);
 
 exports.scanAttendanceQr = onCall(async (request) => {
   if (!request.auth) {
