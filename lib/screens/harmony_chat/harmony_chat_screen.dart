@@ -501,6 +501,7 @@ class _RelayCard extends StatelessWidget {
     final segmentLabel = relay['segmentLabel']?.toString() ?? '소절';
     final guide = relay['guide']?.toString() ?? '';
     final guideAudioUrl = relay['guideAudioUrl']?.toString() ?? '';
+    final mrAudioUrl = relay['mrAudioUrl']?.toString() ?? '';
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
     final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
     final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
@@ -595,6 +596,7 @@ class _RelayCard extends StatelessWidget {
                       partLabel: partLabel,
                       relayTitle: title,
                       guideAudioUrl: guideAudioUrl,
+                      mrAudioUrl: mrAudioUrl,
                       segmentLabel: segmentLabel,
                       ref: ref,
                     ),
@@ -1016,6 +1018,7 @@ class _RelayClipSheet extends StatefulWidget {
     required this.partLabel,
     required this.relayTitle,
     required this.guideAudioUrl,
+    required this.mrAudioUrl,
     required this.segmentLabel,
     required this.ref,
   });
@@ -1025,6 +1028,7 @@ class _RelayClipSheet extends StatefulWidget {
   final String partLabel;
   final String relayTitle;
   final String guideAudioUrl;
+  final String mrAudioUrl;
   final String segmentLabel;
   final WidgetRef ref;
 
@@ -1044,6 +1048,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   bool _isSubmitting = false;
   bool _isGuidePlaying = false;
   bool _isGuidedFlow = false;
+  bool _isMrRecording = false;
   int _recordSeconds = 0;
   double _progress = 0;
 
@@ -1081,7 +1086,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                 children: [
                   Expanded(
                     child: Text(
-                      '내 소절 이어 부르기',
+                      '릴레이 스튜디오',
                       style: AppText.body(20, weight: FontWeight.w900),
                     ),
                   ),
@@ -1095,10 +1100,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
               ),
               const SizedBox(height: 4),
               Text(
-                widget.relayTitle,
+                '${widget.relayTitle} · ${widget.partLabel}',
                 style: AppText.body(13, color: AppColors.muted),
               ),
-              if (widget.guideAudioUrl.isNotEmpty) ...[
+              if (widget.guideAudioUrl.isNotEmpty ||
+                  widget.mrAudioUrl.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
@@ -1123,7 +1129,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '가이드를 먼저 듣고, 같은 구간이 다시 나올 때 이어서 녹음해요.',
+                        widget.mrAudioUrl.isNotEmpty
+                            ? '가이드 보컬로 구간을 익히고, 녹음할 때는 MR만 재생돼요.'
+                            : '가이드 보컬은 듣기용이에요. 녹음 MR이 등록되면 반주에 맞춰 녹음할 수 있어요.',
                         style: AppText.body(
                           12,
                           color: AppColors.muted,
@@ -1142,7 +1150,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                 Icons.play_arrow_rounded,
                                 size: 18,
                               ),
-                              label: const Text('가이드 듣기'),
+                              label: const Text('보컬 가이드'),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -1154,8 +1162,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                       _isGuidePlaying
                                   ? null
                                   : _listenThenRecord,
-                              icon: const Icon(Icons.repeat_rounded, size: 18),
-                              label: const Text('듣고 녹음'),
+                              icon: const Icon(
+                                Icons.graphic_eq_rounded,
+                                size: 18,
+                              ),
+                              label: const Text('MR 녹음'),
                             ),
                           ),
                         ],
@@ -1193,11 +1204,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                     const SizedBox(height: 8),
                     Text(
                       _isGuidePlaying
-                          ? (_isGuidedFlow ? '가이드를 먼저 듣는 중...' : '가이드 재생 중...')
+                          ? (_isGuidedFlow ? '보컬 가이드를 듣는 중...' : '가이드 재생 중...')
                           : _isRecording
-                          ? '녹음 중 ${_formatDuration(_recordSeconds)}'
+                          ? (_isMrRecording
+                                ? 'MR에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
+                                : '녹음 중 ${_formatDuration(_recordSeconds)}')
                           : _audioBytes == null
-                          ? '릴레이 소절을 녹음해주세요'
+                          ? '한 소절을 이어 받을 준비가 됐어요'
                           : '녹음 준비 완료',
                       style: AppText.body(16, weight: FontWeight.w900),
                     ),
@@ -1248,14 +1261,14 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   Future<void> _startRecording() async {
-    await _startRecordingInternal(playGuide: false);
+    await _startRecordingInternal();
   }
 
   Future<void> _playGuideOnce() async {
     if (widget.guideAudioUrl.isEmpty) return;
     try {
       setState(() => _isGuidePlaying = true);
-      await _playGuideAndWait();
+      await _playGuideAndWait(widget.guideAudioUrl);
     } catch (_) {
       _showMessage('가이드 음원을 재생할 수 없습니다.');
     } finally {
@@ -1264,8 +1277,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   Future<void> _listenThenRecord() async {
-    if (widget.guideAudioUrl.isEmpty) {
-      await _startRecording();
+    if (widget.mrAudioUrl.isEmpty) {
+      _showMessage('녹음용 MR이 아직 등록되지 않았어요.');
       return;
     }
     try {
@@ -1273,12 +1286,14 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isGuidePlaying = true;
         _isGuidedFlow = true;
       });
-      await _playGuideAndWait();
+      if (widget.guideAudioUrl.isNotEmpty) {
+        await _playGuideAndWait(widget.guideAudioUrl);
+      }
       if (!mounted) return;
       setState(() => _isGuidePlaying = false);
-      await _startRecordingInternal(playGuide: true);
+      await _startRecordingInternal(backingUrl: widget.mrAudioUrl);
     } catch (_) {
-      _showMessage('가이드 재생 후 녹음을 시작하지 못했습니다.');
+      _showMessage('MR 녹음을 시작하지 못했습니다.');
     } finally {
       if (mounted) {
         setState(() {
@@ -1289,14 +1304,14 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
   }
 
-  Future<void> _playGuideAndWait() async {
+  Future<void> _playGuideAndWait(String audioUrl) async {
     final completer = Completer<void>();
     StreamSubscription<void>? sub;
     sub = _guidePlayer.onPlayerComplete.listen((_) {
       if (!completer.isCompleted) completer.complete();
     });
     await _guidePlayer.stop();
-    await _guidePlayer.play(UrlSource(widget.guideAudioUrl));
+    await _guidePlayer.play(UrlSource(audioUrl));
     await completer.future.timeout(
       const Duration(seconds: 45),
       onTimeout: () async {
@@ -1306,8 +1321,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     await sub.cancel();
   }
 
-  Future<void> _startRecordingInternal({required bool playGuide}) async {
+  Future<void> _startRecordingInternal({String? backingUrl}) async {
     try {
+      final hasBacking = backingUrl != null && backingUrl.isNotEmpty;
       final hasPermission = await _recorder.hasPermission();
       if (!hasPermission) {
         _showMessage('마이크 권한이 필요합니다.');
@@ -1318,7 +1334,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
           encoder: AudioEncoder.pcm16bits,
           sampleRate: _sampleRate,
           numChannels: _channels,
-          echoCancel: !playGuide,
+          echoCancel: !hasBacking,
           noiseSuppress: true,
           autoGain: true,
         ),
@@ -1332,11 +1348,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       });
       setState(() {
         _isRecording = true;
+        _isMrRecording = hasBacking;
         _recordSeconds = 0;
         _audioBytes = null;
       });
-      if (playGuide && widget.guideAudioUrl.isNotEmpty) {
-        unawaited(_guidePlayer.play(UrlSource(widget.guideAudioUrl)));
+      if (hasBacking) {
+        await _guidePlayer.stop();
+        unawaited(_guidePlayer.play(UrlSource(backingUrl)));
       }
     } catch (_) {
       _showMessage('녹음을 시작할 수 없습니다. 마이크 권한을 확인해주세요.');
@@ -1355,12 +1373,16 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _recordingTimer = null;
       final pcmBytes = Uint8List.fromList(_recordedBytes);
       if (pcmBytes.isEmpty) {
-        setState(() => _isRecording = false);
+        setState(() {
+          _isRecording = false;
+          _isMrRecording = false;
+        });
         _showMessage('녹음된 소리가 없습니다. 다시 시도해주세요.');
         return;
       }
       setState(() {
         _isRecording = false;
+        _isMrRecording = false;
         _audioBytes = _wavFromPcmBytes(
           pcmBytes,
           sampleRate: _sampleRate,
@@ -1368,7 +1390,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         );
       });
     } catch (_) {
-      setState(() => _isRecording = false);
+      setState(() {
+        _isRecording = false;
+        _isMrRecording = false;
+      });
       _showMessage('녹음을 마무리하지 못했습니다. 다시 시도해주세요.');
     }
   }

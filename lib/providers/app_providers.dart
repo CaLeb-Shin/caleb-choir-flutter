@@ -124,6 +124,9 @@ const _previewSheetMusic = [
         'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
     'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     'audioFileName': '파트연습.mp3',
+    'mrAudioUrl':
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    'mrAudioFileName': '파트MR.mp3',
     'createdAt': '2026-04-28T09:00:00',
   },
   {
@@ -339,6 +342,9 @@ const _previewHarmonyRelays = [
     'guideAudioUrl':
         'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     'guideAudioFileName': 'soprano_guide.mp3',
+    'mrAudioUrl':
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    'mrAudioFileName': 'soprano_mr.mp3',
     'currentAssigneeId': 'preview-soprano-3',
     'currentAssigneeName': '정소절',
     'clipCount': 2,
@@ -753,6 +759,8 @@ final latestPartGuideProvider = FutureProvider<Map<String, dynamic>?>((ref) {
       'part': part,
       'guideAudioUrl': preview['audioUrl'],
       'guideAudioFileName': preview['audioFileName'],
+      'mrAudioUrl': preview['mrAudioUrl'],
+      'mrAudioFileName': preview['mrAudioFileName'],
       'guide': preview['conductorComment'] ?? '',
       'composer': preview['composer'] ?? '',
       'sheetUrl': preview['fileUrl'] ?? '',

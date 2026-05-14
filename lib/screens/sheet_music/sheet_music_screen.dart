@@ -224,10 +224,13 @@ class SheetMusicScreen extends ConsumerWidget {
                                       sheetLabel: resource.sheetLabel,
                                       hasFile: resource.hasSheet,
                                       hasAudio: resource.hasAudio,
+                                      hasMrAudio: resource.hasMrAudio,
                                       onOpenFile: () =>
                                           _openUrl(resource.sheetUrl),
                                       onOpenAudio: () =>
                                           _openUrl(resource.audioUrl),
+                                      onOpenMrAudio: () =>
+                                          _openUrl(resource.mrAudioUrl),
                                     ),
                                   )
                                   .toList(),
@@ -329,6 +332,7 @@ class _PartResource {
   final String sheetLabel;
   final String? sheetUrl;
   final String? audioUrl;
+  final String? mrAudioUrl;
 
   const _PartResource({
     required this.partKey,
@@ -336,10 +340,12 @@ class _PartResource {
     required this.sheetLabel,
     this.sheetUrl,
     this.audioUrl,
+    this.mrAudioUrl,
   });
 
   bool get hasSheet => sheetUrl != null && sheetUrl!.isNotEmpty;
   bool get hasAudio => audioUrl != null && audioUrl!.isNotEmpty;
+  bool get hasMrAudio => mrAudioUrl != null && mrAudioUrl!.isNotEmpty;
 }
 
 const _choirPartOrder = [
@@ -400,6 +406,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
   );
   final mainSheetUrl = _stringValue(main['fileUrl']);
   final mainAudioUrl = _stringValue(main['audioUrl']);
+  final mainMrAudioUrl = _stringValue(main['mrAudioUrl']);
   final partFiles = _mapValue(main['partFiles']);
   final mainIsAll = (main['sheetPart']?.toString() ?? 'all') == 'all';
   final hasSeparatePartRows = group.items.any(
@@ -416,6 +423,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
         sheetLabel: part == 'all' ? '총보 보기' : '악보 보기',
         sheetUrl: _stringValue(sheet['fileUrl']),
         audioUrl: _stringValue(sheet['audioUrl']),
+        mrAudioUrl: _stringValue(sheet['mrAudioUrl']),
       );
     }).toList();
   }
@@ -427,11 +435,13 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
       sheetLabel: '총보 보기',
       sheetUrl: mainSheetUrl,
       audioUrl: mainAudioUrl,
+      mrAudioUrl: mainMrAudioUrl,
     ),
     ..._choirPartOrder.map((part) {
       final files = _mapValue(partFiles[part['value']]);
       final partSheetUrl = _stringValue(files['sheetUrl']);
       final partAudioUrl = _stringValue(files['guideAudioUrl']);
+      final partMrAudioUrl = _stringValue(files['mrAudioUrl']);
       final hasPartSheet = partSheetUrl.isNotEmpty;
 
       return _PartResource(
@@ -440,6 +450,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
         sheetLabel: hasPartSheet ? '파트 악보' : '총보 보기',
         sheetUrl: hasPartSheet ? partSheetUrl : mainSheetUrl,
         audioUrl: partAudioUrl,
+        mrAudioUrl: partMrAudioUrl,
       );
     }),
   ];
@@ -494,8 +505,10 @@ class _PartResourceRow extends StatelessWidget {
   final String sheetLabel;
   final bool hasFile;
   final bool hasAudio;
+  final bool hasMrAudio;
   final VoidCallback onOpenFile;
   final VoidCallback onOpenAudio;
+  final VoidCallback onOpenMrAudio;
 
   const _PartResourceRow({
     required this.partKey,
@@ -503,8 +516,10 @@ class _PartResourceRow extends StatelessWidget {
     required this.sheetLabel,
     required this.hasFile,
     required this.hasAudio,
+    required this.hasMrAudio,
     required this.onOpenFile,
     required this.onOpenAudio,
+    required this.onOpenMrAudio,
   });
 
   @override
@@ -554,9 +569,16 @@ class _PartResourceRow extends StatelessWidget {
                 ),
                 _ResourcePill(
                   icon: Icons.headphones_rounded,
-                  label: hasAudio ? '음원 듣기' : '음원 없음',
+                  label: hasAudio ? '가이드 듣기' : '가이드 없음',
                   enabled: hasAudio,
                   onTap: onOpenAudio,
+                  accent: tone.accent,
+                ),
+                _ResourcePill(
+                  icon: Icons.graphic_eq_rounded,
+                  label: hasMrAudio ? 'MR 듣기' : 'MR 없음',
+                  enabled: hasMrAudio,
+                  onTap: onOpenMrAudio,
                   accent: tone.accent,
                 ),
               ],

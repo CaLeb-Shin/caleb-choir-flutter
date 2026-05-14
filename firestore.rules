@@ -249,7 +249,12 @@ service cloud.firestore {
             'updatedAt',
             'currentAssigneeId',
             'currentAssigneeName',
-            'assignedAt'
+            'assignedAt',
+            'guideAudioUrl',
+            'guideAudioFileName',
+            'mrAudioUrl',
+            'mrAudioFileName',
+            'sourceSheetUrl'
           ]);
       allow delete: if isSignedIn()
         && resource.data.keys().hasAll(['churchId', 'userId'])

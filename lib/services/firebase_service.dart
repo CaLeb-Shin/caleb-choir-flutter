@@ -878,7 +878,8 @@ class FirebaseService {
 
       if (sheetPart == part) {
         final guideUrl = sheet['audioUrl']?.toString() ?? '';
-        if (guideUrl.isNotEmpty) {
+        final mrUrl = sheet['mrAudioUrl']?.toString() ?? '';
+        if (guideUrl.isNotEmpty || mrUrl.isNotEmpty) {
           return {
             'sheetMusicId': sheet['id'],
             'title': songTitle,
@@ -887,6 +888,8 @@ class FirebaseService {
             'part': part,
             'guideAudioUrl': guideUrl,
             'guideAudioFileName': sheet['audioFileName']?.toString() ?? '',
+            'mrAudioUrl': mrUrl,
+            'mrAudioFileName': sheet['mrAudioFileName']?.toString() ?? '',
             'guide': conductorComment,
             'composer': sheet['composer']?.toString() ?? '',
             'sheetUrl': sheet['fileUrl']?.toString() ?? '',
@@ -897,7 +900,8 @@ class FirebaseService {
       final partFiles = _asStringMap(sheet['partFiles']);
       final partFile = _asStringMap(partFiles[part]);
       final guideUrl = partFile['guideAudioUrl']?.toString() ?? '';
-      if (guideUrl.isNotEmpty) {
+      final mrUrl = partFile['mrAudioUrl']?.toString() ?? '';
+      if (guideUrl.isNotEmpty || mrUrl.isNotEmpty) {
         final mainSheetUrl = sheet['fileUrl']?.toString() ?? '';
         final partSheetUrl = partFile['sheetUrl']?.toString() ?? '';
         return {
@@ -907,7 +911,10 @@ class FirebaseService {
           'sheetDate': sheetDate,
           'part': part,
           'guideAudioUrl': guideUrl,
-          'guideAudioFileName': partFile['guideAudioName']?.toString() ?? '',
+          'guideAudioFileName':
+              partFile['guideAudioFileName']?.toString() ?? '',
+          'mrAudioUrl': mrUrl,
+          'mrAudioFileName': partFile['mrAudioFileName']?.toString() ?? '',
           'guide': conductorComment,
           'composer': sheet['composer']?.toString() ?? '',
           'sheetUrl': partSheetUrl.isNotEmpty ? partSheetUrl : mainSheetUrl,
@@ -930,6 +937,14 @@ class FirebaseService {
       for (final doc in existing.docs) {
         final data = doc.data();
         if (data['churchId'] == _requireChurchId() && data['part'] == part) {
+          await doc.reference.update({
+            'guideAudioUrl': guide['guideAudioUrl']?.toString() ?? '',
+            'guideAudioFileName': guide['guideAudioFileName']?.toString() ?? '',
+            'mrAudioUrl': guide['mrAudioUrl']?.toString() ?? '',
+            'mrAudioFileName': guide['mrAudioFileName']?.toString() ?? '',
+            'sourceSheetUrl': guide['sheetUrl']?.toString() ?? '',
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
           return doc.id;
         }
       }
@@ -953,6 +968,8 @@ class FirebaseService {
       guide: guide['guide']?.toString(),
       guideAudioUrl: guide['guideAudioUrl']?.toString(),
       guideAudioFileName: guide['guideAudioFileName']?.toString(),
+      mrAudioUrl: guide['mrAudioUrl']?.toString(),
+      mrAudioFileName: guide['mrAudioFileName']?.toString(),
       sourceSheetMusicId: guide['sheetMusicId']?.toString(),
       sourceTitle: title,
       sourceDate: sheetDate,
@@ -979,6 +996,8 @@ class FirebaseService {
     String? guide,
     String? guideAudioUrl,
     String? guideAudioFileName,
+    String? mrAudioUrl,
+    String? mrAudioFileName,
     String? sourceSheetMusicId,
     String? sourceTitle,
     String? sourceDate,
@@ -997,6 +1016,8 @@ class FirebaseService {
       'guide': guide?.trim() ?? '',
       'guideAudioUrl': guideAudioUrl?.trim() ?? '',
       'guideAudioFileName': guideAudioFileName?.trim() ?? '',
+      'mrAudioUrl': mrAudioUrl?.trim() ?? '',
+      'mrAudioFileName': mrAudioFileName?.trim() ?? '',
       'sourceSheetMusicId': sourceSheetMusicId?.trim() ?? '',
       'sourceTitle': sourceTitle?.trim() ?? '',
       'sourceDate': sourceDate?.trim() ?? '',
