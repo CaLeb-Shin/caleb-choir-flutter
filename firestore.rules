@@ -70,6 +70,9 @@ service cloud.firestore {
           )
         );
     }
+    function canReadHarmonyContent(cid, part) {
+      return isChurchAdminOf(cid) || canUseHarmonyPart(cid, part);
+    }
     function postChurchId(postId) {
       return get(/databases/$(database)/documents/posts/$(postId)).data.churchId;
     }
@@ -236,8 +239,8 @@ service cloud.firestore {
     }
 
     match /harmony_notes/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId', 'part'])
-        && canUseHarmonyPart(resource.data.churchId, resource.data.part);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadHarmonyContent(resource.data.churchId, resource.data.get('part', null));
       allow create: if isSignedIn()
         && request.resource.data.keys().hasAll(['churchId', 'userId', 'part', 'title', 'audioUrl'])
         && request.auth.uid == request.resource.data.userId
@@ -251,8 +254,8 @@ service cloud.firestore {
     }
 
     match /harmony_relays/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId', 'part'])
-        && canUseHarmonyPart(resource.data.churchId, resource.data.part);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadHarmonyContent(resource.data.churchId, resource.data.get('part', null));
       allow create: if isSignedIn()
         && request.resource.data.keys().hasAll(['churchId', 'userId', 'part', 'title', 'segmentLabel'])
         && request.auth.uid == request.resource.data.userId
@@ -292,8 +295,8 @@ service cloud.firestore {
     }
 
     match /harmony_relay_clips/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId', 'part'])
-        && canUseHarmonyPart(resource.data.churchId, resource.data.part);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadHarmonyContent(resource.data.churchId, resource.data.get('part', null));
       allow create: if isSignedIn()
         && request.resource.data.keys().hasAll(['churchId', 'relayId', 'userId', 'part', 'audioUrl'])
         && request.auth.uid == request.resource.data.userId
@@ -307,8 +310,8 @@ service cloud.firestore {
     }
 
     match /harmony_relay_votes/{docId} {
-      allow read: if resource.data.keys().hasAll(['churchId', 'part'])
-        && canUseHarmonyPart(resource.data.churchId, resource.data.part);
+      allow read: if resource.data.keys().hasAll(['churchId'])
+        && canReadHarmonyContent(resource.data.churchId, resource.data.get('part', null));
       allow create, update: if isSignedIn()
         && request.resource.data.keys().hasAll([
           'churchId',
