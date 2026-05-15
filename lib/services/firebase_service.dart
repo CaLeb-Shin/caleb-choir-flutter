@@ -903,8 +903,14 @@ class FirebaseService {
 
       final partFiles = _asStringMap(sheet['partFiles']);
       final partFile = _asStringMap(partFiles[part]);
-      final guideUrl = partFile['guideAudioUrl']?.toString() ?? '';
-      final mrUrl = partFile['mrAudioUrl']?.toString() ?? '';
+      final guideUrl = _firstNotEmpty([
+        partFile['guideAudioUrl']?.toString(),
+        sheet['audioUrl']?.toString(),
+      ]);
+      final mrUrl = _firstNotEmpty([
+        partFile['mrAudioUrl']?.toString(),
+        sheet['mrAudioUrl']?.toString(),
+      ]);
       if (guideUrl.isNotEmpty || mrUrl.isNotEmpty) {
         final mainSheetUrl = sheet['fileUrl']?.toString() ?? '';
         final partSheetUrl = partFile['sheetUrl']?.toString() ?? '';
@@ -915,10 +921,15 @@ class FirebaseService {
           'sheetDate': sheetDate,
           'part': part,
           'guideAudioUrl': guideUrl,
-          'guideAudioFileName':
-              partFile['guideAudioFileName']?.toString() ?? '',
+          'guideAudioFileName': _firstNotEmpty([
+            partFile['guideAudioFileName']?.toString(),
+            sheet['audioFileName']?.toString(),
+          ]),
           'mrAudioUrl': mrUrl,
-          'mrAudioFileName': partFile['mrAudioFileName']?.toString() ?? '',
+          'mrAudioFileName': _firstNotEmpty([
+            partFile['mrAudioFileName']?.toString(),
+            sheet['mrAudioFileName']?.toString(),
+          ]),
           'guide': conductorComment,
           'composer': sheet['composer']?.toString() ?? '',
           'sheetUrl': partSheetUrl.isNotEmpty ? partSheetUrl : mainSheetUrl,

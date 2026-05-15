@@ -1519,6 +1519,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Timer? _recordingTimer;
   Timer? _segmentStopTimer;
   Uint8List? _audioBytes;
+  int? _countdown;
   bool _isRecording = false;
   bool _isSubmitting = false;
   bool _isGuidePlaying = false;
@@ -1631,7 +1632,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                         children: [
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: _isRecording || _isGuidePlaying
+                              onPressed:
+                                  _isRecording ||
+                                      _isGuidePlaying ||
+                                      _countdown != null
                                   ? null
                                   : _playGuideOnce,
                               icon: const Icon(
@@ -1647,7 +1651,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                               onPressed:
                                   _isSubmitting ||
                                       _isRecording ||
-                                      _isGuidePlaying
+                                      _isGuidePlaying ||
+                                      _countdown != null
                                   ? null
                                   : _listenThenRecord,
                               icon: const Icon(
@@ -1681,17 +1686,45 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                 child: Column(
                   children: [
                     Icon(
-                      _isRecording
+                      _countdown != null
+                          ? Icons.timer_rounded
+                          : _isRecording
                           ? Icons.stop_circle_rounded
                           : Icons.mic_rounded,
-                      color: _isRecording
+                      color: _countdown != null
+                          ? AppColors.secondary
+                          : _isRecording
                           ? AppColors.secondary
                           : AppColors.primary,
                       size: 38,
                     ),
                     const SizedBox(height: 8),
+                    if (_countdown != null) ...[
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        transitionBuilder: (child, animation) =>
+                            ScaleTransition(
+                              scale: animation,
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
+                            ),
+                        child: Text(
+                          '$_countdown',
+                          key: ValueKey(_countdown),
+                          style: AppText.headline(
+                            46,
+                            color: AppColors.secondary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
                     Text(
-                      _isGuidePlaying
+                      _countdown != null
+                          ? '숨을 고르고 바로 시작합니다'
+                          : _isGuidePlaying
                           ? (_isGuidedFlow ? '보컬 가이드를 듣는 중...' : '가이드 재생 중...')
                           : _isRecording
                           ? (_isMrRecording
@@ -1704,11 +1737,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                     ),
                     const SizedBox(height: 10),
                     FilledButton.tonalIcon(
-                      onPressed: _isSubmitting
+                      onPressed: _isSubmitting || _countdown != null
                           ? null
                           : _isRecording
                           ? _stopRecording
-                          : _startRecording,
+                          : _countdownThenStartRecording,
                       icon: Icon(
                         _isRecording ? Icons.check_rounded : Icons.mic_rounded,
                       ),
@@ -1748,8 +1781,19 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     );
   }
 
-  Future<void> _startRecording() async {
-    await _startRecordingInternal();
+  Future<void> _countdownThenStartRecording({String? backingUrl}) async {
+    if (_isRecording || _isSubmitting || _countdown != null) return;
+    try {
+      for (final value in const [3, 2, 1]) {
+        if (!mounted) return;
+        setState(() => _countdown = value);
+        await Future<void>.delayed(const Duration(milliseconds: 760));
+      }
+    } finally {
+      if (mounted) setState(() => _countdown = null);
+    }
+    if (!mounted) return;
+    await _startRecordingInternal(backingUrl: backingUrl);
   }
 
   Future<void> _playGuideOnce() async {
@@ -1779,7 +1823,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       }
       if (!mounted) return;
       setState(() => _isGuidePlaying = false);
-      await _startRecordingInternal(backingUrl: widget.mrAudioUrl);
+      await _countdownThenStartRecording(backingUrl: widget.mrAudioUrl);
     } catch (_) {
       _showMessage('MR 녹음을 시작하지 못했습니다.');
     } finally {

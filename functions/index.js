@@ -464,8 +464,8 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
 
     const guideAudioUrl = partFile.guideAudioUrl || sheet.audioUrl || "";
     const guideAudioFileName = partFile.guideAudioFileName || sheet.audioFileName || "";
-    const mrAudioUrl = partFile.mrAudioUrl || "";
-    const mrAudioFileName = partFile.mrAudioFileName || "";
+    const mrAudioUrl = partFile.mrAudioUrl || sheet.mrAudioUrl || "";
+    const mrAudioFileName = partFile.mrAudioFileName || sheet.mrAudioFileName || "";
     const sourceSheetUrl = partFile.sheetUrl || sheet.fileUrl || "";
 
     for (let index = 0; index < segments.length; index += 1) {
