@@ -894,6 +894,8 @@ class FirebaseService {
             'guide': conductorComment,
             'composer': sheet['composer']?.toString() ?? '',
             'sheetUrl': sheet['fileUrl']?.toString() ?? '',
+            'sourcePollId': sheet['sourcePollId']?.toString() ?? '',
+            'sourceEventId': sheet['sourceEventId']?.toString() ?? '',
             'segments': harmonySegments,
           };
         }
@@ -920,6 +922,8 @@ class FirebaseService {
           'guide': conductorComment,
           'composer': sheet['composer']?.toString() ?? '',
           'sheetUrl': partSheetUrl.isNotEmpty ? partSheetUrl : mainSheetUrl,
+          'sourcePollId': sheet['sourcePollId']?.toString() ?? '',
+          'sourceEventId': sheet['sourceEventId']?.toString() ?? '',
           'segments': harmonySegments,
         };
       }
@@ -939,6 +943,7 @@ class FirebaseService {
       '오늘의 가이드',
     ]);
     final sheetDate = guide['sheetDate']?.toString() ?? '';
+    final sourcePollId = guide['sourcePollId']?.toString() ?? '';
     final rawSegments = (guide['segments'] as List?) ?? const [];
     final segments =
         rawSegments
@@ -986,6 +991,7 @@ class FirebaseService {
             'mrAudioUrl': guide['mrAudioUrl']?.toString() ?? '',
             'mrAudioFileName': guide['mrAudioFileName']?.toString() ?? '',
             'sourceSheetUrl': guide['sheetUrl']?.toString() ?? '',
+            'sourcePollId': sourcePollId,
             'missionTotalSegments': segments.length,
             'segmentOrder': (segment['order'] as num?)?.toInt() ?? index + 1,
             'segmentStartSec': (segment['startSec'] as num?)?.toDouble() ?? 0,
@@ -1000,6 +1006,7 @@ class FirebaseService {
 
         final assignee = await _pickHarmonyAssignee(
           part: part,
+          sourcePollId: sourcePollId,
           excludeUserIds: {uid},
         );
         final relayId = await createHarmonyRelay(
@@ -1015,6 +1022,7 @@ class FirebaseService {
           sourceTitle: title,
           sourceDate: sheetDate,
           sourceSheetUrl: guide['sheetUrl']?.toString(),
+          sourcePollId: sourcePollId,
           currentAssigneeId: assignee?['id']?.toString(),
           currentAssigneeName: assignee?['name']?.toString(),
           missionGroupId: missionGroupId,
@@ -1053,6 +1061,7 @@ class FirebaseService {
             'mrAudioUrl': guide['mrAudioUrl']?.toString() ?? '',
             'mrAudioFileName': guide['mrAudioFileName']?.toString() ?? '',
             'sourceSheetUrl': guide['sheetUrl']?.toString() ?? '',
+            'sourcePollId': sourcePollId,
             'updatedAt': FieldValue.serverTimestamp(),
           });
           return doc.id;
@@ -1062,6 +1071,7 @@ class FirebaseService {
     final segmentLabel = sheetDate.isNotEmpty ? '$sheetDate 1소절' : '오늘의 1소절';
     final assignee = await _pickHarmonyAssignee(
       part: part,
+      sourcePollId: sourcePollId,
       excludeUserIds: {uid},
     );
 
@@ -1078,6 +1088,7 @@ class FirebaseService {
       sourceTitle: title,
       sourceDate: sheetDate,
       sourceSheetUrl: guide['sheetUrl']?.toString(),
+      sourcePollId: sourcePollId,
       currentAssigneeId: assignee?['id']?.toString(),
       currentAssigneeName: assignee?['name']?.toString(),
       missionGroupId: sourceId.isNotEmpty ? '${sourceId}_$part' : null,
@@ -1110,6 +1121,7 @@ class FirebaseService {
     String? sourceTitle,
     String? sourceDate,
     String? sourceSheetUrl,
+    String? sourcePollId,
     String? currentAssigneeId,
     String? currentAssigneeName,
     String? missionGroupId,
@@ -1137,6 +1149,7 @@ class FirebaseService {
       'sourceTitle': sourceTitle?.trim() ?? '',
       'sourceDate': sourceDate?.trim() ?? '',
       'sourceSheetUrl': sourceSheetUrl?.trim() ?? '',
+      'sourcePollId': sourcePollId?.trim() ?? '',
       'missionGroupId': missionGroupId?.trim() ?? '',
       'missionTotalSegments': missionTotalSegments ?? 1,
       'segmentId': segmentId?.trim() ?? '',
@@ -1197,9 +1210,14 @@ class FirebaseService {
     final relayDoc = await relayRef.get();
     final isSegmentMission =
         (relayDoc.data()?['missionGroupId']?.toString() ?? '').isNotEmpty;
+    final sourcePollId = relayDoc.data()?['sourcePollId']?.toString() ?? '';
     final assignee = isSegmentMission
         ? null
-        : await _pickHarmonyAssignee(part: part, excludeUserIds: {uid});
+        : await _pickHarmonyAssignee(
+            part: part,
+            sourcePollId: sourcePollId,
+            excludeUserIds: {uid},
+          );
     await relayRef.update({
       'clipCount': FieldValue.increment(1),
       'lastClipAt': FieldValue.serverTimestamp(),
@@ -1274,9 +1292,37 @@ class FirebaseService {
 
   static Future<Map<String, dynamic>?> _pickHarmonyAssignee({
     required String part,
+    String? sourcePollId,
     Set<String?> excludeUserIds = const {},
   }) async {
     final churchId = _requireChurchId();
+    Set<String>? attendeeIds;
+    final pollId = sourcePollId?.trim() ?? '';
+    if (pollId.isNotEmpty) {
+      final votesSnapshot = await _db
+          .collection('poll_votes')
+          .where('pollId', isEqualTo: pollId)
+          .get();
+      attendeeIds = votesSnapshot.docs
+          .where((doc) {
+            final data = doc.data();
+            final userId =
+                data['userId']?.toString() ?? data['voterId']?.toString() ?? '';
+            return data['churchId'] == churchId &&
+                data['choice'] == 'attend' &&
+                userId.isNotEmpty &&
+                !excludeUserIds.contains(userId);
+          })
+          .map(
+            (doc) =>
+                doc.data()['userId']?.toString() ??
+                doc.data()['voterId']?.toString() ??
+                '',
+          )
+          .where((userId) => userId.isNotEmpty)
+          .toSet();
+      if (attendeeIds.isEmpty) return null;
+    }
     final snapshot = await _db
         .collection('users')
         .where('churchId', isEqualTo: churchId)
@@ -1286,7 +1332,8 @@ class FirebaseService {
           final data = doc.data();
           return data['part'] == part &&
               data['approvalStatus'] == 'approved' &&
-              !excludeUserIds.contains(doc.id);
+              !excludeUserIds.contains(doc.id) &&
+              (attendeeIds == null || attendeeIds.contains(doc.id));
         })
         .map((doc) => {'id': doc.id, ...doc.data()})
         .toList();

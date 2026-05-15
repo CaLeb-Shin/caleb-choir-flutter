@@ -276,6 +276,7 @@ service cloud.firestore {
             'mrAudioUrl',
             'mrAudioFileName',
             'sourceSheetUrl',
+            'sourcePollId',
             'missionTotalSegments',
             'segmentOrder',
             'segmentStartSec',

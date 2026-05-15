@@ -69,6 +69,81 @@ const HARMONY_PART_LABELS = {
   bass: "베이스",
 };
 
+const pickHarmonyAssignee = async ({
+  db,
+  churchId,
+  part,
+  sourcePollId = "",
+  excludeUserIds = new Set(),
+}) => {
+  const safePart = String(part || "").trim();
+  if (!churchId || !safePart) return null;
+
+  let attendeeIds = null;
+  const pollId = String(sourcePollId || "").trim();
+  if (pollId) {
+    const votesSnapshot = await db
+      .collection("poll_votes")
+      .where("pollId", "==", pollId)
+      .get();
+    attendeeIds = new Set();
+    votesSnapshot.docs.forEach((doc) => {
+      const vote = doc.data() || {};
+      const voterId = String(vote.userId || vote.voterId || "").trim();
+      if (
+        vote.churchId === churchId &&
+        vote.choice === "attend" &&
+        voterId &&
+        !excludeUserIds.has(voterId)
+      ) {
+        attendeeIds.add(voterId);
+      }
+    });
+    if (attendeeIds.size === 0) return null;
+  }
+
+  const usersSnapshot = await db
+    .collection("users")
+    .where("churchId", "==", churchId)
+    .get();
+  const candidates = usersSnapshot.docs
+    .filter((doc) => {
+      const user = doc.data() || {};
+      return (
+        user.part === safePart &&
+        user.approvalStatus === "approved" &&
+        !excludeUserIds.has(doc.id) &&
+        (!attendeeIds || attendeeIds.has(doc.id))
+      );
+    })
+    .map((doc) => ({ id: doc.id, ...doc.data() }));
+
+  if (candidates.length === 0) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+};
+
+const createHarmonyRelayNotification = async ({
+  db,
+  churchId,
+  toUserId,
+  relayId,
+  title,
+  body,
+  sentBy,
+}) => {
+  if (!toUserId) return;
+  await db.collection("notifications").add({
+    churchId,
+    toUserId,
+    title,
+    body,
+    type: "harmony_relay",
+    relayId,
+    sentAt: admin.firestore.FieldValue.serverTimestamp(),
+    sentBy,
+  });
+};
+
 const parseFfmpegDuration = (text = "") => {
   const match = text.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
   if (!match) return 0;
@@ -327,6 +402,172 @@ exports.analyzeSheetMusicForHarmony = onCall(
     }
   },
 );
+
+exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  }
+
+  const { churchId, sheetMusicId } = request.data || {};
+  if (!churchId || !sheetMusicId) {
+    throw new HttpsError("invalid-argument", "악보 정보가 올바르지 않습니다.");
+  }
+
+  const db = admin.firestore();
+  const [adminDoc, sheetDoc] = await Promise.all([
+    db.collection("users").doc(request.auth.uid).get(),
+    db.collection("sheet_music").doc(String(sheetMusicId)).get(),
+  ]);
+  if (!adminDoc.exists) {
+    throw new HttpsError("permission-denied", "관리자 프로필을 찾을 수 없습니다.");
+  }
+  if (!sheetDoc.exists) {
+    throw new HttpsError("not-found", "악보를 찾을 수 없습니다.");
+  }
+
+  const adminUser = { uid: request.auth.uid, ...adminDoc.data() };
+  const sheet = sheetDoc.data() || {};
+  if (sheet.churchId !== churchId) {
+    throw new HttpsError("permission-denied", "다른 교회 악보입니다.");
+  }
+  if (!(await isChurchAdmin(adminUser, churchId, request.auth.token))) {
+    throw new HttpsError("permission-denied", "하모니 릴레이 생성 권한이 없습니다.");
+  }
+
+  const partFiles = sheet.partFiles || {};
+  const harmonyParts = sheet.harmonySegments?.parts || {};
+  const sourcePollId = String(sheet.sourcePollId || "").trim();
+  const songTitle = sheet.songTitle || sheet.title || "오늘의 가이드";
+  const sheetDate = sheet.sheetDate || sheet.scheduleDate || "";
+  const notifiedUsers = new Set();
+  let createdCount = 0;
+  let updatedCount = 0;
+  let assigneeCount = 0;
+
+  for (const part of HARMONY_PARTS) {
+    const segments = Array.isArray(harmonyParts[part]) ? harmonyParts[part] : [];
+    if (segments.length === 0) continue;
+
+    const partFile = partFiles[part] || {};
+    const missionGroupId = `${sheetDoc.id}_${part}`;
+    const existingSnapshot = await db
+      .collection("harmony_relays")
+      .where("missionGroupId", "==", missionGroupId)
+      .get();
+    const existingBySegment = {};
+    existingSnapshot.docs.forEach((doc) => {
+      const relay = doc.data() || {};
+      if (relay.churchId === churchId && relay.part === part) {
+        existingBySegment[String(relay.segmentId || "")] = doc;
+      }
+    });
+
+    const guideAudioUrl = partFile.guideAudioUrl || sheet.audioUrl || "";
+    const guideAudioFileName = partFile.guideAudioFileName || sheet.audioFileName || "";
+    const mrAudioUrl = partFile.mrAudioUrl || "";
+    const mrAudioFileName = partFile.mrAudioFileName || "";
+    const sourceSheetUrl = partFile.sheetUrl || sheet.fileUrl || "";
+
+    for (let index = 0; index < segments.length; index += 1) {
+      const rawSegment = segments[index] || {};
+      const segmentId = rawSegment.id || `seg-${String(index + 1).padStart(2, "0")}`;
+      const segmentLabel = rawSegment.label || `${index + 1}소절`;
+      const existingDoc = existingBySegment[segmentId];
+      const commonUpdate = {
+        guideAudioUrl,
+        guideAudioFileName,
+        mrAudioUrl,
+        mrAudioFileName,
+        sourceSheetUrl,
+        sourcePollId,
+        missionTotalSegments: segments.length,
+        segmentOrder: Number(rawSegment.order || index + 1),
+        segmentStartSec: Number(rawSegment.startSec || 0),
+        segmentEndSec: Number(rawSegment.endSec || 0),
+        segmentDurationSec: Number(rawSegment.durationSec || 0),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+
+      if (existingDoc) {
+        await existingDoc.ref.update(commonUpdate);
+        updatedCount += 1;
+        continue;
+      }
+
+      const assignee = await pickHarmonyAssignee({
+        db,
+        churchId,
+        part,
+        sourcePollId,
+        excludeUserIds: new Set([request.auth.uid]),
+      });
+      if (assignee) assigneeCount += 1;
+
+      const relayRef = await db.collection("harmony_relays").add({
+        churchId,
+        userId: request.auth.uid,
+        part,
+        title: `${songTitle} 릴레이`,
+        segmentLabel,
+        guide: sheet.conductorComment || "",
+        guideAudioUrl,
+        guideAudioFileName,
+        mrAudioUrl,
+        mrAudioFileName,
+        sourceSheetMusicId: sheetDoc.id,
+        sourceTitle: songTitle,
+        sourceDate: sheetDate,
+        sourceSheetUrl,
+        sourcePollId,
+        missionGroupId,
+        missionTotalSegments: segments.length,
+        segmentId,
+        segmentOrder: Number(rawSegment.order || index + 1),
+        segmentStartSec: Number(rawSegment.startSec || 0),
+        segmentEndSec: Number(rawSegment.endSec || 0),
+        segmentDurationSec: Number(rawSegment.durationSec || 0),
+        status: "open",
+        currentAssigneeId: assignee?.id || "",
+        currentAssigneeName: assignee?.name || "",
+        assignedAt: assignee
+          ? admin.firestore.FieldValue.serverTimestamp()
+          : null,
+        clipCount: 0,
+        ...authorFields(adminUser),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      createdCount += 1;
+
+      if (assignee?.id && !notifiedUsers.has(assignee.id)) {
+        notifiedUsers.add(assignee.id);
+        await createHarmonyRelayNotification({
+          db,
+          churchId,
+          toUserId: assignee.id,
+          relayId: relayRef.id,
+          title: "하모니 릴레이 미션이 열렸어요",
+          body: `${songTitle} ${segmentLabel}을 이어서 불러주세요.`,
+          sentBy: request.auth.uid,
+        });
+      }
+    }
+  }
+
+  await sheetDoc.ref.update({
+    harmonyRelayStatus: "ready",
+    harmonyRelayCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    harmonyRelayUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return {
+    createdCount,
+    updatedCount,
+    assigneeCount,
+    sourcePollId,
+  };
+});
 
 exports.scanAttendanceQr = onCall(async (request) => {
   if (!request.auth) {
