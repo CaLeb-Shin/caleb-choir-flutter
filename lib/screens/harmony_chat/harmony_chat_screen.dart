@@ -833,6 +833,7 @@ class _HarmonyMvpVotePanel extends StatelessWidget {
     return StreamBuilder<Map<String, int>>(
       stream: FirebaseService.watchHarmonyMvpVotes(
         missionGroupId: missionGroupId,
+        part: part,
       ),
       builder: (context, snapshot) {
         final votes = snapshot.data ?? const <String, int>{};

@@ -179,6 +179,42 @@
         { "fieldPath": "isPublished", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "harmony_relays",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "churchId", "order": "ASCENDING" },
+        { "fieldPath": "part", "order": "ASCENDING" },
+        { "fieldPath": "missionGroupId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "harmony_relays",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "churchId", "order": "ASCENDING" },
+        { "fieldPath": "part", "order": "ASCENDING" },
+        { "fieldPath": "sourceSheetMusicId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "harmony_relay_clips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "churchId", "order": "ASCENDING" },
+        { "fieldPath": "relayId", "order": "ASCENDING" },
+        { "fieldPath": "part", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "harmony_relay_votes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "churchId", "order": "ASCENDING" },
+        { "fieldPath": "missionGroupId", "order": "ASCENDING" },
+        { "fieldPath": "part", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

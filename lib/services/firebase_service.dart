@@ -826,6 +826,7 @@ class FirebaseService {
                 .collection('harmony_relay_clips')
                 .where('churchId', isEqualTo: _requireChurchId())
                 .where('relayId', isEqualTo: doc.id)
+                .where('part', isEqualTo: part)
                 .get();
             final clips = <Map<String, dynamic>>[];
             for (final clipDoc in clipsSnapshot.docs) {
@@ -971,6 +972,8 @@ class FirebaseService {
       final missionGroupId = '${sourceId}_$part';
       final existing = await _db
           .collection('harmony_relays')
+          .where('churchId', isEqualTo: churchId)
+          .where('part', isEqualTo: part)
           .where('missionGroupId', isEqualTo: missionGroupId)
           .get();
       final existingBySegment =
@@ -1061,11 +1064,13 @@ class FirebaseService {
     if (sourceId.isNotEmpty) {
       final existing = await _db
           .collection('harmony_relays')
+          .where('churchId', isEqualTo: churchId)
+          .where('part', isEqualTo: part)
           .where('sourceSheetMusicId', isEqualTo: sourceId)
           .get();
       for (final doc in existing.docs) {
         final data = doc.data();
-        if (data['churchId'] == _requireChurchId() && data['part'] == part) {
+        if (data['churchId'] == churchId && data['part'] == part) {
           await doc.reference.update({
             'guideAudioUrl': guide['guideAudioUrl']?.toString() ?? '',
             'guideAudioFileName': guide['guideAudioFileName']?.toString() ?? '',
@@ -1257,12 +1262,14 @@ class FirebaseService {
 
   static Stream<Map<String, int>> watchHarmonyMvpVotes({
     required String missionGroupId,
+    required String part,
   }) {
     if (missionGroupId.trim().isEmpty) return Stream.value(const {});
     return _db
         .collection('harmony_relay_votes')
         .where('churchId', isEqualTo: _requireChurchId())
         .where('missionGroupId', isEqualTo: missionGroupId)
+        .where('part', isEqualTo: part)
         .snapshots()
         .map((snapshot) {
           final counts = <String, int>{};
@@ -1312,6 +1319,7 @@ class FirebaseService {
     if (pollId.isNotEmpty) {
       final votesSnapshot = await _db
           .collection('poll_votes')
+          .where('churchId', isEqualTo: churchId)
           .where('pollId', isEqualTo: pollId)
           .get();
       attendeeIds = votesSnapshot.docs
