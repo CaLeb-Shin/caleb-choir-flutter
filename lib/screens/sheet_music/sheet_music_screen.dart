@@ -252,30 +252,42 @@ class SheetMusicScreen extends ConsumerWidget {
     final titleCtrl = TextEditingController();
     final composerCtrl = TextEditingController();
     final conductorCommentCtrl = TextEditingController();
+    final lyricsCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('악보&음원 추가'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleCtrl,
-              decoration: const InputDecoration(hintText: '곡 제목'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: composerCtrl,
-              decoration: const InputDecoration(hintText: '작곡가 (선택)'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: conductorCommentCtrl,
-              decoration: const InputDecoration(hintText: '🎙️ 지휘자 코멘트 (선택)'),
-              minLines: 2,
-              maxLines: 4,
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(hintText: '곡 제목'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: composerCtrl,
+                decoration: const InputDecoration(hintText: '작곡가 (선택)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: conductorCommentCtrl,
+                decoration: const InputDecoration(hintText: '🎙️ 지휘자 코멘트 (선택)'),
+                minLines: 2,
+                maxLines: 4,
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: lyricsCtrl,
+                decoration: const InputDecoration(
+                  hintText: '노래방 가사 (선택, 한 줄에 한 소절)',
+                ),
+                minLines: 3,
+                maxLines: 7,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -290,6 +302,7 @@ class SheetMusicScreen extends ConsumerWidget {
                   titleCtrl.text.trim(),
                   composer: composerCtrl.text.trim(),
                   conductorComment: conductorCommentCtrl.text.trim(),
+                  lyricsText: lyricsCtrl.text.trim(),
                 );
                 ref.invalidate(sheetMusicProvider);
               }

@@ -723,6 +723,9 @@ class _MissionSegmentTile extends StatelessWidget {
         .toList();
     final title = relay['title']?.toString() ?? '릴레이';
     final segmentLabel = relay['segmentLabel']?.toString() ?? '소절';
+    final lyricsLine = relay['lyricsLine']?.toString() ?? '';
+    final nextLyricsLine = relay['nextLyricsLine']?.toString() ?? '';
+    final lyricsText = relay['lyricsText']?.toString() ?? '';
     final guideAudioUrl = relay['guideAudioUrl']?.toString() ?? '';
     final mrAudioUrl = relay['mrAudioUrl']?.toString() ?? '';
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
@@ -749,6 +752,9 @@ class _MissionSegmentTile extends StatelessWidget {
           guideAudioUrl: guideAudioUrl,
           mrAudioUrl: mrAudioUrl,
           segmentLabel: segmentLabel,
+          lyricsLine: lyricsLine,
+          nextLyricsLine: nextLyricsLine,
+          lyricsText: lyricsText,
           segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
           segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
           ref: ref,
@@ -1065,6 +1071,9 @@ class _RelayCard extends StatelessWidget {
                       guideAudioUrl: guideAudioUrl,
                       mrAudioUrl: mrAudioUrl,
                       segmentLabel: segmentLabel,
+                      lyricsLine: relay['lyricsLine']?.toString() ?? '',
+                      nextLyricsLine: relay['nextLyricsLine']?.toString() ?? '',
+                      lyricsText: relay['lyricsText']?.toString() ?? '',
                       segmentStartSec:
                           (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
                       segmentEndSec:
@@ -1852,6 +1861,9 @@ class _RelayClipSheet extends StatefulWidget {
     required this.guideAudioUrl,
     required this.mrAudioUrl,
     required this.segmentLabel,
+    required this.lyricsLine,
+    required this.nextLyricsLine,
+    required this.lyricsText,
     required this.segmentStartSec,
     required this.segmentEndSec,
     required this.ref,
@@ -1864,6 +1876,9 @@ class _RelayClipSheet extends StatefulWidget {
   final String guideAudioUrl;
   final String mrAudioUrl;
   final String segmentLabel;
+  final String lyricsLine;
+  final String nextLyricsLine;
+  final String lyricsText;
   final double segmentStartSec;
   final double segmentEndSec;
   final WidgetRef ref;
@@ -1879,6 +1894,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   final List<int> _recordedBytes = [];
   StreamSubscription<Uint8List>? _recordingSub;
   Timer? _recordingTimer;
+  Timer? _playbackTimer;
   Timer? _segmentStopTimer;
   Uint8List? _audioBytes;
   int? _countdown;
@@ -1888,6 +1904,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   bool _isGuidedFlow = false;
   bool _isMrRecording = false;
   int _recordSeconds = 0;
+  int _playbackSeconds = 0;
   double _progress = 0;
 
   static const _sampleRate = 44100;
@@ -1908,6 +1925,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   @override
   void dispose() {
     _recordingTimer?.cancel();
+    _playbackTimer?.cancel();
     _segmentStopTimer?.cancel();
     _recordingSub?.cancel();
     unawaited(_recorder.dispose());
@@ -1919,6 +1937,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final lyricProgress = _lyricProgress;
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: Container(
@@ -1953,6 +1972,21 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
               Text(
                 '${widget.relayTitle} · ${widget.partLabel}',
                 style: AppText.body(13, color: AppColors.muted),
+              ),
+              const SizedBox(height: 12),
+              _KaraokeLyricsPanel(
+                currentLine: _currentLyricLine,
+                nextLine: _nextLyricLine,
+                segmentLabel: widget.segmentLabel,
+                progress: lyricProgress,
+                isActive: _isRecording || _isGuidePlaying || _countdown != null,
+                statusText: _countdown != null
+                    ? '곧 시작'
+                    : _isRecording
+                    ? '녹음 중'
+                    : _isGuidePlaying
+                    ? '가이드 재생'
+                    : '가사 대기',
               ),
               if (widget.guideAudioUrl.isNotEmpty ||
                   widget.mrAudioUrl.isNotEmpty) ...[
@@ -2205,6 +2239,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       if (!completer.isCompleted) completer.complete();
     });
     await _guidePlayer.stop();
+    _startPlaybackTimer();
     final segmentDuration = _segmentDuration;
     _segmentStopTimer?.cancel();
     await _guidePlayer.play(UrlSource(audioUrl), position: _segmentStart);
@@ -2223,6 +2258,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       },
     );
     _segmentStopTimer?.cancel();
+    _stopPlaybackTimer();
     await sub.cancel();
   }
 
@@ -2251,6 +2287,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _recordSeconds += 1);
       });
+      _playbackSeconds = 0;
       setState(() {
         _isRecording = true;
         _isMrRecording = hasBacking;
@@ -2281,6 +2318,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _segmentStopTimer?.cancel();
       _segmentStopTimer = null;
       await _guidePlayer.stop();
+      _stopPlaybackTimer();
       await _recorder.stop();
       await Future<void>.delayed(const Duration(milliseconds: 80));
       await _recordingSub?.cancel();
@@ -2361,6 +2399,176 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String get _currentLyricLine {
+    final direct = widget.lyricsLine.trim();
+    if (direct.isNotEmpty) return direct;
+    final parsed = _lyricsFromText;
+    if (parsed.isNotEmpty) return parsed.first;
+    return widget.segmentLabel;
+  }
+
+  String get _nextLyricLine {
+    final direct = widget.nextLyricsLine.trim();
+    if (direct.isNotEmpty) return direct;
+    final parsed = _lyricsFromText;
+    if (parsed.length > 1) return parsed[1];
+    return '';
+  }
+
+  List<String> get _lyricsFromText {
+    return widget.lyricsText
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+  }
+
+  double get _lyricProgress {
+    final duration = _segmentDuration.inSeconds;
+    if (duration <= 0) {
+      if (_isRecording || _isGuidePlaying) return 0.35;
+      return 0;
+    }
+    final elapsed = _isRecording ? _recordSeconds : _playbackSeconds;
+    return (elapsed / duration).clamp(0, 1).toDouble();
+  }
+
+  void _startPlaybackTimer() {
+    _playbackTimer?.cancel();
+    if (mounted) setState(() => _playbackSeconds = 0);
+    _playbackTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _playbackSeconds += 1);
+    });
+  }
+
+  void _stopPlaybackTimer() {
+    _playbackTimer?.cancel();
+    _playbackTimer = null;
+  }
+}
+
+class _KaraokeLyricsPanel extends StatelessWidget {
+  const _KaraokeLyricsPanel({
+    required this.currentLine,
+    required this.nextLine,
+    required this.segmentLabel,
+    required this.progress,
+    required this.isActive,
+    required this.statusText,
+  });
+
+  final String currentLine;
+  final String nextLine;
+  final String segmentLabel;
+  final double progress;
+  final bool isActive;
+  final String statusText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: AppColors.secondaryContainer.withValues(alpha: 0.45),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.18),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.secondaryContainer,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isActive
+                          ? Icons.graphic_eq_rounded
+                          : Icons.queue_music_rounded,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      statusText,
+                      style: AppText.body(
+                        11,
+                        weight: FontWeight.w900,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              Text(
+                segmentLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body(
+                  11,
+                  weight: FontWeight.w800,
+                  color: Colors.white.withValues(alpha: 0.62),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            currentLine,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.body(
+              24,
+              weight: FontWeight.w900,
+              color: AppColors.secondaryContainer,
+              height: 1.16,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            nextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : nextLine,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.body(
+              14,
+              weight: FontWeight.w700,
+              color: Colors.white.withValues(
+                alpha: nextLine.isEmpty ? 0.46 : 0.7,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: Colors.white.withValues(alpha: 0.16),
+              color: AppColors.secondaryContainer,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
