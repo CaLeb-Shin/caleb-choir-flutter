@@ -1914,6 +1914,19 @@ class FirebaseService {
     String? harmonyLyricsText,
     List<Map<String, dynamic>> harmonyLyricsTimeline = const [],
   }) async {
+    final enabledHarmony = harmonyEnabled;
+    final normalizedHarmonyTitle = enabledHarmony
+        ? harmonyTitle?.trim() ?? ''
+        : '';
+    final normalizedHarmonyGuide = enabledHarmony
+        ? harmonyGuide?.trim() ?? ''
+        : '';
+    final normalizedHarmonyLyrics = enabledHarmony
+        ? harmonyLyricsText?.trim() ?? ''
+        : '';
+    final normalizedHarmonyTimeline = enabledHarmony
+        ? harmonyLyricsTimeline
+        : const <Map<String, dynamic>>[];
     await _db.collection('events').add({
       'churchId': _requireChurchId(),
       'title': title.trim(),
@@ -1925,11 +1938,11 @@ class FirebaseService {
       'type': type,
       'needsAttendance': needsAttendance,
       'needsSeating': needsSeating,
-      'harmonyEnabled': harmonyEnabled,
-      'harmonyTitle': harmonyTitle?.trim() ?? '',
-      'harmonyGuide': harmonyGuide?.trim() ?? '',
-      'harmonyLyricsText': harmonyLyricsText?.trim() ?? '',
-      'harmonyLyricsTimeline': harmonyLyricsTimeline,
+      'harmonyEnabled': enabledHarmony,
+      'harmonyTitle': normalizedHarmonyTitle,
+      'harmonyGuide': normalizedHarmonyGuide,
+      'harmonyLyricsText': normalizedHarmonyLyrics,
+      'harmonyLyricsTimeline': normalizedHarmonyTimeline,
       'createdBy': uid,
       'createdAt': FieldValue.serverTimestamp(),
     });

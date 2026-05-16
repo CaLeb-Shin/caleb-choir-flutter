@@ -350,9 +350,20 @@ class EventsScreen extends ConsumerWidget {
                           );
                           return;
                         }
+                        final lyricsText = harmonyLyricsCtrl.text.trim();
+                        final harmonyGuide = harmonyGuideCtrl.text.trim();
+                        if (harmonyEnabled &&
+                            harmonyGuide.isEmpty &&
+                            lyricsText.isEmpty) {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('하모니챗 안내 문구나 가사를 입력해주세요'),
+                            ),
+                          );
+                          return;
+                        }
                         setDialogState(() => isSaving = true);
                         try {
-                          final lyricsText = harmonyLyricsCtrl.text.trim();
                           if (ref.read(localPreviewModeProvider)) {
                             navigator.pop();
                             messenger.showSnackBar(
@@ -373,7 +384,7 @@ class EventsScreen extends ConsumerWidget {
                             needsSeating: needsSeating,
                             harmonyEnabled: harmonyEnabled,
                             harmonyTitle: harmonyTitleCtrl.text.trim(),
-                            harmonyGuide: harmonyGuideCtrl.text.trim(),
+                            harmonyGuide: harmonyGuide,
                             harmonyLyricsText: lyricsText,
                             harmonyLyricsTimeline: _lyricsTimelineFromText(
                               lyricsText,
