@@ -45,6 +45,9 @@ class AppColors {
 // ─── Typography Helpers ───
 class AppText {
   static const _fallbackFonts = [
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Noto Color Emoji',
     'Apple SD Gothic Neo',
     'Noto Sans CJK KR',
     'Noto Sans KR',

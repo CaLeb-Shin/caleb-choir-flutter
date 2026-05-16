@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -637,6 +638,13 @@ class _RelayMissionCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          _RelayProgressMap(
+            relays: relays,
+            part: part,
+            partLabel: partLabel,
+            ref: ref,
+          ),
+          const SizedBox(height: 12),
           ...relays.map(
             (relay) => Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -698,6 +706,227 @@ class _RelayMissionCard extends StatelessWidget {
             ],
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _RelayProgressMap extends StatelessWidget {
+  const _RelayProgressMap({
+    required this.relays,
+    required this.part,
+    required this.partLabel,
+    required this.ref,
+  });
+
+  final List<Map<String, dynamic>> relays;
+  final String part;
+  final String partLabel;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final completed = relays.where(_relayCompleted).length;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.secondaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.account_tree_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '릴레이 맵',
+                      style: AppText.body(
+                        15,
+                        weight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      '$completed/${relays.length} 소절 연결됨',
+                      style: AppText.body(
+                        11,
+                        color: Colors.white.withValues(alpha: 0.66),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final itemWidth = constraints.maxWidth >= 520
+                  ? (constraints.maxWidth - 24) / 4
+                  : (constraints.maxWidth - 10) / 2;
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: relays.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final relay = entry.value;
+                  return SizedBox(
+                    width: itemWidth,
+                    child: _RelayMapNode(
+                      relay: relay,
+                      order: index + 1,
+                      part: part,
+                      partLabel: partLabel,
+                      ref: ref,
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RelayMapNode extends StatelessWidget {
+  const _RelayMapNode({
+    required this.relay,
+    required this.order,
+    required this.part,
+    required this.partLabel,
+    required this.ref,
+  });
+
+  final Map<String, dynamic> relay;
+  final int order;
+  final String part;
+  final String partLabel;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final clips = ((relay['clips'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final completed = _relayCompleted(relay);
+    final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
+    final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
+    final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
+    final latest = clips.isEmpty ? null : clips.last;
+    final singer =
+        latest?['userName']?.toString() ??
+        relay['completedByName']?.toString() ??
+        '';
+    final status = completed
+        ? (singer.isEmpty ? '완료' : singer)
+        : isMyTurn
+        ? '내 차례'
+        : assigneeName.isEmpty
+        ? '대기'
+        : assigneeName;
+
+    return Material(
+      color: completed
+          ? AppColors.secondaryContainer
+          : isMyTurn
+          ? Colors.white
+          : Colors.white.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openRelayStudio(context, relay, part, partLabel, ref),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 13,
+                    backgroundColor: completed || isMyTurn
+                        ? AppColors.primary
+                        : Colors.white.withValues(alpha: 0.16),
+                    child: completed
+                        ? const Icon(
+                            Icons.check_rounded,
+                            size: 15,
+                            color: Colors.white,
+                          )
+                        : Text(
+                            '$order',
+                            style: AppText.body(
+                              10,
+                              weight: FontWeight.w900,
+                              color: isMyTurn
+                                  ? Colors.white
+                                  : AppColors.secondaryContainer,
+                            ),
+                          ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    completed
+                        ? Icons.play_circle_fill_rounded
+                        : isMyTurn
+                        ? Icons.mic_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    size: 16,
+                    color: completed || isMyTurn
+                        ? AppColors.primary
+                        : Colors.white.withValues(alpha: 0.62),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                relay['segmentLabel']?.toString() ?? '$order소절',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body(
+                  12,
+                  weight: FontWeight.w900,
+                  color: completed || isMyTurn
+                      ? AppColors.primary
+                      : Colors.white,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.body(
+                  10,
+                  color: completed || isMyTurn
+                      ? AppColors.onSurfaceVariant
+                      : Colors.white.withValues(alpha: 0.66),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -946,6 +1175,36 @@ bool _relayCompleted(Map<String, dynamic> relay) {
   return clips.isNotEmpty || relay['status']?.toString() == 'completed';
 }
 
+void _openRelayStudio(
+  BuildContext context,
+  Map<String, dynamic> relay,
+  String part,
+  String partLabel,
+  WidgetRef ref,
+) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _RelayClipSheet(
+      relayId: relay['id'].toString(),
+      part: part,
+      partLabel: partLabel,
+      relayTitle: relay['title']?.toString() ?? '릴레이',
+      guideAudioUrl: relay['guideAudioUrl']?.toString() ?? '',
+      mrAudioUrl: relay['mrAudioUrl']?.toString() ?? '',
+      segmentLabel: relay['segmentLabel']?.toString() ?? '소절',
+      lyricsLine: relay['lyricsLine']?.toString() ?? '',
+      nextLyricsLine: relay['nextLyricsLine']?.toString() ?? '',
+      lyricsText: relay['lyricsText']?.toString() ?? '',
+      lyricsTimeline: _lyricsTimelineFromValue(relay['lyricsTimeline']),
+      segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
+      segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
+      ref: ref,
+    ),
+  );
+}
+
 String _firstText(List<String?> values) {
   for (final value in values) {
     final trimmed = value?.trim() ?? '';
@@ -1046,6 +1305,15 @@ class _RelayCard extends StatelessWidget {
             const SizedBox(height: 12),
             _RelayClipPreview(clip: latest, order: clips.length),
           ],
+          const SizedBox(height: 12),
+          _SingleRelayMindMap(
+            clips: clips,
+            isMyTurn: isMyTurn,
+            assigneeName: assigneeName,
+            onOpenClips: clips.isEmpty
+                ? null
+                : () => _openRelayClips(context, clips, title),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -1159,6 +1427,162 @@ class _RelayClipPreview extends StatelessWidget {
             ),
           ),
           _ScorePill(score: score),
+        ],
+      ),
+    );
+  }
+}
+
+class _SingleRelayMindMap extends StatelessWidget {
+  const _SingleRelayMindMap({
+    required this.clips,
+    required this.isMyTurn,
+    required this.assigneeName,
+    required this.onOpenClips,
+  });
+
+  final List<Map<String, dynamic>> clips;
+  final bool isMyTurn;
+  final String assigneeName;
+  final VoidCallback? onOpenClips;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleClips = clips.length > 4
+        ? clips.sublist(clips.length - 4)
+        : clips;
+    return Material(
+      color: AppColors.primarySoft,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onOpenClips,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.hub_rounded,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 7),
+                  Text(
+                    '녹음 연결 맵',
+                    style: AppText.body(13, weight: FontWeight.w900),
+                  ),
+                  const Spacer(),
+                  Text(
+                    clips.isEmpty ? '대기 중' : '${clips.length}개 연결',
+                    style: AppText.body(11, color: AppColors.muted),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (visibleClips.isEmpty)
+                    _MiniMapNode(
+                      label: isMyTurn ? '내 차례' : '첫 녹음',
+                      caption: assigneeName.isEmpty ? '시작' : assigneeName,
+                      active: isMyTurn,
+                      done: false,
+                    )
+                  else
+                    ...visibleClips.asMap().entries.map((entry) {
+                      final baseIndex = clips.length - visibleClips.length;
+                      final clip = entry.value;
+                      final author = clip['userName']?.toString() ?? '단원';
+                      return _MiniMapNode(
+                        label: '${baseIndex + entry.key + 1}',
+                        caption: author,
+                        active: entry.key == visibleClips.length - 1,
+                        done: true,
+                      );
+                    }),
+                  _MiniMapNode(
+                    label: isMyTurn ? 'REC' : '+',
+                    caption: isMyTurn ? '녹음' : '다음',
+                    active: isMyTurn,
+                    done: false,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniMapNode extends StatelessWidget {
+  const _MiniMapNode({
+    required this.label,
+    required this.caption,
+    required this.active,
+    required this.done,
+  });
+
+  final String label;
+  final String caption;
+  final bool active;
+  final bool done;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 72, maxWidth: 112),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
+      decoration: BoxDecoration(
+        color: active || done
+            ? AppColors.card
+            : Colors.white.withValues(alpha: 0.54),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: active
+              ? AppColors.primary
+              : AppColors.border.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundColor: done
+                ? AppColors.primary
+                : active
+                ? AppColors.secondary
+                : AppColors.border,
+            child: Text(
+              label,
+              style: AppText.body(
+                label.length > 2 ? 8 : 10,
+                weight: FontWeight.w900,
+                color: active || done ? Colors.white : AppColors.muted,
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: Text(
+              caption,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.body(
+                10,
+                weight: FontWeight.w800,
+                color: active ? AppColors.primary : AppColors.muted,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1904,6 +2328,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Timer? _playbackTimer;
   Timer? _segmentStopTimer;
   Uint8List? _audioBytes;
+  String _audioFileName = '';
+  String _contentType = 'audio/webm';
+  bool _streamRecording = false;
   int? _countdown;
   bool _isRecording = false;
   bool _isSubmitting = false;
@@ -2277,19 +2704,43 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _showMessage('마이크 권한이 필요합니다.');
         return;
       }
-      final stream = await _recorder.startStream(
-        RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
-          sampleRate: _sampleRate,
-          numChannels: _channels,
-          echoCancel: !hasBacking,
-          noiseSuppress: true,
-          autoGain: true,
-        ),
-      );
       await _recordingSub?.cancel();
       _recordedBytes.clear();
-      _recordingSub = stream.listen(_recordedBytes.addAll);
+      _streamRecording = false;
+      _contentType = 'audio/webm';
+      _audioFileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.webm';
+      try {
+        if (!await _recorder.isEncoderSupported(AudioEncoder.opus)) {
+          throw StateError('Opus recorder is not supported.');
+        }
+        await _recorder.start(
+          RecordConfig(
+            encoder: AudioEncoder.opus,
+            bitRate: 128000,
+            sampleRate: _sampleRate,
+            numChannels: _channels,
+            echoCancel: !hasBacking,
+            noiseSuppress: true,
+            autoGain: true,
+          ),
+          path: '',
+        );
+      } catch (_) {
+        final stream = await _recorder.startStream(
+          RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: _sampleRate,
+            numChannels: _channels,
+            echoCancel: !hasBacking,
+            noiseSuppress: true,
+            autoGain: true,
+          ),
+        );
+        _streamRecording = true;
+        _contentType = 'audio/wav';
+        _audioFileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.wav';
+        _recordingSub = stream.listen(_recordedBytes.addAll);
+      }
       _recordingTimer?.cancel();
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _recordSeconds += 1);
@@ -2326,14 +2777,27 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _segmentStopTimer = null;
       await _guidePlayer.stop();
       _stopPlaybackTimer();
-      await _recorder.stop();
+      final stoppedPath = await _recorder.stop();
+      final recordedPath = _streamRecording ? null : stoppedPath;
       await Future<void>.delayed(const Duration(milliseconds: 80));
       await _recordingSub?.cancel();
       _recordingSub = null;
       _recordingTimer?.cancel();
       _recordingTimer = null;
-      final pcmBytes = Uint8List.fromList(_recordedBytes);
-      if (pcmBytes.isEmpty) {
+      Uint8List recorded;
+      if (recordedPath != null && recordedPath.isNotEmpty) {
+        recorded = await _bytesFromRecordedPath(recordedPath);
+      } else {
+        final pcmBytes = Uint8List.fromList(_recordedBytes);
+        recorded = pcmBytes.isEmpty
+            ? Uint8List(0)
+            : _wavFromPcmBytes(
+                pcmBytes,
+                sampleRate: _sampleRate,
+                channels: _channels,
+              );
+      }
+      if (recorded.isEmpty) {
         setState(() {
           _isRecording = false;
           _isMrRecording = false;
@@ -2344,11 +2808,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       setState(() {
         _isRecording = false;
         _isMrRecording = false;
-        _audioBytes = _wavFromPcmBytes(
-          pcmBytes,
-          sampleRate: _sampleRate,
-          channels: _channels,
-        );
+        _audioBytes = recorded;
       });
     } catch (_) {
       setState(() {
@@ -2371,11 +2831,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _progress = 0;
     });
     try {
-      final fileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.wav';
+      final fileName = _audioFileName.isEmpty
+          ? 'relay_${DateTime.now().millisecondsSinceEpoch}.webm'
+          : _audioFileName;
       final audioUrl = await FirebaseService.uploadHarmonyAudio(
         bytes,
         fileName: fileName,
-        contentType: 'audio/wav',
+        contentType: _contentType,
         onProgress: (value) {
           if (mounted) setState(() => _progress = value);
         },
@@ -2643,6 +3105,10 @@ class _RelayClipsSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            if (clips.isNotEmpty) ...[
+              _ClipMindMap(clips: clips),
+              const SizedBox(height: 12),
+            ],
             Flexible(
               child: ListView.separated(
                 shrinkWrap: true,
@@ -2737,6 +3203,96 @@ class _RelayClipsSheet extends StatelessWidget {
   }
 }
 
+class _ClipMindMap extends StatelessWidget {
+  const _ClipMindMap({required this.clips});
+
+  final List<Map<String, dynamic>> clips;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hub_rounded, color: AppColors.primary, size: 20),
+              const SizedBox(width: 8),
+              Text('녹음 연결 맵', style: AppText.body(14, weight: FontWeight.w900)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: clips.asMap().entries.map((entry) {
+              final index = entry.key;
+              final clip = entry.value;
+              final author = clip['userName']?.toString() ?? '단원';
+              final score = (clip['autoScore'] as num?)?.toInt() ?? 0;
+              return Container(
+                constraints: const BoxConstraints(minWidth: 116, maxWidth: 170),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: AppColors.border.withValues(alpha: 0.36),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: AppColors.primary,
+                      child: Text(
+                        '${index + 1}',
+                        style: AppText.body(
+                          10,
+                          weight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            author,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.body(12, weight: FontWeight.w900),
+                          ),
+                          Text(
+                            score <= 0 ? '녹음 완료' : '체크 $score',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.body(10, color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
   final _titleController = TextEditingController();
   final _promptController = TextEditingController();
@@ -2746,7 +3302,8 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
   Timer? _recordingTimer;
   Uint8List? _audioBytes;
   String? _audioName;
-  String _contentType = 'audio/mp4';
+  String _contentType = 'audio/webm';
+  bool _streamRecording = false;
   bool _isRecording = false;
   bool _isSubmitting = false;
   double _progress = 0;
@@ -2987,25 +3544,46 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
         return;
       }
 
-      final stream = await _recorder.startStream(
-        const RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
-          sampleRate: _recordSampleRate,
-          numChannels: _recordChannels,
-          echoCancel: true,
-          noiseSuppress: true,
-          autoGain: true,
-        ),
-      );
-
       await _recordingSub?.cancel();
       _recordedBytes.clear();
-      _recordingSub = stream.listen(
-        _recordedBytes.addAll,
-        onError: (_) {
-          if (mounted) _showMessage('녹음 중 문제가 생겼습니다. 다시 시도해주세요.');
-        },
-      );
+      _streamRecording = false;
+      _contentType = 'audio/webm';
+      try {
+        if (!await _recorder.isEncoderSupported(AudioEncoder.opus)) {
+          throw StateError('Opus recorder is not supported.');
+        }
+        await _recorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.opus,
+            bitRate: 128000,
+            sampleRate: _recordSampleRate,
+            numChannels: _recordChannels,
+            echoCancel: true,
+            noiseSuppress: true,
+            autoGain: true,
+          ),
+          path: '',
+        );
+      } catch (_) {
+        final stream = await _recorder.startStream(
+          const RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: _recordSampleRate,
+            numChannels: _recordChannels,
+            echoCancel: true,
+            noiseSuppress: true,
+            autoGain: true,
+          ),
+        );
+        _streamRecording = true;
+        _contentType = 'audio/wav';
+        _recordingSub = stream.listen(
+          _recordedBytes.addAll,
+          onError: (_) {
+            if (mounted) _showMessage('녹음 중 문제가 생겼습니다. 다시 시도해주세요.');
+          },
+        );
+      }
       _recordingTimer?.cancel();
       _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _recordSeconds += 1);
@@ -3016,7 +3594,6 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
         _recordSeconds = 0;
         _audioBytes = null;
         _audioName = null;
-        _contentType = 'audio/wav';
       });
     } catch (_) {
       _showMessage('녹음을 시작할 수 없습니다. 브라우저의 마이크 권한을 확인해주세요.');
@@ -3026,15 +3603,28 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
   Future<void> _stopRecording() async {
     if (!_isRecording) return;
     try {
-      await _recorder.stop();
+      final stoppedPath = await _recorder.stop();
+      final recordedPath = _streamRecording ? null : stoppedPath;
       await Future<void>.delayed(const Duration(milliseconds: 80));
       await _recordingSub?.cancel();
       _recordingSub = null;
       _recordingTimer?.cancel();
       _recordingTimer = null;
 
-      final pcmBytes = Uint8List.fromList(_recordedBytes);
-      if (pcmBytes.isEmpty) {
+      Uint8List recorded;
+      if (recordedPath != null && recordedPath.isNotEmpty) {
+        recorded = await _bytesFromRecordedPath(recordedPath);
+      } else {
+        final pcmBytes = Uint8List.fromList(_recordedBytes);
+        recorded = pcmBytes.isEmpty
+            ? Uint8List(0)
+            : _wavFromPcm(
+                pcmBytes,
+                sampleRate: _recordSampleRate,
+                channels: _recordChannels,
+              );
+      }
+      if (recorded.isEmpty) {
         setState(() => _isRecording = false);
         _showMessage('녹음된 소리가 없습니다. 다시 시도해주세요.');
         return;
@@ -3043,13 +3633,10 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
       final now = DateTime.now().millisecondsSinceEpoch;
       setState(() {
         _isRecording = false;
-        _audioBytes = _wavFromPcm(
-          pcmBytes,
-          sampleRate: _recordSampleRate,
-          channels: _recordChannels,
-        );
-        _audioName = 'harmony_$now.wav';
-        _contentType = 'audio/wav';
+        _audioBytes = recorded;
+        _audioName = _streamRecording
+            ? 'harmony_$now.wav'
+            : 'harmony_$now.webm';
       });
     } catch (_) {
       setState(() => _isRecording = false);
@@ -3236,6 +3823,14 @@ class _EmptyHarmonyState extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<Uint8List> _bytesFromRecordedPath(String path) async {
+  final uri = Uri.tryParse(path);
+  if (uri == null) return Uint8List(0);
+  final response = await http.get(uri);
+  if (response.statusCode >= 400) return Uint8List(0);
+  return response.bodyBytes;
 }
 
 String _relativeTime(dynamic value) {
