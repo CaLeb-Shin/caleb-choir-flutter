@@ -726,6 +726,7 @@ class _MissionSegmentTile extends StatelessWidget {
     final lyricsLine = relay['lyricsLine']?.toString() ?? '';
     final nextLyricsLine = relay['nextLyricsLine']?.toString() ?? '';
     final lyricsText = relay['lyricsText']?.toString() ?? '';
+    final lyricsTimeline = _lyricsTimelineFromValue(relay['lyricsTimeline']);
     final guideAudioUrl = relay['guideAudioUrl']?.toString() ?? '';
     final mrAudioUrl = relay['mrAudioUrl']?.toString() ?? '';
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
@@ -755,6 +756,7 @@ class _MissionSegmentTile extends StatelessWidget {
           lyricsLine: lyricsLine,
           nextLyricsLine: nextLyricsLine,
           lyricsText: lyricsText,
+          lyricsTimeline: lyricsTimeline,
           segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
           segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
           ref: ref,
@@ -1074,6 +1076,9 @@ class _RelayCard extends StatelessWidget {
                       lyricsLine: relay['lyricsLine']?.toString() ?? '',
                       nextLyricsLine: relay['nextLyricsLine']?.toString() ?? '',
                       lyricsText: relay['lyricsText']?.toString() ?? '',
+                      lyricsTimeline: _lyricsTimelineFromValue(
+                        relay['lyricsTimeline'],
+                      ),
                       segmentStartSec:
                           (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
                       segmentEndSec:
@@ -1864,6 +1869,7 @@ class _RelayClipSheet extends StatefulWidget {
     required this.lyricsLine,
     required this.nextLyricsLine,
     required this.lyricsText,
+    required this.lyricsTimeline,
     required this.segmentStartSec,
     required this.segmentEndSec,
     required this.ref,
@@ -1879,6 +1885,7 @@ class _RelayClipSheet extends StatefulWidget {
   final String lyricsLine;
   final String nextLyricsLine;
   final String lyricsText;
+  final List<Map<String, dynamic>> lyricsTimeline;
   final double segmentStartSec;
   final double segmentEndSec;
   final WidgetRef ref;
@@ -2402,6 +2409,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   String get _currentLyricLine {
+    final timelineLine = _timelineLyricAt(_absoluteLyricSeconds);
+    if (timelineLine.isNotEmpty) return timelineLine;
     final direct = widget.lyricsLine.trim();
     if (direct.isNotEmpty) return direct;
     final parsed = _lyricsFromText;
@@ -2410,6 +2419,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   String get _nextLyricLine {
+    final timelineNext = _nextTimelineLyricAfter(_absoluteLyricSeconds);
+    if (timelineNext.isNotEmpty) return timelineNext;
     final direct = widget.nextLyricsLine.trim();
     if (direct.isNotEmpty) return direct;
     final parsed = _lyricsFromText;
@@ -2433,6 +2444,31 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     final elapsed = _isRecording ? _recordSeconds : _playbackSeconds;
     return (elapsed / duration).clamp(0, 1).toDouble();
+  }
+
+  double get _absoluteLyricSeconds {
+    final elapsed = _isRecording ? _recordSeconds : _playbackSeconds;
+    return widget.segmentStartSec + elapsed;
+  }
+
+  String _timelineLyricAt(double seconds) {
+    if (widget.lyricsTimeline.isEmpty) return '';
+    Map<String, dynamic>? selected;
+    for (final entry in widget.lyricsTimeline) {
+      final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
+      if (time > seconds) break;
+      selected = entry;
+    }
+    return selected?['text']?.toString().trim() ?? '';
+  }
+
+  String _nextTimelineLyricAfter(double seconds) {
+    for (final entry in widget.lyricsTimeline) {
+      final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
+      final text = entry['text']?.toString().trim() ?? '';
+      if (time > seconds && text.isNotEmpty) return text;
+    }
+    return '';
   }
 
   void _startPlaybackTimer() {
@@ -3221,6 +3257,25 @@ String _formatDuration(int totalSeconds) {
   final minutes = totalSeconds ~/ 60;
   final seconds = totalSeconds % 60;
   return '$minutes:${seconds.toString().padLeft(2, '0')}';
+}
+
+List<Map<String, dynamic>> _lyricsTimelineFromValue(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((entry) {
+        return {
+          'timeSec': (entry['timeSec'] as num?)?.toDouble() ?? 0,
+          'text': entry['text']?.toString() ?? '',
+        };
+      })
+      .where((entry) => (entry['text']?.toString() ?? '').trim().isNotEmpty)
+      .toList()
+    ..sort((a, b) {
+      final at = (a['timeSec'] as num?)?.toDouble() ?? 0;
+      final bt = (b['timeSec'] as num?)?.toDouble() ?? 0;
+      return at.compareTo(bt);
+    });
 }
 
 Uint8List _wavFromPcmBytes(

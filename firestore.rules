@@ -278,6 +278,7 @@ service cloud.firestore {
             'sourceSheetUrl',
             'sourcePollId',
             'lyricsText',
+            'lyricsTimeline',
             'lyricsLine',
             'nextLyricsLine',
             'missionTotalSegments',

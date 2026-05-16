@@ -121,6 +121,12 @@ const _previewSheetMusic = [
     'composer': '미리보기 악보&음원',
     'conductorComment': '🎙️ 후렴은 한 호흡으로 넓게 열고, 가사의 방향을 먼저 생각하며 불러주세요.',
     'lyricsText': '주만 바라볼지라\n염려하지 말고 바라볼지라\n주님만 의지해\n한 걸음씩 나아가리라',
+    'lyricsTimeline': [
+      {'timeSec': 0.0, 'text': '주만 바라볼지라'},
+      {'timeSec': 4.0, 'text': '염려하지 말고 바라볼지라'},
+      {'timeSec': 8.0, 'text': '주님만 의지해'},
+      {'timeSec': 12.0, 'text': '한 걸음씩 나아가리라'},
+    ],
     'fileUrl':
         'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
     'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
@@ -341,8 +347,16 @@ const _previewHarmonyRelays = [
     'segmentLabel': '후렴 1마디',
     'guide': '첫 음을 너무 밀지 말고, 숨을 같이 들이마신 느낌으로 이어주세요.',
     'lyricsText': '주만 바라볼지라\n염려하지 말고 바라볼지라\n주님만 의지해',
+    'lyricsTimeline': [
+      {'timeSec': 0.0, 'text': '주만 바라볼지라'},
+      {'timeSec': 4.0, 'text': '염려하지 말고 바라볼지라'},
+      {'timeSec': 8.0, 'text': '주님만 의지해'},
+    ],
     'lyricsLine': '주만 바라볼지라',
     'nextLyricsLine': '염려하지 말고 바라볼지라',
+    'segmentStartSec': 0.0,
+    'segmentEndSec': 12.0,
+    'segmentDurationSec': 12.0,
     'guideAudioUrl':
         'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     'guideAudioFileName': 'soprano_guide.mp3',
@@ -767,6 +781,7 @@ final latestPartGuideProvider = FutureProvider<Map<String, dynamic>?>((ref) {
       'mrAudioFileName': preview['mrAudioFileName'],
       'guide': preview['conductorComment'] ?? '',
       'lyricsText': preview['lyricsText'] ?? '',
+      'lyricsTimeline': preview['lyricsTimeline'] ?? const [],
       'lyricLines': (preview['lyricsText']?.toString() ?? '')
           .split('\n')
           .map((line) => line.trim())

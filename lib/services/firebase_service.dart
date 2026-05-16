@@ -894,6 +894,7 @@ class FirebaseService {
             'mrAudioFileName': sheet['mrAudioFileName']?.toString() ?? '',
             'guide': conductorComment,
             'lyricsText': sheet['lyricsText']?.toString() ?? '',
+            'lyricsTimeline': _lyricsTimelineFromValue(sheet['lyricsTimeline']),
             'lyricLines': _lyricLinesFromText(
               sheet['lyricsText']?.toString() ?? '',
             ),
@@ -937,6 +938,7 @@ class FirebaseService {
           ]),
           'guide': conductorComment,
           'lyricsText': sheet['lyricsText']?.toString() ?? '',
+          'lyricsTimeline': _lyricsTimelineFromValue(sheet['lyricsTimeline']),
           'lyricLines': _lyricLinesFromText(
             sheet['lyricsText']?.toString() ?? '',
           ),
@@ -968,6 +970,7 @@ class FirebaseService {
     final lyricLines = _lyricLinesFromText(
       guide['lyricsText']?.toString() ?? '',
     );
+    final lyricTimeline = _lyricsTimelineFromValue(guide['lyricsTimeline']);
     final segments =
         rawSegments
             .whereType<Map>()
@@ -1018,8 +1021,20 @@ class FirebaseService {
             'sourceSheetUrl': guide['sheetUrl']?.toString() ?? '',
             'sourcePollId': sourcePollId,
             'lyricsText': guide['lyricsText']?.toString() ?? '',
-            'lyricsLine': _lyricLineForIndex(lyricLines, index),
-            'nextLyricsLine': _lyricLineForIndex(lyricLines, index + 1),
+            'lyricsTimeline': lyricTimeline,
+            'lyricsLine': _lyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              index,
+              (segment['startSec'] as num?)?.toDouble() ?? 0,
+              (segment['endSec'] as num?)?.toDouble() ?? 0,
+            ),
+            'nextLyricsLine': _nextLyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              index,
+              (segment['endSec'] as num?)?.toDouble() ?? 0,
+            ),
             'missionTotalSegments': segments.length,
             'segmentOrder': (segment['order'] as num?)?.toInt() ?? index + 1,
             'segmentStartSec': (segment['startSec'] as num?)?.toDouble() ?? 0,
@@ -1052,8 +1067,20 @@ class FirebaseService {
           sourceSheetUrl: guide['sheetUrl']?.toString(),
           sourcePollId: sourcePollId,
           lyricsText: guide['lyricsText']?.toString(),
-          lyricsLine: _lyricLineForIndex(lyricLines, index),
-          nextLyricsLine: _lyricLineForIndex(lyricLines, index + 1),
+          lyricsTimeline: lyricTimeline,
+          lyricsLine: _lyricLineForSegment(
+            lyricTimeline,
+            lyricLines,
+            index,
+            (segment['startSec'] as num?)?.toDouble() ?? 0,
+            (segment['endSec'] as num?)?.toDouble() ?? 0,
+          ),
+          nextLyricsLine: _nextLyricLineForSegment(
+            lyricTimeline,
+            lyricLines,
+            index,
+            (segment['endSec'] as num?)?.toDouble() ?? 0,
+          ),
           currentAssigneeId: assignee?['id']?.toString(),
           currentAssigneeName: assignee?['name']?.toString(),
           missionGroupId: missionGroupId,
@@ -1096,8 +1123,20 @@ class FirebaseService {
             'sourceSheetUrl': guide['sheetUrl']?.toString() ?? '',
             'sourcePollId': sourcePollId,
             'lyricsText': guide['lyricsText']?.toString() ?? '',
-            'lyricsLine': _lyricLineForIndex(lyricLines, 0),
-            'nextLyricsLine': _lyricLineForIndex(lyricLines, 1),
+            'lyricsTimeline': lyricTimeline,
+            'lyricsLine': _lyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              0,
+              0,
+              0,
+            ),
+            'nextLyricsLine': _nextLyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              0,
+              0,
+            ),
             'updatedAt': FieldValue.serverTimestamp(),
           });
           return doc.id;
@@ -1126,8 +1165,9 @@ class FirebaseService {
       sourceSheetUrl: guide['sheetUrl']?.toString(),
       sourcePollId: sourcePollId,
       lyricsText: guide['lyricsText']?.toString(),
-      lyricsLine: _lyricLineForIndex(lyricLines, 0),
-      nextLyricsLine: _lyricLineForIndex(lyricLines, 1),
+      lyricsTimeline: lyricTimeline,
+      lyricsLine: _lyricLineForSegment(lyricTimeline, lyricLines, 0, 0, 0),
+      nextLyricsLine: _nextLyricLineForSegment(lyricTimeline, lyricLines, 0, 0),
       currentAssigneeId: assignee?['id']?.toString(),
       currentAssigneeName: assignee?['name']?.toString(),
       missionGroupId: sourceId.isNotEmpty ? '${sourceId}_$part' : null,
@@ -1162,6 +1202,7 @@ class FirebaseService {
     String? sourceSheetUrl,
     String? sourcePollId,
     String? lyricsText,
+    List<Map<String, dynamic>> lyricsTimeline = const [],
     String? lyricsLine,
     String? nextLyricsLine,
     String? currentAssigneeId,
@@ -1193,6 +1234,7 @@ class FirebaseService {
       'sourceSheetUrl': sourceSheetUrl?.trim() ?? '',
       'sourcePollId': sourcePollId?.trim() ?? '',
       'lyricsText': lyricsText?.trim() ?? '',
+      'lyricsTimeline': lyricsTimeline,
       'lyricsLine': lyricsLine?.trim() ?? '',
       'nextLyricsLine': nextLyricsLine?.trim() ?? '',
       'missionGroupId': missionGroupId?.trim() ?? '',
@@ -1452,6 +1494,63 @@ class FirebaseService {
   static String _lyricLineForIndex(List<String> lines, int index) {
     if (index < 0 || index >= lines.length) return '';
     return lines[index];
+  }
+
+  static List<Map<String, dynamic>> _lyricsTimelineFromValue(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((entry) {
+          return {
+            'timeSec': (entry['timeSec'] as num?)?.toDouble() ?? 0,
+            'text': entry['text']?.toString() ?? '',
+          };
+        })
+        .where((entry) => (entry['text']?.toString() ?? '').trim().isNotEmpty)
+        .toList()
+      ..sort((a, b) {
+        final at = (a['timeSec'] as num?)?.toDouble() ?? 0;
+        final bt = (b['timeSec'] as num?)?.toDouble() ?? 0;
+        return at.compareTo(bt);
+      });
+  }
+
+  static String _lyricLineForSegment(
+    List<Map<String, dynamic>> timeline,
+    List<String> lines,
+    int index,
+    double startSec,
+    double endSec,
+  ) {
+    if (timeline.isNotEmpty) {
+      final inside = timeline.where((entry) {
+        final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
+        return time >= startSec && (endSec <= startSec || time < endSec);
+      }).toList();
+      if (inside.isNotEmpty) return inside.first['text']?.toString() ?? '';
+      final previous = timeline.where((entry) {
+        final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
+        return time <= startSec;
+      }).toList();
+      if (previous.isNotEmpty) return previous.last['text']?.toString() ?? '';
+    }
+    return _lyricLineForIndex(lines, index);
+  }
+
+  static String _nextLyricLineForSegment(
+    List<Map<String, dynamic>> timeline,
+    List<String> lines,
+    int index,
+    double afterSec,
+  ) {
+    if (timeline.isNotEmpty) {
+      final next = timeline.where((entry) {
+        final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
+        return time > afterSec;
+      }).toList();
+      if (next.isNotEmpty) return next.first['text']?.toString() ?? '';
+    }
+    return _lyricLineForIndex(lines, index + 1);
   }
 
   static String _firstNotEmpty(List<String?> values) {
@@ -1748,6 +1847,7 @@ class FirebaseService {
     String? composer,
     String? conductorComment,
     String? lyricsText,
+    List<Map<String, dynamic>> lyricsTimeline = const [],
     String? fileUrl,
     String? audioUrl,
   }) async {
@@ -1757,6 +1857,7 @@ class FirebaseService {
       'composer': composer,
       'conductorComment': conductorComment,
       'lyricsText': lyricsText,
+      'lyricsTimeline': lyricsTimeline,
       'fileUrl': fileUrl,
       'audioUrl': audioUrl,
       'createdBy': uid,

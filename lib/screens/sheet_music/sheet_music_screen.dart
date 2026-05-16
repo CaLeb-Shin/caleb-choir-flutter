@@ -1,6 +1,10 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
@@ -255,62 +259,96 @@ class SheetMusicScreen extends ConsumerWidget {
     final lyricsCtrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('악보&음원 추가'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(hintText: '곡 제목'),
+      builder: (dialogCtx) {
+        String lyricFileName = '';
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('악보&음원 추가'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: titleCtrl,
+                    decoration: const InputDecoration(hintText: '곡 제목'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: composerCtrl,
+                    decoration: const InputDecoration(hintText: '작곡가 (선택)'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: conductorCommentCtrl,
+                    decoration: const InputDecoration(
+                      hintText: '🎙️ 지휘자 코멘트 (선택)',
+                    ),
+                    minLines: 2,
+                    maxLines: 4,
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: lyricsCtrl,
+                    decoration: const InputDecoration(
+                      hintText: '노래방 가사 (선택)\n.txt는 줄마다, .lrc는 [00:12.30] 형식',
+                    ),
+                    minLines: 3,
+                    maxLines: 7,
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await FilePicker.platform.pickFiles(
+                        type: FileType.custom,
+                        allowedExtensions: ['txt', 'lrc'],
+                        withData: true,
+                      );
+                      final file = picked?.files.single;
+                      final bytes = file?.bytes;
+                      if (file == null || bytes == null || bytes.isEmpty) {
+                        return;
+                      }
+                      final text = utf8.decode(bytes, allowMalformed: true);
+                      lyricsCtrl.text = text.trim();
+                      setDialogState(() => lyricFileName = file.name);
+                    },
+                    icon: const Icon(Icons.upload_file_rounded, size: 18),
+                    label: Text(
+                      lyricFileName.isEmpty
+                          ? '가사 파일 선택 (.txt/.lrc)'
+                          : lyricFileName,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: composerCtrl,
-                decoration: const InputDecoration(hintText: '작곡가 (선택)'),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogCtx),
+                child: const Text('취소'),
               ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: conductorCommentCtrl,
-                decoration: const InputDecoration(hintText: '🎙️ 지휘자 코멘트 (선택)'),
-                minLines: 2,
-                maxLines: 4,
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: lyricsCtrl,
-                decoration: const InputDecoration(
-                  hintText: '노래방 가사 (선택, 한 줄에 한 소절)',
-                ),
-                minLines: 3,
-                maxLines: 7,
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(dialogCtx);
+                  final lyricsText = lyricsCtrl.text.trim();
+                  if (titleCtrl.text.trim().isNotEmpty) {
+                    await FirebaseService.addSheetMusic(
+                      titleCtrl.text.trim(),
+                      composer: composerCtrl.text.trim(),
+                      conductorComment: conductorCommentCtrl.text.trim(),
+                      lyricsText: lyricsText,
+                      lyricsTimeline: _lyricsTimelineFromText(lyricsText),
+                    );
+                    ref.invalidate(sheetMusicProvider);
+                  }
+                },
+                child: const Text('추가'),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(dialogCtx);
-              if (titleCtrl.text.trim().isNotEmpty) {
-                await FirebaseService.addSheetMusic(
-                  titleCtrl.text.trim(),
-                  composer: composerCtrl.text.trim(),
-                  conductorComment: conductorCommentCtrl.text.trim(),
-                  lyricsText: lyricsCtrl.text.trim(),
-                );
-                ref.invalidate(sheetMusicProvider);
-              }
-            },
-            child: const Text('추가'),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -321,6 +359,38 @@ class SheetMusicScreen extends ConsumerWidget {
     if (uri == null) return;
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
+}
+
+List<Map<String, dynamic>> _lyricsTimelineFromText(String text) {
+  final entries = <Map<String, dynamic>>[];
+  final pattern = RegExp(r'\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]\s*(.*)');
+  for (final line in text.split(RegExp(r'\r?\n'))) {
+    final match = pattern.firstMatch(line.trim());
+    if (match == null) continue;
+    final minutes = int.tryParse(match.group(1) ?? '') ?? 0;
+    final seconds = int.tryParse(match.group(2) ?? '') ?? 0;
+    final fractionText = match.group(3) ?? '';
+    final fraction = fractionText.isEmpty
+        ? 0.0
+        : (int.tryParse(fractionText) ?? 0) / mathPow10(fractionText.length);
+    final lyric = (match.group(4) ?? '').trim();
+    if (lyric.isEmpty) continue;
+    entries.add({'timeSec': minutes * 60 + seconds + fraction, 'text': lyric});
+  }
+  entries.sort((a, b) {
+    final at = (a['timeSec'] as num?)?.toDouble() ?? 0;
+    final bt = (b['timeSec'] as num?)?.toDouble() ?? 0;
+    return at.compareTo(bt);
+  });
+  return entries;
+}
+
+double mathPow10(int exponent) {
+  var value = 1.0;
+  for (var i = 0; i < exponent; i += 1) {
+    value *= 10;
+  }
+  return value;
 }
 
 class _SheetMusicGroup {
