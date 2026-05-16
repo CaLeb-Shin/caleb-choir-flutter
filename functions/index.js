@@ -69,6 +69,42 @@ const HARMONY_PART_LABELS = {
   bass: "베이스",
 };
 
+const lyricLinesFromText = (text = "") =>
+  String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+const lyricsTimelineFromValue = (value) => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => ({
+      timeSec: Number(entry?.timeSec || entry?.time || 0),
+      text: String(entry?.text || entry?.lyric || "").trim(),
+    }))
+    .filter((entry) => entry.text)
+    .sort((a, b) => a.timeSec - b.timeSec);
+};
+
+const lyricLineForSegment = (timeline, fallbackLines, index, startSec, endSec) => {
+  if (timeline.length > 0) {
+    const inSegment = timeline.find((entry) => {
+      const timeSec = Number(entry.timeSec || 0);
+      return timeSec >= startSec && (endSec <= startSec || timeSec < endSec);
+    });
+    if (inSegment?.text) return inSegment.text;
+  }
+  return fallbackLines[index] || "";
+};
+
+const nextLyricLineForSegment = (timeline, fallbackLines, index, endSec) => {
+  if (timeline.length > 0) {
+    const next = timeline.find((entry) => Number(entry.timeSec || 0) >= endSec);
+    if (next?.text) return next.text;
+  }
+  return fallbackLines[index + 1] || "";
+};
+
 const pickHarmonyAssignee = async ({
   db,
   churchId,
@@ -437,8 +473,12 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
   const partFiles = sheet.partFiles || {};
   const harmonyParts = sheet.harmonySegments?.parts || {};
   const sourcePollId = String(sheet.sourcePollId || "").trim();
+  const sourceEventId = String(sheet.sourceEventId || sheet.sourceScheduleId || "").trim();
   const songTitle = sheet.songTitle || sheet.title || "오늘의 가이드";
   const sheetDate = sheet.sheetDate || sheet.scheduleDate || "";
+  const lyricsText = String(sheet.lyricsText || "").trim();
+  const lyricsTimeline = lyricsTimelineFromValue(sheet.lyricsTimeline);
+  const lyricLines = lyricLinesFromText(lyricsText);
   const notifiedUsers = new Set();
   let createdCount = 0;
   let updatedCount = 0;
@@ -480,6 +520,22 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
         mrAudioFileName,
         sourceSheetUrl,
         sourcePollId,
+        sourceEventId,
+        lyricsText,
+        lyricsTimeline,
+        lyricsLine: lyricLineForSegment(
+          lyricsTimeline,
+          lyricLines,
+          index,
+          Number(rawSegment.startSec || 0),
+          Number(rawSegment.endSec || 0),
+        ),
+        nextLyricsLine: nextLyricLineForSegment(
+          lyricsTimeline,
+          lyricLines,
+          index,
+          Number(rawSegment.endSec || 0),
+        ),
         missionTotalSegments: segments.length,
         segmentOrder: Number(rawSegment.order || index + 1),
         segmentStartSec: Number(rawSegment.startSec || 0),
@@ -519,6 +575,22 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
         sourceDate: sheetDate,
         sourceSheetUrl,
         sourcePollId,
+        sourceEventId,
+        lyricsText,
+        lyricsTimeline,
+        lyricsLine: lyricLineForSegment(
+          lyricsTimeline,
+          lyricLines,
+          index,
+          Number(rawSegment.startSec || 0),
+          Number(rawSegment.endSec || 0),
+        ),
+        nextLyricsLine: nextLyricLineForSegment(
+          lyricsTimeline,
+          lyricLines,
+          index,
+          Number(rawSegment.endSec || 0),
+        ),
         missionGroupId,
         missionTotalSegments: segments.length,
         segmentId,
