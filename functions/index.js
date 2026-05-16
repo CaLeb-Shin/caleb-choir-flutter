@@ -75,6 +75,24 @@ const lyricLinesFromText = (text = "") =>
     .map((line) => line.trim())
     .filter(Boolean);
 
+const lyricLinesForAutoTiming = (text = "") => {
+  const sectionPattern = /^(intro|inter|interlude|verse|chorus|bridge|outro|ending|간주|전주)\s*\d*$/i;
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line, index) => {
+      if (!line) return false;
+      if (index === 0 && /^\d{2}\.\d{2}\.\d{2}_/.test(line)) return false;
+      return !sectionPattern.test(line);
+    });
+};
+
+const plainLyricsTimelineFromText = (text = "") =>
+  lyricLinesForAutoTiming(text).map((line, index) => ({
+    timeSec: index * 3.2,
+    text: line,
+  }));
+
 const lyricsTimelineFromValue = (value) => {
   if (!Array.isArray(value)) return [];
   return value
@@ -84,6 +102,28 @@ const lyricsTimelineFromValue = (value) => {
     }))
     .filter((entry) => entry.text)
     .sort((a, b) => a.timeSec - b.timeSec);
+};
+
+const lyricsTimelineFromText = (text = "") => {
+  const entries = [];
+  const pattern = /\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]\s*(.*)/;
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      const match = pattern.exec(line.trim());
+      if (!match) return;
+      const minutes = Number.parseInt(match[1] || "0", 10) || 0;
+      const seconds = Number.parseInt(match[2] || "0", 10) || 0;
+      const fractionText = match[3] || "";
+      const fraction = fractionText
+        ? (Number.parseInt(fractionText, 10) || 0) / (10 ** fractionText.length)
+        : 0;
+      const lyric = String(match[4] || "").trim();
+      if (!lyric) return;
+      entries.push({ timeSec: minutes * 60 + seconds + fraction, text: lyric });
+    });
+  if (entries.length > 0) return entries.sort((a, b) => a.timeSec - b.timeSec);
+  return plainLyricsTimelineFromText(text);
 };
 
 const lyricLineForSegment = (timeline, fallbackLines, index, startSec, endSec) => {
@@ -477,7 +517,10 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
   const songTitle = sheet.songTitle || sheet.title || "오늘의 가이드";
   const sheetDate = sheet.sheetDate || sheet.scheduleDate || "";
   const lyricsText = String(sheet.lyricsText || "").trim();
-  const lyricsTimeline = lyricsTimelineFromValue(sheet.lyricsTimeline);
+  const storedLyricsTimeline = lyricsTimelineFromValue(sheet.lyricsTimeline);
+  const lyricsTimeline = storedLyricsTimeline.length > 0
+    ? storedLyricsTimeline
+    : lyricsTimelineFromText(lyricsText);
   const lyricLines = lyricLinesFromText(lyricsText);
   const notifiedUsers = new Set();
   let createdCount = 0;

@@ -382,7 +382,35 @@ List<Map<String, dynamic>> _lyricsTimelineFromText(String text) {
     final bt = (b['timeSec'] as num?)?.toDouble() ?? 0;
     return at.compareTo(bt);
   });
-  return entries;
+  if (entries.isNotEmpty) return entries;
+  return _plainLyricsTimelineFromText(text);
+}
+
+List<Map<String, dynamic>> _plainLyricsTimelineFromText(String text) {
+  final lines = _lyricsLinesForAutoTiming(text);
+  return [
+    for (var i = 0; i < lines.length; i += 1)
+      {'timeSec': i * 3.2, 'text': lines[i]},
+  ];
+}
+
+List<String> _lyricsLinesForAutoTiming(String text) {
+  final sectionPattern = RegExp(
+    r'^(intro|inter|interlude|verse|chorus|bridge|outro|ending|간주|전주)\s*\d*$',
+    caseSensitive: false,
+  );
+  final lines = text.split(RegExp(r'\r?\n'));
+  final result = <String>[];
+  for (var i = 0; i < lines.length; i += 1) {
+    final line = lines[i].trim();
+    if (line.isEmpty) continue;
+    if (i == 0 && RegExp(r'^\d{2}\.\d{2}\.\d{2}_').hasMatch(line)) {
+      continue;
+    }
+    if (sectionPattern.hasMatch(line)) continue;
+    result.add(line);
+  }
+  return result;
 }
 
 double mathPow10(int exponent) {
