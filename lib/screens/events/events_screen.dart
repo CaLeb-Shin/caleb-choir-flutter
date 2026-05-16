@@ -1,7 +1,11 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
+import '../../services/firebase_service.dart';
 
 class EventsScreen extends ConsumerWidget {
   const EventsScreen({super.key});
@@ -25,6 +29,7 @@ class EventsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final eventsAsync = ref.watch(eventsProvider);
+    final canManage = ref.watch(effectiveHasManagePermissionProvider);
 
     return eventsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -37,6 +42,17 @@ class EventsScreen extends ConsumerWidget {
             Row(
               children: [
                 Expanded(child: Text('일정', style: AppText.headline(28))),
+                if (canManage) ...[
+                  IconButton(
+                    onPressed: () => _showAddEventDialog(context, ref),
+                    icon: const Icon(
+                      Icons.add_circle_rounded,
+                      color: AppColors.secondary,
+                    ),
+                    tooltip: '일정 등록',
+                  ),
+                  const SizedBox(width: 2),
+                ],
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -116,6 +132,275 @@ class EventsScreen extends ConsumerWidget {
     }
     return false;
   }
+
+  void _showAddEventDialog(BuildContext context, WidgetRef ref) {
+    final titleCtrl = TextEditingController();
+    final dateCtrl = TextEditingController(
+      text: DateTime.now().toIso8601String().split('T').first,
+    );
+    final timeCtrl = TextEditingController();
+    final locationCtrl = TextEditingController();
+    final descriptionCtrl = TextEditingController();
+    final harmonyTitleCtrl = TextEditingController();
+    final harmonyGuideCtrl = TextEditingController();
+    final harmonyLyricsCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        var selectedType = 'event';
+        var needsAttendance = false;
+        var needsSeating = false;
+        var harmonyEnabled = false;
+        var lyricFileName = '';
+        var isSaving = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('일정 등록'),
+            content: SizedBox(
+              width: 430,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: titleCtrl,
+                      decoration: const InputDecoration(hintText: '일정 제목'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: dateCtrl,
+                      decoration: InputDecoration(
+                        hintText: '날짜 (YYYY-MM-DD)',
+                        suffixIcon: IconButton(
+                          tooltip: '날짜 선택',
+                          onPressed: () async {
+                            final initialDate =
+                                DateTime.tryParse(dateCtrl.text.trim()) ??
+                                DateTime.now();
+                            final picked = await showDatePicker(
+                              context: context,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2035),
+                              initialDate: initialDate,
+                            );
+                            if (picked == null) return;
+                            dateCtrl.text = picked
+                                .toIso8601String()
+                                .split('T')
+                                .first;
+                          },
+                          icon: const Icon(Icons.calendar_month_rounded),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: timeCtrl,
+                      decoration: const InputDecoration(hintText: '시간 (선택)'),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: locationCtrl,
+                      decoration: const InputDecoration(hintText: '장소 (선택)'),
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedType,
+                      decoration: const InputDecoration(hintText: '일정 종류'),
+                      items: _typeLabels.entries
+                          .map(
+                            (entry) => DropdownMenuItem(
+                              value: entry.key,
+                              child: Text(entry.value),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setDialogState(() => selectedType = value);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: descriptionCtrl,
+                      decoration: const InputDecoration(hintText: '설명 (선택)'),
+                      minLines: 2,
+                      maxLines: 4,
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      value: needsAttendance,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        '출석 체크 사용',
+                        style: AppText.body(13, weight: FontWeight.w800),
+                      ),
+                      onChanged: (value) =>
+                          setDialogState(() => needsAttendance = value),
+                    ),
+                    SwitchListTile(
+                      value: needsSeating,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        '자리판 사용',
+                        style: AppText.body(13, weight: FontWeight.w800),
+                      ),
+                      onChanged: (value) =>
+                          setDialogState(() => needsSeating = value),
+                    ),
+                    const Divider(height: 22),
+                    SwitchListTile(
+                      value: harmonyEnabled,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        '하모니챗 릴레이 텍스트 같이 등록',
+                        style: AppText.body(13, weight: FontWeight.w900),
+                      ),
+                      subtitle: Text(
+                        '일정이 오늘의 릴레이 가이드로 열립니다',
+                        style: AppText.body(11, color: AppColors.muted),
+                      ),
+                      onChanged: (value) =>
+                          setDialogState(() => harmonyEnabled = value),
+                    ),
+                    if (harmonyEnabled) ...[
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: harmonyTitleCtrl,
+                        decoration: const InputDecoration(
+                          hintText: '릴레이 제목 (비우면 일정 제목)',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: harmonyGuideCtrl,
+                        decoration: const InputDecoration(
+                          hintText: '하모니챗 안내 문구 (선택)',
+                        ),
+                        minLines: 2,
+                        maxLines: 4,
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: harmonyLyricsCtrl,
+                        decoration: const InputDecoration(
+                          hintText:
+                              '노래방 가사 (선택)\n.txt는 줄마다, .lrc는 [00:12.30] 형식',
+                        ),
+                        minLines: 3,
+                        maxLines: 7,
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await FilePicker.platform.pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: ['txt', 'lrc'],
+                            withData: true,
+                          );
+                          final file = picked?.files.single;
+                          final bytes = file?.bytes;
+                          if (file == null || bytes == null || bytes.isEmpty) {
+                            return;
+                          }
+                          harmonyLyricsCtrl.text = utf8
+                              .decode(bytes, allowMalformed: true)
+                              .trim();
+                          setDialogState(() => lyricFileName = file.name);
+                        },
+                        icon: const Icon(Icons.upload_file_rounded, size: 18),
+                        label: Text(
+                          lyricFileName.isEmpty
+                              ? '가사 파일 선택 (.txt/.lrc)'
+                              : lyricFileName,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(dialogCtx),
+                child: const Text('취소'),
+              ),
+              TextButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        final navigator = Navigator.of(dialogCtx);
+                        final title = titleCtrl.text.trim();
+                        final eventDate = dateCtrl.text.trim();
+                        if (title.isEmpty || eventDate.isEmpty) {
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('제목과 날짜를 입력해주세요')),
+                          );
+                          return;
+                        }
+                        if (DateTime.tryParse(eventDate) == null) {
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('날짜는 YYYY-MM-DD 형식으로 입력해주세요'),
+                            ),
+                          );
+                          return;
+                        }
+                        setDialogState(() => isSaving = true);
+                        try {
+                          final lyricsText = harmonyLyricsCtrl.text.trim();
+                          if (ref.read(localPreviewModeProvider)) {
+                            navigator.pop();
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('미리보기에서는 일정 저장을 건너뜁니다'),
+                              ),
+                            );
+                            return;
+                          }
+                          await FirebaseService.createEvent(
+                            title: title,
+                            eventDate: eventDate,
+                            time: timeCtrl.text.trim(),
+                            location: locationCtrl.text.trim(),
+                            description: descriptionCtrl.text.trim(),
+                            type: selectedType,
+                            needsAttendance: needsAttendance,
+                            needsSeating: needsSeating,
+                            harmonyEnabled: harmonyEnabled,
+                            harmonyTitle: harmonyTitleCtrl.text.trim(),
+                            harmonyGuide: harmonyGuideCtrl.text.trim(),
+                            harmonyLyricsText: lyricsText,
+                            harmonyLyricsTimeline: _lyricsTimelineFromText(
+                              lyricsText,
+                            ),
+                          );
+                          ref.invalidate(eventsProvider);
+                          ref.invalidate(latestPartGuideProvider);
+                          ref.invalidate(harmonyRelaysProvider);
+                          navigator.pop();
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('일정을 등록했습니다')),
+                          );
+                        } catch (error) {
+                          setDialogState(() => isSaving = false);
+                          messenger.showSnackBar(
+                            SnackBar(content: Text('일정 등록 실패: $error')),
+                          );
+                        }
+                      },
+                child: Text(isSaving ? '등록 중...' : '등록'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _ScheduleTile extends StatelessWidget {
@@ -130,9 +415,16 @@ class _ScheduleTile extends StatelessWidget {
     final type = event['type'];
     final color = EventsScreen.typeColor(type);
     final location = EventsScreen.location(event);
-    final time = _timeText(date);
+    final time = _firstNotEmpty([event['time']?.toString(), _timeText(date)]);
     final needsAttendance = EventsScreen.boolFlag(event, 'needsAttendance');
     final needsSeating = EventsScreen.boolFlag(event, 'needsSeating');
+    final hasHarmony =
+        EventsScreen.boolFlag(event, 'harmonyEnabled') ||
+        _firstNotEmpty([
+          event['harmonyTitle']?.toString(),
+          event['harmonyGuide']?.toString(),
+          event['harmonyLyricsText']?.toString(),
+        ]).isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -199,12 +491,18 @@ class _ScheduleTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                if (needsAttendance || needsSeating) ...[
+                if (needsAttendance || needsSeating || hasHarmony) ...[
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 5,
                     runSpacing: 5,
                     children: [
+                      if (hasHarmony)
+                        const _MetaPill(
+                          label: '하모니',
+                          icon: Icons.queue_music_rounded,
+                          color: AppColors.secondary,
+                        ),
                       if (needsAttendance)
                         const _MetaPill(
                           label: '출석',
@@ -231,6 +529,14 @@ class _ScheduleTile extends StatelessWidget {
   static String _timeText(DateTime? date) {
     if (date == null || (date.hour == 0 && date.minute == 0)) return '';
     return '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  static String _firstNotEmpty(Iterable<String?> values) {
+    for (final value in values) {
+      final trimmed = value?.trim() ?? '';
+      if (trimmed.isNotEmpty) return trimmed;
+    }
+    return '';
   }
 }
 
@@ -361,4 +667,36 @@ class _EmptyScheduleState extends StatelessWidget {
       ),
     );
   }
+}
+
+List<Map<String, dynamic>> _lyricsTimelineFromText(String text) {
+  final entries = <Map<String, dynamic>>[];
+  final pattern = RegExp(r'\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]\s*(.*)');
+  for (final line in text.split(RegExp(r'\r?\n'))) {
+    final match = pattern.firstMatch(line.trim());
+    if (match == null) continue;
+    final minutes = int.tryParse(match.group(1) ?? '') ?? 0;
+    final seconds = int.tryParse(match.group(2) ?? '') ?? 0;
+    final fractionText = match.group(3) ?? '';
+    final fraction = fractionText.isEmpty
+        ? 0.0
+        : (int.tryParse(fractionText) ?? 0) / _mathPow10(fractionText.length);
+    final lyric = (match.group(4) ?? '').trim();
+    if (lyric.isEmpty) continue;
+    entries.add({'timeSec': minutes * 60 + seconds + fraction, 'text': lyric});
+  }
+  entries.sort((a, b) {
+    final at = (a['timeSec'] as num?)?.toDouble() ?? 0;
+    final bt = (b['timeSec'] as num?)?.toDouble() ?? 0;
+    return at.compareTo(bt);
+  });
+  return entries;
+}
+
+double _mathPow10(int exponent) {
+  var value = 1.0;
+  for (var i = 0; i < exponent; i += 1) {
+    value *= 10;
+  }
+  return value;
 }

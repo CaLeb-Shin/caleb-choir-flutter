@@ -199,6 +199,15 @@
       ]
     },
     {
+      "collectionGroup": "harmony_relays",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "churchId", "order": "ASCENDING" },
+        { "fieldPath": "part", "order": "ASCENDING" },
+        { "fieldPath": "sourceEventId", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "harmony_relay_clips",
       "queryScope": "COLLECTION",
       "fields": [

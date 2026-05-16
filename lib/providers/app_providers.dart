@@ -425,14 +425,24 @@ const _previewEvents = [
   {
     'id': 'preview-event-2',
     'title': '주일 찬양',
-    'description': '5월 첫 주 예배 찬양입니다.',
-    'date': '2026-05-05',
-    'eventDate': '2026-05-05',
+    'description': '일정 등록에서 하모니챗 가사를 함께 준비한 예배 찬양입니다.',
+    'date': '2026-05-17',
+    'eventDate': '2026-05-17',
     'time': '오전 10:00',
     'location': '본당',
     'type': 'rehearsal',
     'needsAttendance': true,
     'needsSeating': true,
+    'harmonyEnabled': true,
+    'harmonyTitle': '주일 찬양 릴레이',
+    'harmonyGuide': '후렴을 짧게 나눠 서로 이어 불러요.',
+    'harmonyLyricsText':
+        '[00:00.00] 주만 바라볼지라\n[00:04.00] 염려하지 말고 바라볼지라\n[00:08.00] 주님만 의지해',
+    'harmonyLyricsTimeline': [
+      {'timeSec': 0.0, 'text': '주만 바라볼지라'},
+      {'timeSec': 4.0, 'text': '염려하지 말고 바라볼지라'},
+      {'timeSec': 8.0, 'text': '주님만 의지해'},
+    ],
   },
 ];
 

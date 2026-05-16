@@ -860,6 +860,9 @@ class FirebaseService {
     required String part,
   }) async {
     if (part.trim().isEmpty) return null;
+    final eventGuide = await _latestEventHarmonyGuideForRelay();
+    if (eventGuide != null) return eventGuide;
+
     final sheets = await getSheetMusic();
     sheets.sort((a, b) {
       final aDate = _dateSortValue(a['sheetDate'], fallback: a['createdAt']);
@@ -953,6 +956,55 @@ class FirebaseService {
     return null;
   }
 
+  static Future<Map<String, dynamic>?>
+  _latestEventHarmonyGuideForRelay() async {
+    final events = await getEvents();
+    final candidates = events.where((event) {
+      final enabled = event['harmonyEnabled'] == true;
+      final guide = event['harmonyGuide']?.toString().trim() ?? '';
+      final lyrics = event['harmonyLyricsText']?.toString().trim() ?? '';
+      return enabled && (guide.isNotEmpty || lyrics.isNotEmpty);
+    }).toList();
+    if (candidates.isEmpty) return null;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    candidates.sort((a, b) {
+      final aDate = _dateSortValue(a['eventDate'] ?? a['date']);
+      final bDate = _dateSortValue(b['eventDate'] ?? b['date']);
+      final aDay = DateTime(aDate.year, aDate.month, aDate.day);
+      final bDay = DateTime(bDate.year, bDate.month, bDate.day);
+      final aPast = aDay.isBefore(today);
+      final bPast = bDay.isBefore(today);
+      if (aPast != bPast) return aPast ? 1 : -1;
+      return aPast ? bDate.compareTo(aDate) : aDate.compareTo(bDate);
+    });
+
+    final event = candidates.first;
+    final title = _firstNotEmpty([
+      event['harmonyTitle']?.toString(),
+      event['title']?.toString(),
+      '오늘의 일정',
+    ]);
+    final lyricsText = event['harmonyLyricsText']?.toString() ?? '';
+    final timeline = _lyricsTimelineFromValue(event['harmonyLyricsTimeline']);
+    return {
+      'title': title,
+      'songTitle': title,
+      'eventId': event['id']?.toString() ?? '',
+      'eventDate':
+          event['eventDate']?.toString() ?? event['date']?.toString() ?? '',
+      'sheetDate':
+          event['eventDate']?.toString() ?? event['date']?.toString() ?? '',
+      'guide': event['harmonyGuide']?.toString() ?? '',
+      'lyricsText': lyricsText,
+      'lyricsTimeline': timeline,
+      'lyricLines': _lyricLinesFromText(lyricsText),
+      'sourceEventId': event['id']?.toString() ?? '',
+      'segments': const [],
+    };
+  }
+
   static Future<String> createHarmonyRelayFromGuide({
     required String part,
     required Map<String, dynamic> guide,
@@ -965,6 +1017,7 @@ class FirebaseService {
       '오늘의 가이드',
     ]);
     final sheetDate = guide['sheetDate']?.toString() ?? '';
+    final sourceEventId = guide['sourceEventId']?.toString() ?? '';
     final sourcePollId = guide['sourcePollId']?.toString() ?? '';
     final rawSegments = (guide['segments'] as List?) ?? const [];
     final lyricLines = _lyricLinesFromText(
@@ -1066,6 +1119,7 @@ class FirebaseService {
           sourceDate: sheetDate,
           sourceSheetUrl: guide['sheetUrl']?.toString(),
           sourcePollId: sourcePollId,
+          sourceEventId: sourceEventId,
           lyricsText: guide['lyricsText']?.toString(),
           lyricsTimeline: lyricTimeline,
           lyricsLine: _lyricLineForSegment(
@@ -1143,6 +1197,43 @@ class FirebaseService {
         }
       }
     }
+
+    if (sourceEventId.isNotEmpty) {
+      final existing = await _db
+          .collection('harmony_relays')
+          .where('churchId', isEqualTo: churchId)
+          .where('part', isEqualTo: part)
+          .where('sourceEventId', isEqualTo: sourceEventId)
+          .get();
+      for (final doc in existing.docs) {
+        final data = doc.data();
+        if (data['churchId'] == churchId && data['part'] == part) {
+          await doc.reference.update({
+            'guide': guide['guide']?.toString() ?? '',
+            'sourcePollId': sourcePollId,
+            'sourceEventId': sourceEventId,
+            'lyricsText': guide['lyricsText']?.toString() ?? '',
+            'lyricsTimeline': lyricTimeline,
+            'lyricsLine': _lyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              0,
+              0,
+              0,
+            ),
+            'nextLyricsLine': _nextLyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              0,
+              0,
+            ),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          return doc.id;
+        }
+      }
+    }
+
     final segmentLabel = sheetDate.isNotEmpty ? '$sheetDate 1소절' : '오늘의 1소절';
     final assignee = await _pickHarmonyAssignee(
       part: part,
@@ -1164,13 +1255,16 @@ class FirebaseService {
       sourceDate: sheetDate,
       sourceSheetUrl: guide['sheetUrl']?.toString(),
       sourcePollId: sourcePollId,
+      sourceEventId: sourceEventId,
       lyricsText: guide['lyricsText']?.toString(),
       lyricsTimeline: lyricTimeline,
       lyricsLine: _lyricLineForSegment(lyricTimeline, lyricLines, 0, 0, 0),
       nextLyricsLine: _nextLyricLineForSegment(lyricTimeline, lyricLines, 0, 0),
       currentAssigneeId: assignee?['id']?.toString(),
       currentAssigneeName: assignee?['name']?.toString(),
-      missionGroupId: sourceId.isNotEmpty ? '${sourceId}_$part' : null,
+      missionGroupId: sourceId.isNotEmpty
+          ? '${sourceId}_$part'
+          : (sourceEventId.isNotEmpty ? '${sourceEventId}_$part' : null),
       missionTotalSegments: 1,
       segmentId: 'seg-01',
       segmentOrder: 1,
@@ -1201,6 +1295,7 @@ class FirebaseService {
     String? sourceDate,
     String? sourceSheetUrl,
     String? sourcePollId,
+    String? sourceEventId,
     String? lyricsText,
     List<Map<String, dynamic>> lyricsTimeline = const [],
     String? lyricsLine,
@@ -1233,6 +1328,7 @@ class FirebaseService {
       'sourceDate': sourceDate?.trim() ?? '',
       'sourceSheetUrl': sourceSheetUrl?.trim() ?? '',
       'sourcePollId': sourcePollId?.trim() ?? '',
+      'sourceEventId': sourceEventId?.trim() ?? '',
       'lyricsText': lyricsText?.trim() ?? '',
       'lyricsTimeline': lyricsTimeline,
       'lyricsLine': lyricsLine?.trim() ?? '',
@@ -1801,6 +1897,42 @@ class FirebaseService {
                 ..sort(_createdAtDesc);
           return events;
         });
+  }
+
+  static Future<void> createEvent({
+    required String title,
+    required String eventDate,
+    String? time,
+    String? location,
+    String? description,
+    String type = 'event',
+    bool needsAttendance = false,
+    bool needsSeating = false,
+    bool harmonyEnabled = false,
+    String? harmonyTitle,
+    String? harmonyGuide,
+    String? harmonyLyricsText,
+    List<Map<String, dynamic>> harmonyLyricsTimeline = const [],
+  }) async {
+    await _db.collection('events').add({
+      'churchId': _requireChurchId(),
+      'title': title.trim(),
+      'eventDate': eventDate.trim(),
+      'date': eventDate.trim(),
+      'time': time?.trim() ?? '',
+      'location': location?.trim() ?? '',
+      'description': description?.trim() ?? '',
+      'type': type,
+      'needsAttendance': needsAttendance,
+      'needsSeating': needsSeating,
+      'harmonyEnabled': harmonyEnabled,
+      'harmonyTitle': harmonyTitle?.trim() ?? '',
+      'harmonyGuide': harmonyGuide?.trim() ?? '',
+      'harmonyLyricsText': harmonyLyricsText?.trim() ?? '',
+      'harmonyLyricsTimeline': harmonyLyricsTimeline,
+      'createdBy': uid,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // ============ Admin: Announcements ============
