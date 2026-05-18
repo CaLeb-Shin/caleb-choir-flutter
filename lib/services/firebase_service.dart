@@ -1899,7 +1899,7 @@ class FirebaseService {
         });
   }
 
-  static Future<void> createEvent({
+  static Future<String> createEvent({
     required String title,
     required String eventDate,
     String? time,
@@ -1927,7 +1927,7 @@ class FirebaseService {
     final normalizedHarmonyTimeline = enabledHarmony
         ? harmonyLyricsTimeline
         : const <Map<String, dynamic>>[];
-    await _db.collection('events').add({
+    final doc = await _db.collection('events').add({
       'churchId': _requireChurchId(),
       'title': title.trim(),
       'eventDate': eventDate.trim(),
@@ -1945,6 +1945,33 @@ class FirebaseService {
       'harmonyLyricsTimeline': normalizedHarmonyTimeline,
       'createdBy': uid,
       'createdAt': FieldValue.serverTimestamp(),
+    });
+    return doc.id;
+  }
+
+  static Future<void> updateEventHarmonyGuide({
+    required String eventId,
+    required String harmonyTitle,
+    required String harmonyGuide,
+    required String harmonyLyricsText,
+    List<Map<String, dynamic>> harmonyLyricsTimeline = const [],
+  }) async {
+    final normalizedEventId = eventId.trim();
+    if (normalizedEventId.isEmpty) throw Exception('일정 ID가 없습니다');
+    final guide = harmonyGuide.trim();
+    final lyricsText = harmonyLyricsText.trim();
+    if (guide.isEmpty && lyricsText.isEmpty) {
+      throw Exception('하모니챗 안내 문구나 가사를 입력해주세요');
+    }
+    await _db.collection('events').doc(normalizedEventId).update({
+      'harmonyEnabled': true,
+      'harmonyTitle': harmonyTitle.trim(),
+      'harmonyGuide': guide,
+      'harmonyLyricsText': lyricsText,
+      'harmonyLyricsTimeline': harmonyLyricsTimeline,
+      'harmonyGuideUpdatedAt': FieldValue.serverTimestamp(),
+      'harmonyLyricsSyncedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 

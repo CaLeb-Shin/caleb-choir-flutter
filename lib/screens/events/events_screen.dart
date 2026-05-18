@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../models/user.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
@@ -30,6 +31,8 @@ class EventsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final eventsAsync = ref.watch(eventsProvider);
     final canManage = ref.watch(effectiveHasManagePermissionProvider);
+    final profile = ref.watch(profileProvider).valueOrNull;
+    final relayPartOptions = _relayPartOptionsFor(profile);
 
     return eventsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -77,7 +80,13 @@ class EventsScreen extends ConsumerWidget {
             if (items.isEmpty)
               const _EmptyScheduleState()
             else
-              for (final event in items) _ScheduleTile(event: event),
+              for (final event in items)
+                _ScheduleTile(
+                  event: event,
+                  canManage: canManage,
+                  relayPartOptions: relayPartOptions,
+                  ref: ref,
+                ),
           ],
         );
       },
@@ -141,9 +150,6 @@ class EventsScreen extends ConsumerWidget {
     final timeCtrl = TextEditingController();
     final locationCtrl = TextEditingController();
     final descriptionCtrl = TextEditingController();
-    final harmonyTitleCtrl = TextEditingController();
-    final harmonyGuideCtrl = TextEditingController();
-    final harmonyLyricsCtrl = TextEditingController();
 
     showDialog(
       context: context,
@@ -151,8 +157,6 @@ class EventsScreen extends ConsumerWidget {
         var selectedType = 'event';
         var needsAttendance = false;
         var needsSeating = false;
-        var harmonyEnabled = false;
-        var lyricFileName = '';
         var isSaving = false;
 
         return StatefulBuilder(
@@ -250,75 +254,11 @@ class EventsScreen extends ConsumerWidget {
                       onChanged: (value) =>
                           setDialogState(() => needsSeating = value),
                     ),
-                    const Divider(height: 22),
-                    SwitchListTile(
-                      value: harmonyEnabled,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        '하모니챗 릴레이 텍스트 같이 등록',
-                        style: AppText.body(13, weight: FontWeight.w900),
-                      ),
-                      subtitle: Text(
-                        '일정이 오늘의 릴레이 가이드로 열립니다',
-                        style: AppText.body(11, color: AppColors.muted),
-                      ),
-                      onChanged: (value) =>
-                          setDialogState(() => harmonyEnabled = value),
+                    const SizedBox(height: 8),
+                    Text(
+                      '하모니챗 릴레이와 가사 싱크는 일정 저장 후 카드에서 따로 준비할 수 있어요.',
+                      style: AppText.body(12, color: AppColors.muted),
                     ),
-                    if (harmonyEnabled) ...[
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: harmonyTitleCtrl,
-                        decoration: const InputDecoration(
-                          hintText: '릴레이 제목 (비우면 일정 제목)',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: harmonyGuideCtrl,
-                        decoration: const InputDecoration(
-                          hintText: '하모니챗 안내 문구 (선택)',
-                        ),
-                        minLines: 2,
-                        maxLines: 4,
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: harmonyLyricsCtrl,
-                        decoration: const InputDecoration(
-                          hintText:
-                              '노래방 가사 (선택)\n.txt는 줄마다, .lrc는 [00:12.30] 형식',
-                        ),
-                        minLines: 3,
-                        maxLines: 7,
-                      ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final picked = await FilePicker.platform.pickFiles(
-                            type: FileType.custom,
-                            allowedExtensions: ['txt', 'lrc'],
-                            withData: true,
-                          );
-                          final file = picked?.files.single;
-                          final bytes = file?.bytes;
-                          if (file == null || bytes == null || bytes.isEmpty) {
-                            return;
-                          }
-                          harmonyLyricsCtrl.text = utf8
-                              .decode(bytes, allowMalformed: true)
-                              .trim();
-                          setDialogState(() => lyricFileName = file.name);
-                        },
-                        icon: const Icon(Icons.upload_file_rounded, size: 18),
-                        label: Text(
-                          lyricFileName.isEmpty
-                              ? '가사 파일 선택 (.txt/.lrc)'
-                              : lyricFileName,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -350,18 +290,6 @@ class EventsScreen extends ConsumerWidget {
                           );
                           return;
                         }
-                        final lyricsText = harmonyLyricsCtrl.text.trim();
-                        final harmonyGuide = harmonyGuideCtrl.text.trim();
-                        if (harmonyEnabled &&
-                            harmonyGuide.isEmpty &&
-                            lyricsText.isEmpty) {
-                          messenger.showSnackBar(
-                            const SnackBar(
-                              content: Text('하모니챗 안내 문구나 가사를 입력해주세요'),
-                            ),
-                          );
-                          return;
-                        }
                         setDialogState(() => isSaving = true);
                         try {
                           if (ref.read(localPreviewModeProvider)) {
@@ -382,20 +310,15 @@ class EventsScreen extends ConsumerWidget {
                             type: selectedType,
                             needsAttendance: needsAttendance,
                             needsSeating: needsSeating,
-                            harmonyEnabled: harmonyEnabled,
-                            harmonyTitle: harmonyTitleCtrl.text.trim(),
-                            harmonyGuide: harmonyGuide,
-                            harmonyLyricsText: lyricsText,
-                            harmonyLyricsTimeline: _lyricsTimelineFromText(
-                              lyricsText,
-                            ),
                           );
                           ref.invalidate(eventsProvider);
-                          ref.invalidate(latestPartGuideProvider);
-                          ref.invalidate(harmonyRelaysProvider);
                           navigator.pop();
                           messenger.showSnackBar(
-                            const SnackBar(content: Text('일정을 등록했습니다')),
+                            const SnackBar(
+                              content: Text(
+                                '일정을 등록했습니다. 하모니챗은 일정 카드에서 따로 준비해주세요.',
+                              ),
+                            ),
                           );
                         } catch (error) {
                           setDialogState(() => isSaving = false);
@@ -416,7 +339,16 @@ class EventsScreen extends ConsumerWidget {
 
 class _ScheduleTile extends StatelessWidget {
   final Map<String, dynamic> event;
-  const _ScheduleTile({required this.event});
+  final bool canManage;
+  final List<_RelayPartOption> relayPartOptions;
+  final WidgetRef ref;
+
+  const _ScheduleTile({
+    required this.event,
+    required this.canManage,
+    required this.relayPartOptions,
+    required this.ref,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -436,6 +368,9 @@ class _ScheduleTile extends StatelessWidget {
           event['harmonyGuide']?.toString(),
           event['harmonyLyricsText']?.toString(),
         ]).isNotEmpty;
+    final hasLyricsSync = _lyricsTimelineFromValue(
+      event['harmonyLyricsTimeline'],
+    ).isNotEmpty;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -514,6 +449,12 @@ class _ScheduleTile extends StatelessWidget {
                           icon: Icons.queue_music_rounded,
                           color: AppColors.secondary,
                         ),
+                      if (hasLyricsSync)
+                        const _MetaPill(
+                          label: '싱크',
+                          icon: Icons.lyrics_rounded,
+                          color: AppColors.secondary,
+                        ),
                       if (needsAttendance)
                         const _MetaPill(
                           label: '출석',
@@ -529,10 +470,60 @@ class _ScheduleTile extends StatelessWidget {
                     ],
                   ),
                 ],
+                if (canManage) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => _openHarmonyGuideSheet(context),
+                        icon: Icon(
+                          hasHarmony
+                              ? Icons.lyrics_rounded
+                              : Icons.queue_music_rounded,
+                          size: 18,
+                        ),
+                        label: Text(hasHarmony ? '가사 싱크' : '하모니 준비'),
+                      ),
+                      if (hasHarmony && relayPartOptions.isNotEmpty)
+                        FilledButton.icon(
+                          onPressed: () => _openRelayCreateSheet(context),
+                          icon: const Icon(
+                            Icons.playlist_add_rounded,
+                            size: 18,
+                          ),
+                          label: const Text('릴레이 만들기'),
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openHarmonyGuideSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EventHarmonyGuideSheet(event: event, ref: ref),
+    );
+  }
+
+  void _openRelayCreateSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _CreateEventRelaySheet(
+        event: event,
+        partOptions: relayPartOptions,
+        ref: ref,
       ),
     );
   }
@@ -549,6 +540,539 @@ class _ScheduleTile extends StatelessWidget {
     }
     return '';
   }
+}
+
+class _EventHarmonyGuideSheet extends StatefulWidget {
+  const _EventHarmonyGuideSheet({required this.event, required this.ref});
+
+  final Map<String, dynamic> event;
+  final WidgetRef ref;
+
+  @override
+  State<_EventHarmonyGuideSheet> createState() =>
+      _EventHarmonyGuideSheetState();
+}
+
+class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _guideController;
+  late final TextEditingController _lyricsController;
+  final List<_LyricSyncLine> _syncLines = [];
+  String _lyricFileName = '';
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final eventTitle = widget.event['title']?.toString().trim() ?? '';
+    final harmonyTitle = widget.event['harmonyTitle']?.toString().trim() ?? '';
+    _titleController = TextEditingController(
+      text: harmonyTitle.isEmpty ? eventTitle : harmonyTitle,
+    );
+    _guideController = TextEditingController(
+      text: widget.event['harmonyGuide']?.toString() ?? '',
+    );
+    _lyricsController = TextEditingController(
+      text: widget.event['harmonyLyricsText']?.toString() ?? '',
+    );
+    final existingSync = _syncLinesFromValue(
+      widget.event['harmonyLyricsTimeline'],
+    );
+    _replaceSyncLines(
+      existingSync.isEmpty && _lyricsController.text.trim().isNotEmpty
+          ? _syncLinesFromText(_lyricsController.text)
+          : existingSync,
+      disposeOld: false,
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _guideController.dispose();
+    _lyricsController.dispose();
+    for (final line in _syncLines) {
+      line.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.88;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: maxHeight),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '하모니챗 준비',
+                          style: AppText.body(20, weight: FontWeight.w900),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _isSaving
+                            ? null
+                            : () => Navigator.pop(context),
+                        icon: const Icon(Icons.close_rounded),
+                        tooltip: '닫기',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '일정은 그대로 두고 릴레이 가이드와 가사 싱크만 따로 저장합니다.',
+                    style: AppText.body(12, color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _titleController,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(
+                      labelText: '릴레이 제목',
+                      hintText: '비우면 일정 제목을 사용합니다',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _guideController,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: '하모니챗 안내 문구',
+                      hintText: '진입음, 호흡, 가사 느낌을 짧게 적어주세요',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _lyricsController,
+                    minLines: 4,
+                    maxLines: 8,
+                    decoration: const InputDecoration(
+                      labelText: '가사',
+                      hintText: '.txt는 줄마다, .lrc는 [00:12.30] 형식으로 붙여넣어 주세요',
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _pickLyricsFile,
+                        icon: const Icon(Icons.upload_file_rounded, size: 18),
+                        label: Text(
+                          _lyricFileName.isEmpty ? '가사 파일 선택' : _lyricFileName,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: _rebuildSyncFromLyrics,
+                        icon: const Icon(Icons.sync_rounded, size: 18),
+                        label: const Text('가사로 싱크 만들기'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '가사 싱크',
+                          style: AppText.body(15, weight: FontWeight.w900),
+                        ),
+                      ),
+                      Text(
+                        '${_syncLines.length}줄',
+                        style: AppText.body(12, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_syncLines.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLow,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: AppColors.border.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        '가사를 넣고 싱크를 만들면 줄별 시간을 조정할 수 있어요.',
+                        style: AppText.body(12, color: AppColors.muted),
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 280),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _syncLines.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final line = _syncLines[index];
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 86,
+                                child: TextField(
+                                  controller: line.timeController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    hintText: '00:00.00',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextField(
+                                  controller: line.textController,
+                                  minLines: 1,
+                                  maxLines: 2,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    hintText: '가사',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isSaving ? null : _save,
+                      icon: _isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_rounded, size: 18),
+                      label: Text(_isSaving ? '저장 중...' : '하모니 준비 저장'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickLyricsFile() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['txt', 'lrc'],
+      withData: true,
+    );
+    final file = picked?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null || bytes.isEmpty) return;
+    _lyricsController.text = utf8.decode(bytes, allowMalformed: true).trim();
+    _replaceSyncLines(_syncLinesFromText(_lyricsController.text));
+    setState(() => _lyricFileName = file.name);
+  }
+
+  void _rebuildSyncFromLyrics() {
+    final lyrics = _lyricsController.text.trim();
+    if (lyrics.isEmpty) {
+      _showMessage('가사를 먼저 입력해주세요.');
+      return;
+    }
+    _replaceSyncLines(_syncLinesFromText(lyrics));
+    setState(() {});
+  }
+
+  void _replaceSyncLines(List<_LyricSyncLine> lines, {bool disposeOld = true}) {
+    if (disposeOld) {
+      for (final line in _syncLines) {
+        line.dispose();
+      }
+    }
+    _syncLines
+      ..clear()
+      ..addAll(lines);
+  }
+
+  Future<void> _save() async {
+    final eventId = widget.event['id']?.toString() ?? '';
+    final eventTitle = widget.event['title']?.toString().trim() ?? '';
+    final harmonyTitle = _firstFilled([
+      _titleController.text,
+      eventTitle,
+      '하모니 릴레이',
+    ]);
+    final guide = _guideController.text.trim();
+    final lyrics = _lyricsController.text.trim();
+    if (eventId.isEmpty) {
+      _showMessage('일정 ID를 찾을 수 없습니다.');
+      return;
+    }
+    if (guide.isEmpty && lyrics.isEmpty) {
+      _showMessage('안내 문구나 가사를 입력해주세요.');
+      return;
+    }
+    final timeline = _timelinePayload();
+    if (timeline == null) {
+      _showMessage('가사 시간은 00:12.30 또는 초 단위 숫자로 입력해주세요.');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() => _isSaving = true);
+    try {
+      if (widget.ref.read(localPreviewModeProvider)) {
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+      } else {
+        await FirebaseService.updateEventHarmonyGuide(
+          eventId: eventId,
+          harmonyTitle: harmonyTitle,
+          harmonyGuide: guide,
+          harmonyLyricsText: lyrics,
+          harmonyLyricsTimeline: timeline.isEmpty && lyrics.isNotEmpty
+              ? _lyricsTimelineFromText(lyrics)
+              : timeline,
+        );
+        widget.ref.invalidate(eventsProvider);
+        widget.ref.invalidate(latestPartGuideProvider);
+        widget.ref.invalidate(harmonyRelaysProvider);
+      }
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('하모니챗 준비를 저장했습니다. 이제 릴레이를 따로 만들 수 있어요.')),
+      );
+    } catch (error) {
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  List<Map<String, dynamic>>? _timelinePayload() {
+    final payload = <Map<String, dynamic>>[];
+    for (final line in _syncLines) {
+      final text = line.textController.text.trim();
+      if (text.isEmpty) continue;
+      final seconds = _parseSyncTime(line.timeController.text.trim());
+      if (seconds == null) return null;
+      payload.add({'timeSec': seconds, 'text': text});
+    }
+    payload.sort((a, b) {
+      final at = (a['timeSec'] as num?)?.toDouble() ?? 0;
+      final bt = (b['timeSec'] as num?)?.toDouble() ?? 0;
+      return at.compareTo(bt);
+    });
+    return payload;
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _CreateEventRelaySheet extends StatefulWidget {
+  const _CreateEventRelaySheet({
+    required this.event,
+    required this.partOptions,
+    required this.ref,
+  });
+
+  final Map<String, dynamic> event;
+  final List<_RelayPartOption> partOptions;
+  final WidgetRef ref;
+
+  @override
+  State<_CreateEventRelaySheet> createState() => _CreateEventRelaySheetState();
+}
+
+class _CreateEventRelaySheetState extends State<_CreateEventRelaySheet> {
+  late String _selectedPart;
+  bool _isCreating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedPart = widget.partOptions.first.part;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final guide = _eventHarmonyGuide(widget.event);
+    final title = guide['title']?.toString() ?? '하모니 릴레이';
+    final guideText = guide['guide']?.toString() ?? '';
+    final lyricsCount = _lyricsTimelineFromValue(
+      guide['lyricsTimeline'],
+    ).length;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        decoration: const BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '릴레이 만들기',
+                      style: AppText.body(20, weight: FontWeight.w900),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _isCreating
+                        ? null
+                        : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                    tooltip: '닫기',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(title, style: AppText.body(16, weight: FontWeight.w900)),
+              if (guideText.isNotEmpty) ...[
+                const SizedBox(height: 5),
+                Text(
+                  guideText,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(12, color: AppColors.muted, height: 1.35),
+                ),
+              ],
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _selectedPart,
+                decoration: const InputDecoration(labelText: '릴레이 파트'),
+                items: widget.partOptions
+                    .map(
+                      (part) => DropdownMenuItem(
+                        value: part.part,
+                        child: Text(part.label),
+                      ),
+                    )
+                    .toList(),
+                onChanged: _isCreating
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() => _selectedPart = value);
+                      },
+              ),
+              const SizedBox(height: 10),
+              Text(
+                lyricsCount == 0
+                    ? '저장된 가사 싱크 없이 릴레이를 만듭니다.'
+                    : '저장된 가사 싱크 $lyricsCount줄을 릴레이에 적용합니다.',
+                style: AppText.body(12, color: AppColors.muted),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _isCreating ? null : _createRelay,
+                  icon: _isCreating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.playlist_add_rounded, size: 18),
+                  label: Text(_isCreating ? '릴레이 여는 중...' : '릴레이 만들기'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _createRelay() async {
+    setState(() => _isCreating = true);
+    try {
+      if (widget.ref.read(localPreviewModeProvider)) {
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+      } else {
+        await FirebaseService.createHarmonyRelayFromGuide(
+          part: _selectedPart,
+          guide: _eventHarmonyGuide(widget.event),
+        );
+        widget.ref.invalidate(harmonyRelaysProvider);
+      }
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('하모니챗 릴레이를 만들었습니다.')));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Exception: ', '')),
+          ),
+        );
+        setState(() => _isCreating = false);
+      }
+    }
+  }
+}
+
+class _LyricSyncLine {
+  _LyricSyncLine({required double timeSec, required String text})
+    : timeController = TextEditingController(text: _formatSyncTime(timeSec)),
+      textController = TextEditingController(text: text);
+
+  final TextEditingController timeController;
+  final TextEditingController textController;
+
+  void dispose() {
+    timeController.dispose();
+    textController.dispose();
+  }
+}
+
+class _RelayPartOption {
+  const _RelayPartOption({required this.part, required this.label});
+
+  final String part;
+  final String label;
 }
 
 class _DateBlock extends StatelessWidget {
@@ -678,6 +1202,132 @@ class _EmptyScheduleState extends StatelessWidget {
       ),
     );
   }
+}
+
+List<_RelayPartOption> _relayPartOptionsFor(User? profile) {
+  final parts = <String>[];
+  if (profile?.isAdmin ?? false) {
+    parts.addAll(User.selectableParts.where((part) => part != 'officer_part'));
+  } else {
+    final leaderPart = profile?.partLeaderFor?.trim() ?? '';
+    final memberPart = profile?.part?.trim() ?? '';
+    if (leaderPart.isNotEmpty) parts.add(leaderPart);
+    if (memberPart.isNotEmpty) parts.add(memberPart);
+  }
+  return parts
+      .where((part) => part.isNotEmpty)
+      .toSet()
+      .map(
+        (part) =>
+            _RelayPartOption(part: part, label: User.partLabels[part] ?? part),
+      )
+      .toList();
+}
+
+Map<String, dynamic> _eventHarmonyGuide(Map<String, dynamic> event) {
+  final eventTitle = event['title']?.toString().trim() ?? '';
+  final title = _firstFilled([
+    event['harmonyTitle']?.toString(),
+    eventTitle,
+    '하모니 릴레이',
+  ]);
+  final eventDate =
+      event['eventDate']?.toString() ?? event['date']?.toString() ?? '';
+  final lyricsText = event['harmonyLyricsText']?.toString() ?? '';
+  return {
+    'title': title,
+    'songTitle': title,
+    'eventId': event['id']?.toString() ?? '',
+    'sourceEventId': event['id']?.toString() ?? '',
+    'sheetDate': eventDate,
+    'eventDate': eventDate,
+    'guide': event['harmonyGuide']?.toString() ?? '',
+    'lyricsText': lyricsText,
+    'lyricsTimeline': _lyricsTimelineFromValue(event['harmonyLyricsTimeline']),
+    'lyricLines': _lyricsLinesForAutoTiming(lyricsText),
+    'segments': const [],
+  };
+}
+
+List<_LyricSyncLine> _syncLinesFromValue(dynamic value) {
+  return _lyricsTimelineFromValue(value)
+      .map(
+        (entry) => _LyricSyncLine(
+          timeSec: (entry['timeSec'] as num?)?.toDouble() ?? 0,
+          text: entry['text']?.toString() ?? '',
+        ),
+      )
+      .toList();
+}
+
+List<_LyricSyncLine> _syncLinesFromText(String text) {
+  return _lyricsTimelineFromText(text)
+      .map(
+        (entry) => _LyricSyncLine(
+          timeSec: (entry['timeSec'] as num?)?.toDouble() ?? 0,
+          text: entry['text']?.toString() ?? '',
+        ),
+      )
+      .toList();
+}
+
+List<Map<String, dynamic>> _lyricsTimelineFromValue(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .whereType<Map>()
+      .map((entry) {
+        return {
+          'timeSec': (entry['timeSec'] as num?)?.toDouble() ?? 0,
+          'text': entry['text']?.toString() ?? '',
+        };
+      })
+      .where((entry) => (entry['text']?.toString() ?? '').trim().isNotEmpty)
+      .toList()
+    ..sort((a, b) {
+      final at = (a['timeSec'] as num?)?.toDouble() ?? 0;
+      final bt = (b['timeSec'] as num?)?.toDouble() ?? 0;
+      return at.compareTo(bt);
+    });
+}
+
+String _formatSyncTime(double seconds) {
+  final totalCentiseconds = (seconds * 100)
+      .round()
+      .clamp(0, 24 * 60 * 60 * 100)
+      .toInt();
+  final totalSeconds = totalCentiseconds ~/ 100;
+  final minutes = totalSeconds ~/ 60;
+  final second = totalSeconds % 60;
+  final centiseconds = totalCentiseconds % 100;
+  return '${minutes.toString().padLeft(2, '0')}:'
+      '${second.toString().padLeft(2, '0')}.'
+      '${centiseconds.toString().padLeft(2, '0')}';
+}
+
+double? _parseSyncTime(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return null;
+  final secondsOnly = double.tryParse(trimmed);
+  if (secondsOnly != null) return secondsOnly;
+  final match = RegExp(
+    r'^(\d{1,3}):([0-5]?\d)(?:[.:](\d{1,3}))?$',
+  ).firstMatch(trimmed);
+  if (match == null) return null;
+  final minutes = int.tryParse(match.group(1) ?? '') ?? 0;
+  final seconds = int.tryParse(match.group(2) ?? '') ?? 0;
+  final fractionText = match.group(3) ?? '';
+  final fraction = fractionText.isEmpty
+      ? 0.0
+      : (int.tryParse(fractionText) ?? 0) / _mathPow10(fractionText.length);
+  return minutes * 60 + seconds + fraction;
+}
+
+String _firstFilled(List<String?> values) {
+  for (final value in values) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return '';
 }
 
 List<Map<String, dynamic>> _lyricsTimelineFromText(String text) {
