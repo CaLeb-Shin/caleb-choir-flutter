@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'firebase_options.dart';
 import 'services/notification_service.dart';
@@ -171,12 +172,15 @@ class _MainShellState extends ConsumerState<MainShell> {
     CommunityScreen(),
     ProfileScreen(),
   ];
+  final _warmedCommunityImageUrls = <String>{};
 
   static const _titles = ['홈', '악보&음원', '영상', '출석&투표', '소통', '마이'];
 
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(tabIndexProvider);
+    final postsAsync = ref.watch(postsProvider);
+    postsAsync.whenData(_scheduleCommunityImageWarmup);
 
     return Scaffold(
       appBar: index == 0
@@ -204,5 +208,65 @@ class _MainShellState extends ConsumerState<MainShell> {
         popToRootOnTap: false,
       ),
     );
+  }
+
+  void _scheduleCommunityImageWarmup(List<Map<String, dynamic>> posts) {
+    final urls = _communityImageWarmupUrls(posts)
+        .where((url) => _warmedCommunityImageUrls.add(url))
+        .toList(growable: false);
+    if (urls.isEmpty) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+      final cacheWidth = (MediaQuery.sizeOf(context).width * pixelRatio / 2)
+          .clamp(360, 760)
+          .round();
+
+      for (final url in urls) {
+        unawaited(
+          precacheImage(
+            CachedNetworkImageProvider(url, maxWidth: cacheWidth),
+            context,
+          ).catchError((_) {}),
+        );
+      }
+    });
+  }
+
+  Iterable<String> _communityImageWarmupUrls(
+    List<Map<String, dynamic>> posts,
+  ) sync* {
+    final ranked = [...posts]
+      ..sort(
+        (a, b) => _communityHeartCount(b).compareTo(_communityHeartCount(a)),
+      );
+    final candidates = [...ranked.take(2), ...posts.take(8)];
+    final seen = <String>{};
+    for (final post in candidates) {
+      if ((post['mediaType'] as String?) == 'video') continue;
+      final url = _communityPostImageUrl(post);
+      if (url.isNotEmpty && seen.add(url)) yield url;
+    }
+  }
+
+  int _communityHeartCount(Map<String, dynamic> post) {
+    final countsRaw = post['reactionCounts'] as Map<String, dynamic>?;
+    final legacyRaw = post['reactions'] as Map<String, dynamic>?;
+    return (countsRaw?['like'] as num?)?.toInt() ??
+        ((legacyRaw?['like'] as List<dynamic>?) ?? const []).length;
+  }
+
+  String _communityPostImageUrl(Map<String, dynamic> post) {
+    for (final key in const [
+      'imageUrl',
+      'mediaUrl',
+      'photoUrl',
+      'thumbnailUrl',
+    ]) {
+      final value = post[key];
+      if (value is String && value.trim().isNotEmpty) return value.trim();
+    }
+    return '';
   }
 }

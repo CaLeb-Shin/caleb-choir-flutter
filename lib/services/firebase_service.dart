@@ -310,8 +310,10 @@ class FirebaseService {
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final data = doc.data();
-    final userData = await _safeUserData(data['userId']);
-    final myReaction = await _myReactionForPost(doc.id, data);
+    final userDataFuture = _safeUserData(data['userId']);
+    final myReactionFuture = _myReactionForPost(doc.id, data);
+    final userData = await userDataFuture;
+    final myReaction = await myReactionFuture;
     return {
       'id': doc.id,
       ...data,
@@ -326,8 +328,10 @@ class FirebaseService {
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final data = doc.data()!;
-    final userData = await _safeUserData(data['userId']);
-    final myReaction = await _myReactionForPost(doc.id, data);
+    final userDataFuture = _safeUserData(data['userId']);
+    final myReactionFuture = _myReactionForPost(doc.id, data);
+    final userData = await userDataFuture;
+    final myReaction = await myReactionFuture;
     return {
       'id': doc.id,
       ...data,
@@ -590,11 +594,7 @@ class FirebaseService {
         .orderBy('createdAt', descending: true)
         .limit(50)
         .get();
-    final posts = <Map<String, dynamic>>[];
-    for (final doc in snapshot.docs) {
-      posts.add(await _postWithAuthorAndReaction(doc));
-    }
-    return posts;
+    return Future.wait(snapshot.docs.map(_postWithAuthorAndReaction));
   }
 
   static Stream<List<Map<String, dynamic>>> watchPosts() {
@@ -605,11 +605,7 @@ class FirebaseService {
         .limit(50)
         .snapshots()
         .asyncMap((snapshot) async {
-          final posts = <Map<String, dynamic>>[];
-          for (final doc in snapshot.docs) {
-            posts.add(await _postWithAuthorAndReaction(doc));
-          }
-          return posts;
+          return Future.wait(snapshot.docs.map(_postWithAuthorAndReaction));
         });
   }
 

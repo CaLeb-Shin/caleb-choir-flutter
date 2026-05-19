@@ -885,7 +885,10 @@ class _NetworkPhoto extends StatelessWidget {
     return CachedNetworkImage(
       imageUrl: imageUrl,
       fit: BoxFit.cover,
-      fadeInDuration: const Duration(milliseconds: 120),
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      placeholderFadeInDuration: Duration.zero,
+      useOldImageOnUrlChange: true,
       memCacheWidth: cacheWidth,
       maxWidthDiskCache: cacheWidth,
       placeholder: (context, url) => const _PhotoFallback(),

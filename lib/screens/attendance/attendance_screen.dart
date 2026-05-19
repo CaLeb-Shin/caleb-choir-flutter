@@ -1020,6 +1020,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                   choice: 'attend',
                   selected: effectiveChoice == 'attend',
                   color: AppColors.success,
+                  names: attendNames,
                 ),
               ),
               const SizedBox(width: 10),
@@ -1030,20 +1031,12 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                   choice: 'absent',
                   selected: effectiveChoice == 'absent',
                   color: AppColors.error,
+                  names: absentNames,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _voterNames(attendNames, AppColors.success)),
-              const SizedBox(width: 10),
-              Expanded(child: _voterNames(absentNames, AppColors.error)),
-            ],
-          ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(
             effectiveChoice == null
                 ? '$voted명 투표 · $notVoted명 미투표 · 내 투표: 아직 미투표'
@@ -1083,7 +1076,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
     return eligible > 0 ? eligible : votedCount;
   }
 
-  String _voteNames(
+  List<String> _voteNames(
     List<Map<String, dynamic>> votes,
     List<Map<String, dynamic>> members,
     String choice,
@@ -1111,26 +1104,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
       }
     }
 
-    if (names.isEmpty) {
-      return choice == 'attend' ? '아직 참석자 없음' : '아직 불참자 없음';
-    }
-    if (names.length > 4) {
-      return '${names.take(4).join(', ')} 외 ${names.length - 4}명';
-    }
-    return names.join(', ');
-  }
-
-  Widget _voterNames(String names, Color accent) {
-    return Text(
-      names,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: AppText.body(
-        10,
-        weight: FontWeight.w700,
-        color: accent.withValues(alpha: 0.58),
-      ),
-    );
+    return names;
   }
 
   int _intValue(dynamic value) {
@@ -1145,35 +1119,263 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
     required String choice,
     required bool selected,
     required Color color,
+    required List<String> names,
   }) {
-    final foreground = selected ? Colors.white : color;
-    final subColor = selected
-        ? Colors.white.withValues(alpha: 0.72)
-        : color.withValues(alpha: 0.68);
+    final pending = _pendingChoice == choice;
+    final disabled = _pendingChoice != null;
+    final icon = choice == 'attend'
+        ? Icons.event_available_rounded
+        : Icons.event_busy_rounded;
+    final background = selected ? color : color.withValues(alpha: 0.055);
+    final borderColor = selected
+        ? color
+        : color.withValues(alpha: disabled ? 0.14 : 0.26);
+    final labelColor = selected ? Colors.white : AppColors.ink;
+    final metaColor = selected
+        ? Colors.white.withValues(alpha: 0.78)
+        : color.withValues(alpha: disabled ? 0.44 : 0.7);
+    final iconBackground = selected
+        ? Colors.white.withValues(alpha: 0.18)
+        : color.withValues(alpha: 0.1);
+    final iconColor = selected ? Colors.white : color;
+    final metaText = selected ? '$count명 · 명단 보기' : '$count명';
 
-    return ElevatedButton(
-      onPressed: () => _handleVote(choice),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: selected ? color : Colors.white,
-        foregroundColor: foreground,
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: color.withValues(alpha: 0.55)),
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label, $metaText',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: disabled
+              ? null
+              : selected
+              ? () => _showVoteListSheet(label, names, color)
+              : () => _handleVote(choice),
+          borderRadius: BorderRadius.circular(15),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            constraints: const BoxConstraints(minHeight: 58),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: borderColor, width: selected ? 1.4 : 1),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: iconBackground,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(
+                    child: pending
+                        ? SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: iconColor,
+                            ),
+                          )
+                        : Icon(icon, size: 17, color: iconColor),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(
+                          13,
+                          weight: FontWeight.w900,
+                          color: labelColor,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        metaText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(
+                          10,
+                          weight: FontWeight.w800,
+                          color: metaColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 160),
+                  child: selected
+                      ? Icon(
+                          Icons.check_circle_rounded,
+                          key: const ValueKey('selected'),
+                          size: 18,
+                          color: Colors.white,
+                        )
+                      : Container(
+                          key: const ValueKey('idle'),
+                          width: 17,
+                          height: 17,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: color.withValues(alpha: 0.28),
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: AppText.body(14, weight: FontWeight.w900)),
-          const SizedBox(height: 2),
-          Text(
-            '$count명',
-            style: AppText.body(10, weight: FontWeight.w800, color: subColor),
+    );
+  }
+
+  void _showVoteListSheet(String label, List<String> names, Color color) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          top: false,
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 24,
+                  offset: const Offset(0, 12),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.border.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        label == '참석'
+                            ? Icons.event_available_rounded
+                            : Icons.event_busy_rounded,
+                        size: 20,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$label 명단',
+                            style: AppText.body(17, weight: FontWeight.w900),
+                          ),
+                          Text(
+                            '${names.length}명',
+                            style: AppText.body(12, color: AppColors.muted),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (names.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 16,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLow,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Text(
+                      label == '참석' ? '아직 참석자 없음' : '아직 불참자 없음',
+                      style: AppText.body(13, color: AppColors.muted),
+                    ),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final name in names)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: color.withValues(alpha: 0.14),
+                            ),
+                          ),
+                          child: Text(
+                            name,
+                            style: AppText.body(
+                              12,
+                              weight: FontWeight.w800,
+                              color: color,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
