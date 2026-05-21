@@ -1056,7 +1056,7 @@ class _RelayProgressMap extends StatelessWidget {
               _RelaySequencePlayButton(
                 clips: playbackClips,
                 dark: true,
-                label: '지금까지',
+                label: '지금까지 재생',
               ),
               const SizedBox(width: 8),
               _MapStatPill(label: '$completed/${relays.length}', dark: true),
@@ -1575,10 +1575,15 @@ Future<void> _playRelayAudioSource(
   final decoded = _decodeDataAudioUrl(audioUrl);
   if (decoded != null) {
     final source = BytesSource(decoded.bytes, mimeType: decoded.mimeType);
-    if (position > Duration.zero) {
-      await player.play(source, position: position);
-    } else {
-      await player.play(source);
+    try {
+      if (position > Duration.zero) {
+        await player.play(source, position: position);
+      } else {
+        await player.play(source);
+      }
+      return;
+    } catch (_) {
+      await player.play(UrlSource(audioUrl), position: position);
     }
     return;
   }
@@ -2182,7 +2187,7 @@ class _SingleHarmonyMap extends StatelessWidget {
               const SizedBox(width: 7),
               Text('하모니맵', style: AppText.body(13, weight: FontWeight.w900)),
               const Spacer(),
-              _RelaySequencePlayButton(clips: clips, dark: false, label: '듣기'),
+              _RelaySequencePlayButton(clips: clips, dark: false, label: '재생'),
               const SizedBox(width: 8),
               _MapStatPill(label: '${clips.length}명', dark: false),
             ],
@@ -2256,46 +2261,70 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
   Widget build(BuildContext context) {
     final playable = _playableClips;
     final enabled = playable.isNotEmpty;
-    final foreground = widget.dark ? Colors.white : AppColors.primary;
+    final foreground = widget.dark ? const Color(0xFF2F2508) : Colors.white;
     final disabledForeground = widget.dark
-        ? Colors.white.withValues(alpha: 0.42)
+        ? Colors.white.withValues(alpha: 0.58)
         : AppColors.muted;
     final background = widget.dark
-        ? Colors.white.withValues(alpha: enabled ? 0.18 : 0.10)
-        : AppColors.card.withValues(alpha: enabled ? 1 : 0.58);
+        ? enabled
+              ? AppColors.secondaryContainer
+              : Colors.white.withValues(alpha: 0.12)
+        : enabled
+        ? AppColors.primary
+        : AppColors.card.withValues(alpha: 0.58);
     final borderColor = widget.dark
-        ? Colors.white.withValues(alpha: enabled ? 0.28 : 0.12)
+        ? Colors.white.withValues(alpha: enabled ? 0.72 : 0.18)
         : AppColors.border.withValues(alpha: 0.38);
-    final label = _isPlaying
-        ? '${_playingIndex + 1}/${playable.length}'
+    final shadowColor = widget.dark
+        ? Colors.black.withValues(alpha: enabled ? 0.16 : 0)
+        : AppColors.primary.withValues(alpha: enabled ? 0.22 : 0);
+    final label = !enabled
+        ? '녹음 없음'
+        : _isPlaying
+        ? '${_playingIndex + 1}/${playable.length} 재생 중'
         : widget.label;
 
     return Tooltip(
-      message: enabled ? '지금까지 릴레이 녹음 듣기' : '녹음이 쌓이면 이어 들을 수 있어요',
-      child: TextButton.icon(
-        onPressed: enabled ? _togglePlayback : null,
-        style: TextButton.styleFrom(
-          foregroundColor: enabled ? foreground : disabledForeground,
-          backgroundColor: background,
-          disabledForegroundColor: disabledForeground,
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-          minimumSize: const Size(0, 32),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(999),
-            side: BorderSide(color: borderColor),
+      message: enabled
+          ? '${playable.length}개 릴레이 녹음 이어 듣기'
+          : '녹음이 쌓이면 이어 들을 수 있어요',
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            if (enabled)
+              BoxShadow(
+                color: shadowColor,
+                blurRadius: 14,
+                offset: const Offset(0, 7),
+              ),
+          ],
+        ),
+        child: TextButton.icon(
+          onPressed: enabled ? _togglePlayback : null,
+          style: TextButton.styleFrom(
+            foregroundColor: enabled ? foreground : disabledForeground,
+            backgroundColor: background,
+            disabledForegroundColor: disabledForeground,
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+            minimumSize: Size(widget.dark ? 116 : 82, 38),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(999),
+              side: BorderSide(color: borderColor, width: enabled ? 1.2 : 1),
+            ),
           ),
-        ),
-        icon: Icon(
-          _isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
-          size: 17,
-        ),
-        label: Text(
-          _isLoading ? '준비' : label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: AppText.body(11, weight: FontWeight.w900),
+          icon: Icon(
+            _isPlaying ? Icons.stop_rounded : Icons.volume_up_rounded,
+            size: 19,
+          ),
+          label: Text(
+            _isLoading ? '준비 중' : label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.body(12, weight: FontWeight.w900),
+          ),
         ),
       ),
     );
@@ -2331,6 +2360,10 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
       await _playRelayAudioSource(_player, url);
       if (mounted) setState(() => _isLoading = false);
     } catch (_) {
+      if (index + 1 < clips.length) {
+        await _playAt(index + 1);
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _playingIndex = -1;
@@ -3444,6 +3477,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   static const _maxRecordAttempts = 3;
   static Uint8List? _countdownBeepBytes;
   static Uint8List? _countdownStartBeepBytes;
+  static Uint8List? _previewAttemptBytes;
 
   List<Map<String, dynamic>> get _playablePreviousClips {
     return widget.previousClips
@@ -3968,6 +4002,49 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     return _wavFromPcmBytes(pcmBytes, sampleRate: sampleRate, channels: 1);
   }
 
+  static Uint8List _previewAttemptToneBytes(int durationSeconds) {
+    final cached = durationSeconds == 3 ? _previewAttemptBytes : null;
+    if (cached != null) return cached;
+
+    final frameCount = _sampleRate * durationSeconds;
+    final pcmBytes = Uint8List(frameCount * _channels * 2);
+    final data = ByteData.sublistView(pcmBytes);
+    final fadeSamples = math.min(
+      (_sampleRate * 0.045).round(),
+      frameCount ~/ 2,
+    );
+    const melody = [392.0, 440.0, 493.88, 523.25];
+    for (var frame = 0; frame < frameCount; frame += 1) {
+      final seconds = frame / _sampleRate;
+      final note = melody[((seconds / 0.75).floor()) % melody.length];
+      final fadeIn = fadeSamples == 0 ? 1.0 : frame / fadeSamples;
+      final fadeOut = fadeSamples == 0
+          ? 1.0
+          : (frameCount - frame - 1) / fadeSamples;
+      final envelope = math.min(1.0, math.min(fadeIn, fadeOut)).clamp(0.0, 1.0);
+      final sample =
+          (math.sin(2 * math.pi * note * seconds) * 0.26 +
+              math.sin(2 * math.pi * note * 2 * seconds) * 0.06) *
+          envelope;
+      final intSample = (sample * 32767).round();
+      for (var channel = 0; channel < _channels; channel += 1) {
+        data.setInt16(
+          ((frame * _channels + channel) * 2),
+          intSample,
+          Endian.little,
+        );
+      }
+    }
+
+    final wav = _wavFromPcmBytes(
+      pcmBytes,
+      sampleRate: _sampleRate,
+      channels: _channels,
+    );
+    if (durationSeconds == 3) _previewAttemptBytes = wav;
+    return wav;
+  }
+
   Future<void> _recordFromRelayLeadIn() async {
     final hasMrBacking = _recordingBackingUrl != null;
     final previousClips = _playablePreviousClips;
@@ -4340,14 +4417,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     final attemptNumber = number ?? _recordAttemptCount + 1;
     const durationSeconds = 3;
-    final pcm = Uint8List(_sampleRate * _channels * 2 * durationSeconds);
     final attempt = _RelayRecordingAttempt(
       number: attemptNumber,
-      bytes: _wavFromPcmBytes(
-        pcm,
-        sampleRate: _sampleRate,
-        channels: _channels,
-      ),
+      bytes: _previewAttemptToneBytes(durationSeconds),
       fileName: 'relay_${DateTime.now().millisecondsSinceEpoch}.wav',
       contentType: 'audio/wav',
       durationSeconds: durationSeconds,
