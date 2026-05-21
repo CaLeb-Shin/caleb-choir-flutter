@@ -3712,6 +3712,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   int _recordSeconds = 0;
   double _recordElapsedSeconds = 0;
   double _playbackElapsedSeconds = 0;
+  double _playbackLyricBaseSeconds = 0;
+  double _playbackLyricDurationSeconds = 0;
   int _handoffPlaybackIndex = 0;
   int? _selectedAttemptNumber;
   int? _playingAttemptNumber;
@@ -3725,6 +3727,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   static const _sampleRate = 44100;
   static const _channels = 1;
   static const _maxRecordAttempts = 3;
+  static const _countdownStep = Duration(milliseconds: 760);
+  static const _countdownTotalDuration = Duration(milliseconds: 2280);
   static Uint8List? _countdownBeepBytes;
   static Uint8List? _countdownStartBeepBytes;
   static Uint8List? _previewAttemptBytes;
@@ -3773,6 +3777,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   @override
   void initState() {
     super.initState();
+    _playbackLyricBaseSeconds = widget.segmentStartSec;
+    _playbackLyricDurationSeconds = _segmentDuration.inMilliseconds / 1000;
     _playerCompleteSub = _guidePlayer.onPlayerComplete.listen((_) {
       if (!mounted || _playingAttemptNumber == null) return;
       setState(() => _playingAttemptNumber = null);
@@ -4042,7 +4048,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                       ],
                       Text(
                         _countdown != null
-                            ? '숨을 고르고 바로 시작합니다'
+                            ? (_isHandoffPlaying
+                                  ? '앞 릴레이 위에 카운트 중'
+                                  : '숨을 고르고 바로 시작합니다')
                             : _isHandoffPlaying
                             ? '앞 릴레이 듣는 중 $_handoffPlaybackIndex/$previousClipCount'
                             : _isGuidePlaying
@@ -4062,7 +4070,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _isHandoffPlaying
+                        _countdown != null && _isHandoffPlaying
+                            ? '끊기지 않게 바로 이어서 녹음돼요.'
+                            : _isHandoffPlaying
                             ? '내 소절이 오면 카운트다운 후 녹음이 시작돼요.'
                             : _remainingAttempts == 0
                             ? '3번 모두 녹음했어요. 아래에서 하나를 골라 올려주세요.'
@@ -4193,18 +4203,40 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     if (primeBacking && backingUrl != null && backingUrl.isNotEmpty) {
       await _primeRecordingBacking(backingUrl);
     }
+    await _runCountdown();
+    if (!mounted) return;
+    await _startRecordingInternal(backingUrl: backingUrl);
+  }
+
+  Future<void> _runCountdown() async {
     try {
       for (final value in const [3, 2, 1]) {
         if (!mounted) return;
         setState(() => _countdown = value);
         unawaited(_playCountdownBeep(value));
-        await Future<void>.delayed(const Duration(milliseconds: 760));
+        await Future<void>.delayed(_countdownStep);
       }
     } finally {
       if (mounted) setState(() => _countdown = null);
     }
+  }
+
+  Future<void> _runCountdownAfter(
+    Duration delay, {
+    bool Function()? shouldRun,
+  }) async {
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
+    }
+    if (shouldRun != null && !shouldRun()) return;
     if (!mounted) return;
-    await _startRecordingInternal(backingUrl: backingUrl);
+    await _runCountdown();
+  }
+
+  Duration _countdownDelayForHandoff(Duration handoffDuration) {
+    if (handoffDuration <= Duration.zero) return Duration.zero;
+    final delay = handoffDuration - _countdownTotalDuration;
+    return delay.isNegative ? Duration.zero : delay;
   }
 
   Future<void> _playCountdownBeep(int value) async {
@@ -4321,6 +4353,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _isHandoffPlaying = true;
       _handoffPlaybackIndex = 0;
     });
+    var handoffCountdownCompleted = false;
     try {
       for (var index = 0; index < previousClips.length; index += 1) {
         if (!mounted) return;
@@ -4339,6 +4372,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             ? Duration(milliseconds: (segmentSeconds * 1000).round())
             : Duration.zero;
         setState(() => _handoffPlaybackIndex = index + 1);
+        final isLastPreviousClip = index == previousClips.length - 1;
         await _playHandoffAudioAndWait(
           audioUrl: audioUrl,
           backingUrl: _recordingBackingUrl,
@@ -4346,7 +4380,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             milliseconds: (segmentStart * 1000).round(),
           ),
           stopAfter: duration,
+          countdownBeforeEnd: isLastPreviousClip,
+          keepBackingPlaying: isLastPreviousClip && hasMrBacking,
         );
+        if (isLastPreviousClip) handoffCountdownCompleted = true;
       }
     } catch (_) {
       _showMessage('앞 릴레이 녹음을 재생하지 못했어요. 내 녹음으로 넘어갑니다.');
@@ -4359,10 +4396,17 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       }
     }
     if (!mounted) return;
-    await _countdownThenStartRecording(
-      backingUrl: _recordingBackingUrl,
-      primeBacking: hasMrBacking,
-    );
+    if (handoffCountdownCompleted) {
+      await _startRecordingInternal(
+        backingUrl: _recordingBackingUrl,
+        continueExistingBacking: hasMrBacking,
+      );
+    } else {
+      await _countdownThenStartRecording(
+        backingUrl: _recordingBackingUrl,
+        primeBacking: hasMrBacking,
+      );
+    }
   }
 
   Future<void> _playHandoffAudioAndWait({
@@ -4370,19 +4414,42 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     required String? backingUrl,
     required Duration backingPosition,
     required Duration stopAfter,
+    bool countdownBeforeEnd = false,
+    bool keepBackingPlaying = false,
   }) async {
     final timeout = stopAfter > Duration.zero
         ? stopAfter + const Duration(seconds: 3)
         : const Duration(seconds: 45);
     final hasBacking = backingUrl != null && backingUrl.isNotEmpty;
+    Future<void>? countdownFuture;
+    var cancelCountdown = false;
+    var playbackCompleted = false;
     try {
       if (hasBacking) {
         await _startHandoffBacking(backingUrl, backingPosition);
       }
-      await _playAudioAndWait(audioUrl, stopAfter: stopAfter, timeout: timeout);
+      if (countdownBeforeEnd) {
+        countdownFuture = _runCountdownAfter(
+          _countdownDelayForHandoff(stopAfter),
+          shouldRun: () => !cancelCountdown,
+        );
+      }
+      await _playAudioAndWait(
+        audioUrl,
+        stopAfter: stopAfter,
+        timeout: timeout,
+        lyricBaseSeconds: backingPosition.inMilliseconds / 1000,
+      );
+      if (countdownFuture != null) {
+        await countdownFuture;
+      }
+      playbackCompleted = true;
     } finally {
-      if (hasBacking) {
+      if (!playbackCompleted) cancelCountdown = true;
+      if (hasBacking && !(keepBackingPlaying && playbackCompleted)) {
         await _stopHandoffBacking();
+      } else if (hasBacking) {
+        _primedBackingUrl = backingUrl;
       }
     }
   }
@@ -4416,6 +4483,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     Duration position = Duration.zero,
     Duration stopAfter = Duration.zero,
     Duration timeout = const Duration(seconds: 45),
+    double? lyricBaseSeconds,
   }) async {
     final completer = Completer<void>();
     final sub = _guidePlayer.onPlayerComplete.listen((_) {
@@ -4425,7 +4493,12 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       await _guidePlayer.stop();
       _segmentStopTimer?.cancel();
       await _playRelayAudioSource(_guidePlayer, audioUrl, position: position);
-      _startPlaybackTimer();
+      _startPlaybackTimer(
+        lyricBaseSeconds: lyricBaseSeconds ?? position.inMilliseconds / 1000,
+        lyricDurationSeconds: stopAfter > Duration.zero
+            ? stopAfter.inMilliseconds / 1000
+            : _segmentDuration.inMilliseconds / 1000,
+      );
       if (stopAfter > Duration.zero) {
         _segmentStopTimer = Timer(stopAfter, () async {
           await _guidePlayer.stop();
@@ -4446,7 +4519,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
   }
 
-  Future<void> _startRecordingInternal({String? backingUrl}) async {
+  Future<void> _startRecordingInternal({
+    String? backingUrl,
+    bool continueExistingBacking = false,
+  }) async {
     if (!_hasAttemptsLeft) {
       _showMessage('녹음 기회는 3번까지예요.');
       return;
@@ -4477,13 +4553,18 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       }
       var backingStarted = false;
       if (hasBacking) {
-        try {
-          await _startRecordingBacking(backingUrl);
+        if (continueExistingBacking && _primedBackingUrl == backingUrl) {
+          await _continueRecordingBacking(backingUrl);
           backingStarted = true;
-        } catch (_) {
-          _primedBackingUrl = null;
-          unawaited(_backingPlayer.stop());
-          _showMessage('MR 반주를 재생하지 못했어요. 녹음은 계속 진행됩니다.');
+        } else {
+          try {
+            await _startRecordingBacking(backingUrl);
+            backingStarted = true;
+          } catch (_) {
+            _primedBackingUrl = null;
+            unawaited(_backingPlayer.stop());
+            _showMessage('MR 반주를 재생하지 못했어요. 녹음은 계속 진행됩니다.');
+          }
         }
       }
       if (kIsWeb) {
@@ -4565,6 +4646,15 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
   }
 
+  Future<void> _continueRecordingBacking(String backingUrl) async {
+    _scheduleRecordingSegmentStop();
+    if (!kIsWeb) {
+      await _backingPlayer.setReleaseMode(ReleaseMode.stop);
+      await _backingPlayer.setVolume(1);
+    }
+    _primedBackingUrl = backingUrl;
+  }
+
   Future<void> _startHandoffBacking(
     String backingUrl,
     Duration position,
@@ -4597,16 +4687,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   Future<void> _startRecordingBacking(String backingUrl) async {
-    final segmentDuration = _segmentDuration;
-    _segmentStopTimer?.cancel();
+    _scheduleRecordingSegmentStop();
     if (kIsWeb &&
         relay_backing_audio.startRelayBackingAudio(backingUrl, _segmentStart)) {
       _primedBackingUrl = backingUrl;
-      if (segmentDuration > Duration.zero) {
-        _segmentStopTimer = Timer(segmentDuration, () {
-          unawaited(_stopRecording());
-        });
-      }
       return;
     }
     await _backingPlayer.setReleaseMode(ReleaseMode.stop);
@@ -4623,6 +4707,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       );
       _primedBackingUrl = backingUrl;
     }
+  }
+
+  void _scheduleRecordingSegmentStop() {
+    final segmentDuration = _segmentDuration;
+    _segmentStopTimer?.cancel();
     if (segmentDuration > Duration.zero) {
       _segmentStopTimer = Timer(segmentDuration, () {
         unawaited(_stopRecording());
@@ -5040,7 +5129,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   double get _lyricProgress {
-    final duration = _segmentDuration.inMilliseconds / 1000;
+    final duration = _isRecording
+        ? _segmentDuration.inMilliseconds / 1000
+        : _playbackLyricDurationSeconds;
     if (duration <= 0) {
       if (_isRecording || _isGuidePlaying) return 0.35;
       return 0;
@@ -5052,10 +5143,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   double get _absoluteLyricSeconds {
-    final elapsed = _isRecording
-        ? _recordElapsedSeconds
-        : _playbackElapsedSeconds;
-    return widget.segmentStartSec + elapsed;
+    if (_isRecording) {
+      return widget.segmentStartSec + _recordElapsedSeconds;
+    }
+    return _playbackLyricBaseSeconds + _playbackElapsedSeconds;
   }
 
   String _timelineLyricAt(double seconds) {
@@ -5078,13 +5169,18 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     return '';
   }
 
-  void _startPlaybackTimer() {
+  void _startPlaybackTimer({
+    required double lyricBaseSeconds,
+    required double lyricDurationSeconds,
+  }) {
     _playbackTimer?.cancel();
     _playbackStopwatch
       ..reset()
       ..start();
     if (mounted) {
       setState(() {
+        _playbackLyricBaseSeconds = lyricBaseSeconds;
+        _playbackLyricDurationSeconds = lyricDurationSeconds;
         _playbackElapsedSeconds = 0;
       });
     }
@@ -5110,6 +5206,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       ..start();
     _lastWaveformByteCount = _recordedBytes.length;
     _waveformLevels = List<double>.filled(28, 0.08);
+    _playbackLyricBaseSeconds = widget.segmentStartSec;
+    _playbackLyricDurationSeconds = _segmentDuration.inMilliseconds / 1000;
     _recordElapsedSeconds = 0;
     _recordSeconds = 0;
     _playbackElapsedSeconds = 0;
