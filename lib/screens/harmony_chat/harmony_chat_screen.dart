@@ -991,7 +991,7 @@ class _CompactRelayStepDots extends StatelessWidget {
   }
 }
 
-class _RelayProgressMap extends StatelessWidget {
+class _RelayProgressMap extends StatefulWidget {
   const _RelayProgressMap({
     required this.relays,
     required this.part,
@@ -1007,9 +1007,52 @@ class _RelayProgressMap extends StatelessWidget {
   final String? highlightedRelayId;
 
   @override
+  State<_RelayProgressMap> createState() => _RelayProgressMapState();
+}
+
+class _RelayProgressMapState extends State<_RelayProgressMap> {
+  final Map<String, GlobalKey> _nodeKeys = {};
+  String? _playingRelayId;
+
+  @override
+  void didUpdateWidget(covariant _RelayProgressMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final relayIds = widget.relays
+        .map((relay) => relay['id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    _nodeKeys.removeWhere((id, _) => !relayIds.contains(id));
+    if (_playingRelayId != null && !relayIds.contains(_playingRelayId)) {
+      _playingRelayId = null;
+    }
+  }
+
+  void _handleActiveRelayChanged(String? relayId) {
+    if (!mounted || relayId == _playingRelayId) return;
+    setState(() => _playingRelayId = relayId);
+    if (relayId == null || relayId.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final nodeContext = _nodeKeys[relayId]?.currentContext;
+      if (nodeContext == null) return;
+      Scrollable.ensureVisible(
+        nodeContext,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+        alignment: 0.34,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
+
+  GlobalKey _keyForRelay(String relayId) {
+    return _nodeKeys.putIfAbsent(relayId, GlobalKey.new);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final completed = relays.where(_relayCompleted).length;
-    final playbackClips = _relayClipSequenceForRelays(relays);
+    final completed = widget.relays.where(_relayCompleted).length;
+    final playbackClips = _relayClipSequenceForRelays(widget.relays);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(13),
@@ -1057,9 +1100,13 @@ class _RelayProgressMap extends StatelessWidget {
                 clips: playbackClips,
                 dark: true,
                 label: '지금까지 재생',
+                onActiveRelayChanged: _handleActiveRelayChanged,
               ),
               const SizedBox(width: 8),
-              _MapStatPill(label: '$completed/${relays.length}', dark: true),
+              _MapStatPill(
+                label: '$completed/${widget.relays.length}',
+                dark: true,
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1073,19 +1120,22 @@ class _RelayProgressMap extends StatelessWidget {
               return Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: relays.asMap().entries.map((entry) {
+                children: widget.relays.asMap().entries.map((entry) {
                   final index = entry.key;
                   final relay = entry.value;
+                  final relayId = relay['id']?.toString() ?? '';
                   return SizedBox(
+                    key: relayId.isEmpty ? null : _keyForRelay(relayId),
                     width: itemWidth,
                     child: _RelayMapNode(
                       relay: relay,
                       order: index + 1,
-                      part: part,
-                      partLabel: partLabel,
-                      missionRelays: relays,
-                      ref: ref,
-                      highlightedRelayId: highlightedRelayId,
+                      part: widget.part,
+                      partLabel: widget.partLabel,
+                      missionRelays: widget.relays,
+                      ref: widget.ref,
+                      highlightedRelayId: widget.highlightedRelayId,
+                      playingRelayId: _playingRelayId,
                     ),
                   );
                 }).toList(),
@@ -1107,6 +1157,7 @@ class _RelayMapNode extends StatelessWidget {
     required this.missionRelays,
     required this.ref,
     required this.highlightedRelayId,
+    required this.playingRelayId,
   });
 
   final Map<String, dynamic> relay;
@@ -1116,6 +1167,7 @@ class _RelayMapNode extends StatelessWidget {
   final List<Map<String, dynamic>> missionRelays;
   final WidgetRef ref;
   final String? highlightedRelayId;
+  final String? playingRelayId;
 
   @override
   Widget build(BuildContext context) {
@@ -1130,13 +1182,15 @@ class _RelayMapNode extends StatelessWidget {
     final active = completed || isMyTurn || canTestRecord;
     final latest = clips.isEmpty ? null : clips.last;
     final segmentTitle = _segmentDisplayLabel(relay, order - 1);
-    final isHighlighted = relay['id']?.toString() == highlightedRelayId;
+    final relayId = relay['id']?.toString() ?? '';
+    final isHighlighted = relayId == highlightedRelayId;
+    final isPlaying = relayId.isNotEmpty && relayId == playingRelayId;
     final singer =
         latest?['userName']?.toString() ??
         relay['completedByName']?.toString() ??
         '';
     final status = completed
-        ? (singer.isEmpty ? '완료' : singer)
+        ? (isPlaying ? '재생 중' : (singer.isEmpty ? '완료' : singer))
         : isMyTurn
         ? '내 차례'
         : canTestRecord
@@ -1146,7 +1200,9 @@ class _RelayMapNode extends StatelessWidget {
         : assigneeName;
 
     return Material(
-      color: isHighlighted
+      color: isPlaying
+          ? AppColors.secondaryContainer
+          : isHighlighted
           ? const Color(0xFFFFF6D8)
           : completed
           ? const Color(0xFFEAF5EA)
@@ -1159,9 +1215,22 @@ class _RelayMapNode extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isHighlighted ? AppColors.secondary : Colors.transparent,
-            width: isHighlighted ? 2 : 1,
+            color: isPlaying
+                ? Colors.white
+                : isHighlighted
+                ? AppColors.secondary
+                : Colors.transparent,
+            width: isPlaying || isHighlighted ? 2 : 1,
           ),
+          boxShadow: isPlaying
+              ? [
+                  BoxShadow(
+                    color: AppColors.secondary.withValues(alpha: 0.30),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ]
+              : null,
         ),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
@@ -1182,10 +1251,18 @@ class _RelayMapNode extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 13,
-                      backgroundColor: active
+                      backgroundColor: isPlaying
+                          ? AppColors.secondary
+                          : active
                           ? (completed ? AppColors.success : AppColors.primary)
                           : Colors.white.withValues(alpha: 0.16),
-                      child: completed
+                      child: isPlaying
+                          ? const Icon(
+                              Icons.volume_up_rounded,
+                              size: 14,
+                              color: AppColors.primary,
+                            )
+                          : completed
                           ? const _InlineCheckIcon(
                               size: 15,
                               color: Colors.white,
@@ -1213,7 +1290,9 @@ class _RelayMapNode extends StatelessWidget {
                   style: AppText.body(
                     12,
                     weight: FontWeight.w900,
-                    color: active
+                    color: isPlaying
+                        ? AppColors.primary
+                        : active
                         ? (completed ? AppColors.success : AppColors.primary)
                         : Colors.white,
                   ),
@@ -1531,7 +1610,9 @@ List<Map<String, dynamic>> _relayClipSequenceForRelays(
     for (final clip in relayClips) {
       clips.add({
         ...clip,
+        'relayId': relay['id']?.toString() ?? '',
         'mrAudioUrl': mrAudioUrl,
+        'segmentOrder': (relay['segmentOrder'] as num?)?.toInt() ?? index + 1,
         'segmentStartSec': segmentStartSec,
         'segmentEndSec': segmentEndSec,
         'segmentLabel': segmentLabel,
@@ -2230,11 +2311,13 @@ class _RelaySequencePlayButton extends StatefulWidget {
     required this.clips,
     required this.dark,
     required this.label,
+    this.onActiveRelayChanged,
   });
 
   final List<Map<String, dynamic>> clips;
   final bool dark;
   final String label;
+  final ValueChanged<String?>? onActiveRelayChanged;
 
   @override
   State<_RelaySequencePlayButton> createState() =>
@@ -2314,7 +2397,7 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
     final label = !enabled
         ? '녹음 없음'
         : _isPlaying
-        ? '${_playingIndex + 1}/${playable.length} 재생 중'
+        ? '${_playingSegmentLabel(playable)} 재생 중'
         : widget.label;
 
     return Tooltip(
@@ -2385,15 +2468,14 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
       return;
     }
     if (mounted) {
-      setState(() {
-        _playingIndex = index;
-        _isLoading = true;
-      });
+      setState(() => _isLoading = true);
     }
     try {
       await _ensureSequenceBacking(clips, index, runId);
       await _waitForClipStart(clips[index], runId);
       if (!mounted || runId != _playbackRunId) return;
+      setState(() => _playingIndex = index);
+      widget.onActiveRelayChanged?.call(_relayIdForClip(clips[index]));
       await _player.stop();
       await _playRelayAudioSource(_player, url);
       if (mounted) setState(() => _isLoading = false);
@@ -2408,6 +2490,7 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
         _isLoading = false;
       });
       final messenger = ScaffoldMessenger.of(context);
+      widget.onActiveRelayChanged?.call(null);
       await _stopSequenceBacking();
       messenger.showSnackBar(
         const SnackBar(content: Text('릴레이 녹음을 재생할 수 없습니다.')),
@@ -2438,6 +2521,7 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
       });
     }
     await _player.stop();
+    widget.onActiveRelayChanged?.call(null);
     await _stopSequenceBacking();
   }
 
@@ -2452,6 +2536,7 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
         _isLoading = false;
       });
     }
+    widget.onActiveRelayChanged?.call(null);
     await _stopSequenceBacking();
   }
 
@@ -2525,6 +2610,22 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
     final seconds = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
     if (seconds <= 0) return Duration.zero;
     return Duration(milliseconds: (seconds * 1000).round());
+  }
+
+  String _relayIdForClip(Map<String, dynamic> clip) {
+    return clip['relayId']?.toString() ?? '';
+  }
+
+  String _playingSegmentLabel(List<Map<String, dynamic>> clips) {
+    if (_playingIndex < 0 || _playingIndex >= clips.length) {
+      return '${_playingIndex + 1}/${clips.length}';
+    }
+    final clip = clips[_playingIndex];
+    final label = clip['segmentLabel']?.toString().trim() ?? '';
+    if (label.isNotEmpty) return label;
+    final order = (clip['segmentOrder'] as num?)?.toInt();
+    if (order != null && order > 0) return '$order번';
+    return '${_playingIndex + 1}/${clips.length}';
   }
 
   Future<void> _stopSequenceBacking() async {
