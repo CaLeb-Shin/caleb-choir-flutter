@@ -16,6 +16,9 @@ import '../../models/user.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
 import '../../theme/app_theme.dart';
+import 'relay_backing_audio_web.dart'
+    if (dart.library.io) 'relay_backing_audio_mobile.dart'
+    as relay_backing_audio;
 
 class HarmonyChatScreen extends ConsumerWidget {
   const HarmonyChatScreen({super.key});
@@ -3037,6 +3040,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     unawaited(_recorder.dispose());
     unawaited(_guidePlayer.dispose());
     unawaited(_backingPlayer.dispose());
+    relay_backing_audio.stopRelayBackingAudio();
     _noteController.dispose();
     super.dispose();
   }
@@ -3232,11 +3236,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                 ),
                                 label: Text(
                                   previousClipCount > 0
-                                      ? (hasMrBacking ? '듣고 MR 녹음' : '듣고 녹음')
+                                      ? (hasMrBacking ? '듣고 MR' : '듣고 녹음')
                                       : hasArGuide
-                                      ? (hasMrBacking
-                                            ? 'AR 듣고 MR 녹음'
-                                            : 'AR 듣고 녹음')
+                                      ? (hasMrBacking ? 'AR 후 MR' : 'AR 듣고 녹음')
                                       : (hasMrBacking ? 'MR 녹음' : '녹음'),
                                 ),
                               ),
@@ -3367,7 +3369,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                               : previousClipCount > 0
                               ? (hasMrBacking ? '듣고 MR 녹음' : '듣고 녹음')
                               : hasArGuide
-                              ? (hasMrBacking ? 'AR 듣고 MR 녹음' : 'AR 듣고 녹음')
+                              ? (hasMrBacking ? 'AR 후 MR 녹음' : 'AR 듣고 녹음')
                               : selectedAttempt == null
                               ? (hasMrBacking ? 'MR로 녹음 시작' : '녹음 시작')
                               : (hasMrBacking ? '다른 테이크 녹음' : '다시 녹음'),
@@ -3617,6 +3619,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       await _guidePlayer.stop();
       if (!hasBacking) {
         await _backingPlayer.stop();
+        relay_backing_audio.stopRelayBackingAudio();
         _primedBackingUrl = null;
       }
       var backingStarted = false;
@@ -3682,7 +3685,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       final nextAttemptCount = _recordAttemptCount + 1;
       if (!mounted) {
         await _recorder.stop();
-        if (backingStarted) await _backingPlayer.stop();
+        if (backingStarted) {
+          await _backingPlayer.stop();
+          relay_backing_audio.stopRelayBackingAudio();
+        }
         return;
       }
       _startRecordingTicker();
@@ -3693,6 +3699,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       });
     } catch (_) {
       unawaited(_backingPlayer.stop());
+      relay_backing_audio.stopRelayBackingAudio();
       _primedBackingUrl = null;
       _stopRecordingTicker();
       if (widget.ref.read(localPreviewModeProvider)) {
@@ -3707,6 +3714,16 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _startRecordingBacking(String backingUrl) async {
     final segmentDuration = _segmentDuration;
     _segmentStopTimer?.cancel();
+    if (kIsWeb &&
+        relay_backing_audio.startRelayBackingAudio(backingUrl, _segmentStart)) {
+      _primedBackingUrl = backingUrl;
+      if (segmentDuration > Duration.zero) {
+        _segmentStopTimer = Timer(segmentDuration, () {
+          unawaited(_stopRecording());
+        });
+      }
+      return;
+    }
     await _backingPlayer.setReleaseMode(ReleaseMode.stop);
     await _backingPlayer.setVolume(1);
     if (_primedBackingUrl == backingUrl) {
@@ -3725,6 +3742,14 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   Future<void> _primeRecordingBacking(String backingUrl) async {
     try {
+      if (kIsWeb &&
+          relay_backing_audio.primeRelayBackingAudio(
+            backingUrl,
+            _segmentStart,
+          )) {
+        _primedBackingUrl = backingUrl;
+        return;
+      }
       if (_primedBackingUrl != backingUrl) {
         await _backingPlayer.stop();
         await _backingPlayer.setReleaseMode(ReleaseMode.loop);
@@ -3782,6 +3807,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _segmentStopTimer = null;
       await _guidePlayer.stop();
       await _backingPlayer.stop();
+      relay_backing_audio.stopRelayBackingAudio();
       _primedBackingUrl = null;
       _stopPlaybackTimer();
       _stopRecordingTicker();
@@ -3849,6 +3875,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             .toInt();
       });
       unawaited(_backingPlayer.stop());
+      relay_backing_audio.stopRelayBackingAudio();
       _primedBackingUrl = null;
       _stopRecordingTicker();
       _showMessage('녹음을 마무리하지 못했습니다. 다시 시도해주세요.');

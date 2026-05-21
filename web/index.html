@@ -215,6 +215,84 @@
     };
   </script>
 
+  <!-- Harmony relay MR playback bridge — keeps iPhone Safari audio unlocked from the user's tap. -->
+  <script>
+    window.CCNoteRelayAudio = (function () {
+      var audio = null;
+      var currentUrl = '';
+
+      function ensureAudio() {
+        if (audio) return audio;
+        audio = new Audio();
+        audio.preload = 'auto';
+        audio.crossOrigin = 'anonymous';
+        audio.playsInline = true;
+        audio.setAttribute('playsinline', 'true');
+        audio.setAttribute('webkit-playsinline', 'true');
+        audio.style.display = 'none';
+        if (document.body) document.body.appendChild(audio);
+        return audio;
+      }
+
+      function load(url) {
+        var player = ensureAudio();
+        if (currentUrl !== url) {
+          currentUrl = url;
+          player.src = url;
+          try { player.load(); } catch (_) {}
+        }
+        return player;
+      }
+
+      function seek(player, seconds) {
+        var next = Math.max(0, Number(seconds) || 0);
+        try { player.currentTime = next; } catch (_) {}
+      }
+
+      function play(player) {
+        try {
+          var promise = player.play();
+          if (promise && typeof promise.catch === 'function') {
+            promise.catch(function (error) {
+              console.warn('[C.C Note] Relay MR playback blocked:', error && error.message ? error.message : error);
+            });
+          }
+          return true;
+        } catch (error) {
+          console.warn('[C.C Note] Relay MR playback failed:', error && error.message ? error.message : error);
+          return false;
+        }
+      }
+
+      return {
+        prime: function (url, startSeconds) {
+          if (!url) return false;
+          var player = load(url);
+          player.loop = true;
+          player.muted = true;
+          seek(player, startSeconds);
+          return play(player);
+        },
+        start: function (url, startSeconds) {
+          if (!url) return false;
+          var player = load(url);
+          player.loop = false;
+          player.muted = false;
+          player.volume = 1;
+          seek(player, startSeconds);
+          return play(player);
+        },
+        stop: function () {
+          if (!audio) return;
+          try { audio.pause(); } catch (_) {}
+          try { audio.currentTime = 0; } catch (_) {}
+          audio.loop = false;
+          audio.muted = false;
+        }
+      };
+    })();
+  </script>
+
   <!-- Daum/Kakao 우편번호 서비스 — 기본 주소검색은 별도 앱 키 없이 사용합니다. -->
   <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
   <script>
