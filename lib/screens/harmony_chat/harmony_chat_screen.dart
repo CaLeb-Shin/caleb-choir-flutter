@@ -2923,6 +2923,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   final _recorder = AudioRecorder();
   final _guidePlayer = AudioPlayer();
   final _backingPlayer = AudioPlayer();
+  String? _primedBackingUrl;
   final List<_RelayRecordingAttempt> _attempts = [];
   final List<int> _recordedBytes = [];
   StreamSubscription<Uint8List>? _recordingSub;
@@ -3498,6 +3499,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       if (playbackHadIssue) {
         _showMessage('일부 음원을 끝까지 재생하지 못했지만 녹음으로 넘어갈게요.');
       }
+      if (backingUrl != null && backingUrl.isNotEmpty) {
+        await _primeRecordingBacking(backingUrl);
+      }
       await _countdownThenStartRecording(backingUrl: backingUrl);
     } catch (_) {
       _showMessage('듣고 녹음을 시작하지 못했습니다.');
@@ -3594,7 +3598,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _audioFileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.webm';
       _playingAttemptNumber = null;
       await _guidePlayer.stop();
-      await _backingPlayer.stop();
+      if (!hasBacking) {
+        await _backingPlayer.stop();
+        _primedBackingUrl = null;
+      }
       if (kIsWeb) {
         final stream = await _recorder.startStream(
           RecordConfig(
@@ -3659,6 +3666,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         try {
           await _startRecordingBacking(backingUrl);
         } catch (_) {
+          _primedBackingUrl = null;
+          unawaited(_backingPlayer.stop());
           _showMessage('MR 반주를 재생하지 못했어요. 녹음은 계속 진행됩니다.');
         }
       }
@@ -3677,9 +3686,15 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _startRecordingBacking(String backingUrl) async {
     final segmentDuration = _segmentDuration;
     _segmentStopTimer?.cancel();
-    await _backingPlayer.stop();
     await _backingPlayer.setVolume(1);
-    await _backingPlayer.play(UrlSource(backingUrl), position: _segmentStart);
+    if (_primedBackingUrl == backingUrl) {
+      await _backingPlayer.seek(_segmentStart);
+      await _backingPlayer.resume();
+    } else {
+      await _backingPlayer.stop();
+      await _backingPlayer.play(UrlSource(backingUrl), position: _segmentStart);
+      _primedBackingUrl = backingUrl;
+    }
     if (segmentDuration > Duration.zero) {
       _segmentStopTimer = Timer(segmentDuration, () {
         unawaited(_stopRecording());
@@ -3696,8 +3711,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       await _backingPlayer.pause();
       await _backingPlayer.seek(_segmentStart);
       await _backingPlayer.setVolume(1);
+      _primedBackingUrl = backingUrl;
     } catch (_) {
       await _backingPlayer.setVolume(1);
+      _primedBackingUrl = null;
     }
   }
 
@@ -3739,6 +3756,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _segmentStopTimer = null;
       await _guidePlayer.stop();
       await _backingPlayer.stop();
+      _primedBackingUrl = null;
       _stopPlaybackTimer();
       _stopRecordingTicker();
       final stoppedPath = await _recorder.stop();
@@ -3805,6 +3823,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             .toInt();
       });
       unawaited(_backingPlayer.stop());
+      _primedBackingUrl = null;
       _stopRecordingTicker();
       _showMessage('녹음을 마무리하지 못했습니다. 다시 시도해주세요.');
     }
