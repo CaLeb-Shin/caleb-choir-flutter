@@ -3088,6 +3088,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   final _recorder = AudioRecorder();
   final _guidePlayer = AudioPlayer();
   final _backingPlayer = AudioPlayer();
+  final _countdownPlayer = AudioPlayer();
   String? _primedBackingUrl;
   final List<_RelayRecordingAttempt> _attempts = [];
   final List<int> _recordedBytes = [];
@@ -3122,6 +3123,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   static const _sampleRate = 44100;
   static const _channels = 1;
   static const _maxRecordAttempts = 3;
+  static Uint8List? _countdownBeepBytes;
+  static Uint8List? _countdownStartBeepBytes;
 
   List<Map<String, dynamic>> get _playablePreviousClips {
     return widget.previousClips
@@ -3185,6 +3188,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     unawaited(_recorder.dispose());
     unawaited(_guidePlayer.dispose());
     unawaited(_backingPlayer.dispose());
+    unawaited(_countdownPlayer.dispose());
     relay_backing_audio.stopRelayBackingAudio();
     super.dispose();
   }
@@ -3590,6 +3594,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       for (final value in const [3, 2, 1]) {
         if (!mounted) return;
         setState(() => _countdown = value);
+        unawaited(_playCountdownBeep(value));
         await Future<void>.delayed(const Duration(milliseconds: 760));
       }
     } finally {
@@ -3597,6 +3602,51 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     if (!mounted) return;
     await _startRecordingInternal(backingUrl: backingUrl);
+  }
+
+  Future<void> _playCountdownBeep(int value) async {
+    try {
+      final bytes = value == 1
+          ? (_countdownStartBeepBytes ??= _countdownToneBytes(
+              frequency: 1320,
+              durationMs: 170,
+            ))
+          : (_countdownBeepBytes ??= _countdownToneBytes(
+              frequency: 880,
+              durationMs: 130,
+            ));
+      await _countdownPlayer.stop();
+      await _countdownPlayer.play(BytesSource(bytes, mimeType: 'audio/wav'));
+    } catch (_) {
+      // 카운트 소리는 보조 피드백이라 실패해도 녹음 흐름은 유지합니다.
+    }
+  }
+
+  static Uint8List _countdownToneBytes({
+    required double frequency,
+    required int durationMs,
+  }) {
+    const sampleRate = 44100;
+    final sampleCount = (sampleRate * durationMs / 1000).round();
+    final pcmBytes = Uint8List(sampleCount * 2);
+    final data = ByteData.sublistView(pcmBytes);
+    final fadeSamples = math.min(
+      (sampleRate * 0.012).round(),
+      sampleCount ~/ 2,
+    );
+    for (var index = 0; index < sampleCount; index += 1) {
+      final fadeIn = fadeSamples == 0 ? 1.0 : index / fadeSamples;
+      final fadeOut = fadeSamples == 0
+          ? 1.0
+          : (sampleCount - index - 1) / fadeSamples;
+      final envelope = math.min(1.0, math.min(fadeIn, fadeOut)).clamp(0.0, 1.0);
+      final sample =
+          math.sin(2 * math.pi * frequency * index / sampleRate) *
+          0.34 *
+          envelope;
+      data.setInt16((index * 2), (sample * 32767).round(), Endian.little);
+    }
+    return _wavFromPcmBytes(pcmBytes, sampleRate: sampleRate, channels: 1);
   }
 
   Future<void> _recordFromRelayLeadIn() async {
@@ -4069,7 +4119,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       }
     } catch (error) {
       _refreshHarmonyRelays();
-      final message = error.toString().replaceFirst('Exception: ', '');
+      final message = _friendlySubmitError(error);
       if (mounted) setState(() => _submitError = message);
       _showMessage(message);
     } finally {
@@ -4089,6 +4139,14 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         widget.ref.invalidate(harmonyRelaysProvider);
       }),
     );
+  }
+
+  String _friendlySubmitError(Object error) {
+    final raw = error.toString().replaceFirst('Exception: ', '');
+    if (raw.contains('firebase_storage/unauthorized')) {
+      return '녹음 파일 업로드 권한이 막혀 있어요. 교회 승인 상태와 Firebase Storage 규칙 배포를 확인해주세요.';
+    }
+    return raw;
   }
 
   void _completePreviewRelayAttempt(
