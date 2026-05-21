@@ -2958,10 +2958,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   bool _isRecording = false;
   bool _isSubmitting = false;
   bool _isGuidePlaying = false;
-  bool _isGuidedFlow = false;
-  bool _isListeningPrevious = false;
   bool _isMrRecording = false;
-  int _listeningClipIndex = 0;
   int _recordAttemptCount = 0;
   int _recordSeconds = 0;
   double _recordElapsedSeconds = 0;
@@ -3057,7 +3054,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isSubmitting ||
         _isRecording ||
         _isGuidePlaying ||
-        _isListeningPrevious ||
         _countdown != null ||
         _playingAttemptNumber != null;
     return Padding(
@@ -3106,14 +3102,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                   segmentLabel: widget.segmentLabel,
                   progress: lyricProgress,
                   isActive:
-                      _isRecording ||
-                      _isGuidePlaying ||
-                      _isListeningPrevious ||
-                      _countdown != null,
+                      _isRecording || _isGuidePlaying || _countdown != null,
                   statusText: _countdown != null
                       ? '곧 시작'
-                      : _isListeningPrevious
-                      ? '앞소절 재생'
                       : _isRecording
                       ? '녹음 중'
                       : _isGuidePlaying
@@ -3160,15 +3151,17 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                         const SizedBox(height: 6),
                         Text(
                           previousClipCount > 0
-                              ? hasArGuide
-                                    ? 'AR과 앞소절을 듣고 이어 녹음'
+                              ? hasArGuide && hasMrBacking
+                                    ? '내 파트 AR은 따로 듣고 MR에 바로 녹음'
                                     : hasMrBacking
-                                    ? '앞소절 $previousClipCount개를 듣고 MR로 녹음'
-                                    : '앞소절 $previousClipCount개를 듣고 녹음'
+                                    ? 'MR에 바로 녹음'
+                                    : hasArGuide
+                                    ? '내 파트 AR은 따로 듣고 바로 녹음'
+                                    : '바로 녹음'
                               : hasArGuide && hasMrBacking
-                              ? 'AR로 먼저 듣고 MR에 맞춰 녹음'
+                              ? '내 파트 AR 확인 후 MR에 바로 녹음'
                               : hasArGuide
-                              ? 'AR로 먼저 듣고 녹음'
+                              ? '내 파트 AR을 따로 듣고 바로 녹음'
                               : hasMrBacking
                               ? 'MR에 맞춰 녹음'
                               : 'AR/MR 음원이 없습니다',
@@ -3221,7 +3214,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                   Icons.play_arrow_rounded,
                                   size: 18,
                                 ),
-                                label: const Text('AR 듣기'),
+                                label: const Text('내 파트 AR'),
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -3229,18 +3222,15 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                               child: FilledButton.tonalIcon(
                                 onPressed: isBusy || !_hasAttemptsLeft
                                     ? null
-                                    : _listenThenRecord,
+                                    : () => _countdownThenStartRecording(
+                                        backingUrl: _recordingBackingUrl,
+                                        primeBacking: hasMrBacking,
+                                      ),
                                 icon: const Icon(
                                   Icons.graphic_eq_rounded,
                                   size: 18,
                                 ),
-                                label: Text(
-                                  previousClipCount > 0
-                                      ? (hasMrBacking ? '듣고 MR' : '듣고 녹음')
-                                      : hasArGuide
-                                      ? (hasMrBacking ? 'AR 후 MR' : 'AR 듣고 녹음')
-                                      : (hasMrBacking ? 'MR 녹음' : '녹음'),
-                                ),
+                                label: Text(hasMrBacking ? 'MR 녹음' : '바로 녹음'),
                               ),
                             ),
                           ],
@@ -3307,10 +3297,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                       Text(
                         _countdown != null
                             ? '숨을 고르고 바로 시작합니다'
-                            : _isListeningPrevious
-                            ? '앞소절 $_listeningClipIndex/$previousClipCount 듣는 중...'
                             : _isGuidePlaying
-                            ? (_isGuidedFlow ? 'AR 가이드를 듣는 중...' : 'AR 재생 중...')
+                            ? 'AR 재생 중...'
                             : _isRecording
                             ? (_isMrRecording
                                   ? 'MR에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
@@ -3318,11 +3306,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                             : !_hasAttemptsLeft && selectedAttempt == null
                             ? '3번의 기회를 모두 사용했어요'
                             : selectedAttempt == null
-                            ? previousClipCount > 0
-                                  ? '앞소절 듣고 녹음'
-                                  : hasMrBacking
+                            ? hasMrBacking
                                   ? 'MR 반주에 맞춰 이어 부를 준비가 됐어요'
-                                  : '한 소절을 이어 받을 준비가 됐어요'
+                                  : '한 소절을 바로 녹음할 준비가 됐어요'
                             : '${selectedAttempt.number}번 테이크가 선택됐어요',
                         style: AppText.body(16, weight: FontWeight.w900),
                       ),
@@ -3347,16 +3333,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                             _isSubmitting ||
                                 _countdown != null ||
                                 _isGuidePlaying ||
-                                _isListeningPrevious ||
                                 (!_isRecording && !_hasAttemptsLeft)
                             ? null
                             : _isRecording
                             ? _stopRecording
-                            : previousClipCount > 0 || hasArGuide
-                            ? _listenThenRecord
                             : () => _countdownThenStartRecording(
                                 backingUrl: _recordingBackingUrl,
-                                primeBacking: true,
+                                primeBacking: hasMrBacking,
                               ),
                         icon: Icon(
                           _isRecording
@@ -3366,13 +3349,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                         label: Text(
                           _isRecording
                               ? '녹음 완료'
-                              : previousClipCount > 0
-                              ? (hasMrBacking ? '듣고 MR 녹음' : '듣고 녹음')
-                              : hasArGuide
-                              ? (hasMrBacking ? 'AR 후 MR 녹음' : 'AR 듣고 녹음')
                               : selectedAttempt == null
-                              ? (hasMrBacking ? 'MR로 녹음 시작' : '녹음 시작')
-                              : (hasMrBacking ? '다른 테이크 녹음' : '다시 녹음'),
+                              ? (hasMrBacking ? 'MR에 녹음하기' : '녹음하기')
+                              : (hasMrBacking ? 'MR에 다시 녹음' : '다시 녹음'),
                         ),
                       ),
                     ],
@@ -3430,7 +3409,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     if (_isRecording ||
         _isSubmitting ||
         _isGuidePlaying ||
-        _isListeningPrevious ||
         _countdown != null) {
       return;
     }
@@ -3463,86 +3441,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _showMessage('가이드 음원을 재생할 수 없습니다.');
     } finally {
       if (mounted) setState(() => _isGuidePlaying = false);
-    }
-  }
-
-  Future<void> _listenThenRecord() async {
-    if (_isRecording ||
-        _isSubmitting ||
-        _isGuidePlaying ||
-        _isListeningPrevious ||
-        _countdown != null) {
-      return;
-    }
-    if (!_hasAttemptsLeft) {
-      _showMessage('녹음 기회는 3번까지예요.');
-      return;
-    }
-    try {
-      setState(() => _isGuidedFlow = true);
-      final backingUrl = _recordingBackingUrl;
-      if (backingUrl != null && backingUrl.isNotEmpty) {
-        await _primeRecordingBacking(backingUrl);
-      }
-      final previousClips = _playablePreviousClips;
-      var playbackHadIssue = false;
-      if (previousClips.isNotEmpty) {
-        setState(() {
-          _isListeningPrevious = true;
-        });
-        try {
-          await _playPreviousClips(previousClips);
-        } catch (_) {
-          playbackHadIssue = true;
-        }
-      }
-      if (!mounted) return;
-      setState(() {
-        _isListeningPrevious = false;
-        _listeningClipIndex = 0;
-        _isGuidePlaying = widget.guideAudioUrl.isNotEmpty;
-      });
-      if (widget.guideAudioUrl.isNotEmpty) {
-        try {
-          await _playGuideAndWait(widget.guideAudioUrl);
-        } catch (_) {
-          playbackHadIssue = true;
-        }
-      }
-      if (!mounted) return;
-      setState(() {
-        _isGuidePlaying = false;
-        _isListeningPrevious = false;
-        _listeningClipIndex = 0;
-      });
-      if (playbackHadIssue) {
-        _showMessage('일부 음원을 끝까지 재생하지 못했지만 녹음으로 넘어갈게요.');
-      }
-      if (backingUrl != null && backingUrl.isNotEmpty) {
-        await _primeRecordingBacking(backingUrl);
-      }
-      await _countdownThenStartRecording(backingUrl: backingUrl);
-    } catch (_) {
-      _showMessage('듣고 녹음을 시작하지 못했습니다.');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isGuidePlaying = false;
-          _isGuidedFlow = false;
-          _isListeningPrevious = false;
-          _listeningClipIndex = 0;
-        });
-      }
-    }
-  }
-
-  Future<void> _playPreviousClips(List<Map<String, dynamic>> clips) async {
-    for (var index = 0; index < clips.length; index += 1) {
-      if (!mounted) return;
-      final url = clips[index]['audioUrl']?.toString().trim() ?? '';
-      if (url.isEmpty) continue;
-      setState(() => _listeningClipIndex = index + 1);
-      await _playAudioAndWait(url, timeout: const Duration(seconds: 90));
     }
   }
 
@@ -4067,7 +3965,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     if (_isRecording ||
         _isSubmitting ||
         _isGuidePlaying ||
-        _isListeningPrevious ||
         _countdown != null) {
       return;
     }
@@ -4414,23 +4311,40 @@ class _SingleLineLyricText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: height,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Text(
-            text,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.visible,
-            style: style,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final baseSize = style.fontSize ?? 14;
+        final direction = Directionality.of(context);
+        final painter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          maxLines: 1,
+          textDirection: direction,
+        )..layout();
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : painter.width;
+        final scale = painter.width <= 0 || availableWidth <= 0
+            ? 1.0
+            : math.min(1.0, availableWidth / painter.width);
+        final nextStyle = style.copyWith(
+          fontSize: math.max(11, baseSize * scale),
+        );
+
+        return SizedBox(
+          width: double.infinity,
+          height: height,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              text,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: nextStyle,
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
