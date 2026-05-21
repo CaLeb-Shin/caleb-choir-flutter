@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -2921,6 +2922,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   final _noteController = TextEditingController();
   final _recorder = AudioRecorder();
   final _guidePlayer = AudioPlayer();
+  final _backingPlayer = AudioPlayer();
   final List<_RelayRecordingAttempt> _attempts = [];
   final List<int> _recordedBytes = [];
   StreamSubscription<Uint8List>? _recordingSub;
@@ -2941,10 +2943,15 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   int _listeningClipIndex = 0;
   int _recordAttemptCount = 0;
   int _recordSeconds = 0;
-  int _playbackSeconds = 0;
+  double _recordElapsedSeconds = 0;
+  double _playbackElapsedSeconds = 0;
   int? _selectedAttemptNumber;
   int? _playingAttemptNumber;
   double _progress = 0;
+  int _lastWaveformByteCount = 0;
+  List<double> _waveformLevels = List<double>.filled(28, 0.08);
+  final _recordingStopwatch = Stopwatch();
+  final _playbackStopwatch = Stopwatch();
 
   static const _sampleRate = 44100;
   static const _channels = 1;
@@ -3005,10 +3012,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     _recordingTimer?.cancel();
     _playbackTimer?.cancel();
     _segmentStopTimer?.cancel();
+    _recordingStopwatch.stop();
+    _playbackStopwatch.stop();
     _recordingSub?.cancel();
     _playerCompleteSub?.cancel();
     unawaited(_recorder.dispose());
     unawaited(_guidePlayer.dispose());
+    unawaited(_backingPlayer.dispose());
     _noteController.dispose();
     super.dispose();
   }
@@ -3303,6 +3313,14 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                             : '총 3번 중 $_recordAttemptCount번 사용, $_remainingAttempts번 남음',
                         style: AppText.body(12, color: AppColors.muted),
                       ),
+                      if (_isRecording) ...[
+                        const SizedBox(height: 14),
+                        _RecordingWaveform(
+                          levels: _waveformLevels,
+                          active: _isRecording,
+                          label: _isMrRecording ? 'MR 재생 중' : '마이크 입력 중',
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       FilledButton.tonalIcon(
                         onPressed:
@@ -3318,6 +3336,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                             ? _listenThenRecord
                             : () => _countdownThenStartRecording(
                                 backingUrl: _recordingBackingUrl,
+                                primeBacking: true,
                               ),
                         icon: Icon(
                           _isRecording
@@ -3384,7 +3403,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     );
   }
 
-  Future<void> _countdownThenStartRecording({String? backingUrl}) async {
+  Future<void> _countdownThenStartRecording({
+    String? backingUrl,
+    bool primeBacking = false,
+  }) async {
     if (_isRecording ||
         _isSubmitting ||
         _isGuidePlaying ||
@@ -3395,6 +3417,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     if (!_hasAttemptsLeft) {
       _showMessage('녹음 기회는 3번까지예요.');
       return;
+    }
+    if (primeBacking && backingUrl != null && backingUrl.isNotEmpty) {
+      await _primeRecordingBacking(backingUrl);
     }
     try {
       for (final value in const [3, 2, 1]) {
@@ -3435,6 +3460,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     try {
       setState(() => _isGuidedFlow = true);
+      final backingUrl = _recordingBackingUrl;
+      if (backingUrl != null && backingUrl.isNotEmpty) {
+        await _primeRecordingBacking(backingUrl);
+      }
       final previousClips = _playablePreviousClips;
       var playbackHadIssue = false;
       if (previousClips.isNotEmpty) {
@@ -3469,7 +3498,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       if (playbackHadIssue) {
         _showMessage('일부 음원을 끝까지 재생하지 못했지만 녹음으로 넘어갈게요.');
       }
-      await _countdownThenStartRecording(backingUrl: _recordingBackingUrl);
+      await _countdownThenStartRecording(backingUrl: backingUrl);
     } catch (_) {
       _showMessage('듣고 녹음을 시작하지 못했습니다.');
     } finally {
@@ -3518,9 +3547,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     });
     try {
       await _guidePlayer.stop();
-      _startPlaybackTimer();
       _segmentStopTimer?.cancel();
       await _guidePlayer.play(UrlSource(audioUrl), position: position);
+      _startPlaybackTimer();
       if (stopAfter > Duration.zero) {
         _segmentStopTimer = Timer(stopAfter, () async {
           await _guidePlayer.stop();
@@ -3565,6 +3594,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _audioFileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.webm';
       _playingAttemptNumber = null;
       await _guidePlayer.stop();
+      await _backingPlayer.stop();
       if (kIsWeb) {
         final stream = await _recorder.startStream(
           RecordConfig(
@@ -3619,16 +3649,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         await _recorder.stop();
         return;
       }
-      _recordingTimer?.cancel();
-      _recordingTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() => _recordSeconds += 1);
-      });
-      _playbackSeconds = 0;
+      _startRecordingTicker();
       setState(() {
         _recordAttemptCount = nextAttemptCount;
         _isRecording = true;
         _isMrRecording = hasBacking;
-        _recordSeconds = 0;
       });
       if (hasBacking) {
         try {
@@ -3638,6 +3663,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         }
       }
     } catch (_) {
+      unawaited(_backingPlayer.stop());
+      _stopRecordingTicker();
       if (widget.ref.read(localPreviewModeProvider)) {
         _addPreviewGeneratedAttempt();
         _showMessage('이 미리보기 브라우저는 마이크가 막혀 있어 테스트용 테이크를 만들었어요.');
@@ -3650,13 +3677,27 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _startRecordingBacking(String backingUrl) async {
     final segmentDuration = _segmentDuration;
     _segmentStopTimer?.cancel();
-    await _guidePlayer.stop();
-    await _guidePlayer.setVolume(1);
-    await _guidePlayer.play(UrlSource(backingUrl), position: _segmentStart);
+    await _backingPlayer.stop();
+    await _backingPlayer.setVolume(1);
+    await _backingPlayer.play(UrlSource(backingUrl), position: _segmentStart);
     if (segmentDuration > Duration.zero) {
       _segmentStopTimer = Timer(segmentDuration, () {
         unawaited(_stopRecording());
       });
+    }
+  }
+
+  Future<void> _primeRecordingBacking(String backingUrl) async {
+    try {
+      await _backingPlayer.stop();
+      await _backingPlayer.setVolume(0);
+      await _backingPlayer.play(UrlSource(backingUrl), position: _segmentStart);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      await _backingPlayer.pause();
+      await _backingPlayer.seek(_segmentStart);
+      await _backingPlayer.setVolume(1);
+    } catch (_) {
+      await _backingPlayer.setVolume(1);
     }
   }
 
@@ -3684,6 +3725,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _isMrRecording = false;
       _recordAttemptCount = attemptNumber;
       _recordSeconds = durationSeconds;
+      _recordElapsedSeconds = durationSeconds.toDouble();
       _attempts.removeWhere((item) => item.number == attempt.number);
       _attempts.add(attempt);
       _selectedAttemptNumber = attempt.number;
@@ -3696,7 +3738,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _segmentStopTimer?.cancel();
       _segmentStopTimer = null;
       await _guidePlayer.stop();
+      await _backingPlayer.stop();
       _stopPlaybackTimer();
+      _stopRecordingTicker();
       final stoppedPath = await _recorder.stop();
       final recordedPath = _streamRecording ? null : stoppedPath;
       await Future<void>.delayed(const Duration(milliseconds: 80));
@@ -3747,6 +3791,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       setState(() {
         _isRecording = false;
         _isMrRecording = false;
+        _recordElapsedSeconds = durationSeconds.toDouble();
         _attempts.removeWhere((item) => item.number == attempt.number);
         _attempts.add(attempt);
         _selectedAttemptNumber = attempt.number;
@@ -3759,6 +3804,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             .clamp(0, _maxRecordAttempts)
             .toInt();
       });
+      unawaited(_backingPlayer.stop());
+      _stopRecordingTicker();
       _showMessage('녹음을 마무리하지 못했습니다. 다시 시도해주세요.');
     }
   }
@@ -4004,17 +4051,21 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   double get _lyricProgress {
-    final duration = _segmentDuration.inSeconds;
+    final duration = _segmentDuration.inMilliseconds / 1000;
     if (duration <= 0) {
       if (_isRecording || _isGuidePlaying) return 0.35;
       return 0;
     }
-    final elapsed = _isRecording ? _recordSeconds : _playbackSeconds;
+    final elapsed = _isRecording
+        ? _recordElapsedSeconds
+        : _playbackElapsedSeconds;
     return (elapsed / duration).clamp(0, 1).toDouble();
   }
 
   double get _absoluteLyricSeconds {
-    final elapsed = _isRecording ? _recordSeconds : _playbackSeconds;
+    final elapsed = _isRecording
+        ? _recordElapsedSeconds
+        : _playbackElapsedSeconds;
     return widget.segmentStartSec + elapsed;
   }
 
@@ -4040,15 +4091,84 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   void _startPlaybackTimer() {
     _playbackTimer?.cancel();
-    if (mounted) setState(() => _playbackSeconds = 0);
-    _playbackTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() => _playbackSeconds += 1);
+    _playbackStopwatch
+      ..reset()
+      ..start();
+    if (mounted) {
+      setState(() {
+        _playbackElapsedSeconds = 0;
+      });
+    }
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!mounted) return;
+      final elapsed = _playbackStopwatch.elapsedMilliseconds / 1000;
+      setState(() {
+        _playbackElapsedSeconds = elapsed;
+      });
     });
   }
 
   void _stopPlaybackTimer() {
     _playbackTimer?.cancel();
     _playbackTimer = null;
+    _playbackStopwatch.stop();
+  }
+
+  void _startRecordingTicker() {
+    _recordingTimer?.cancel();
+    _recordingStopwatch
+      ..reset()
+      ..start();
+    _lastWaveformByteCount = _recordedBytes.length;
+    _waveformLevels = List<double>.filled(28, 0.08);
+    _recordElapsedSeconds = 0;
+    _recordSeconds = 0;
+    _playbackElapsedSeconds = 0;
+    _recordingTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!mounted) return;
+      final elapsed = _recordingStopwatch.elapsedMilliseconds / 1000;
+      setState(() {
+        _recordElapsedSeconds = elapsed;
+        _recordSeconds = elapsed.floor();
+        _pushWaveformLevel(_nextWaveformLevel());
+      });
+    });
+  }
+
+  void _stopRecordingTicker() {
+    _recordingTimer?.cancel();
+    _recordingTimer = null;
+    _recordingStopwatch.stop();
+  }
+
+  void _pushWaveformLevel(double level) {
+    final clamped = level.clamp(0.06, 1).toDouble();
+    _waveformLevels = [..._waveformLevels.skip(1), clamped];
+  }
+
+  double _nextWaveformLevel() {
+    final length = _recordedBytes.length;
+    if (length - _lastWaveformByteCount >= 4) {
+      final start = math.max(_lastWaveformByteCount, length - 4096);
+      var sum = 0.0;
+      var count = 0;
+      for (var index = start; index + 1 < length; index += 2) {
+        final low = _recordedBytes[index];
+        final high = _recordedBytes[index + 1];
+        var sample = (high << 8) | low;
+        if (sample >= 0x8000) sample -= 0x10000;
+        final normalized = sample / 32768.0;
+        sum += normalized * normalized;
+        count += 1;
+      }
+      _lastWaveformByteCount = length;
+      if (count > 0) {
+        final rms = math.sqrt(sum / count);
+        return (rms * 7).clamp(0.08, 1).toDouble();
+      }
+    }
+    final tick = _recordingStopwatch.elapsedMilliseconds / 1000;
+    return 0.12 + (math.sin(tick * 7) + 1) * 0.08;
   }
 }
 
@@ -4199,6 +4319,77 @@ class _KaraokeLyricsPanel extends StatelessWidget {
               minHeight: 7,
               backgroundColor: Colors.white.withValues(alpha: 0.16),
               color: AppColors.secondaryContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecordingWaveform extends StatelessWidget {
+  const _RecordingWaveform({
+    required this.levels,
+    required this.active,
+    required this.label,
+  });
+
+  final List<double> levels;
+  final bool active;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.64),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.graphic_eq_rounded,
+            size: 18,
+            color: active ? AppColors.secondary : AppColors.muted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SizedBox(
+              height: 34,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: levels.map((level) {
+                  final height = 6 + (level * 28);
+                  return Expanded(
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 90),
+                        margin: const EdgeInsets.symmetric(horizontal: 1.2),
+                        height: height,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(
+                            alpha: active ? 0.82 : 0.24,
+                          ),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: AppText.body(
+              11,
+              weight: FontWeight.w900,
+              color: active ? AppColors.secondary : AppColors.muted,
             ),
           ),
         ],
