@@ -1031,6 +1031,7 @@ class _RelayMapNode extends StatelessWidget {
     final canTestRecord = !completed && _canTestRecordRelayForTest(ref, part);
     final active = completed || isMyTurn || canTestRecord;
     final latest = clips.isEmpty ? null : clips.last;
+    final segmentTitle = _segmentDisplayLabel(relay, order - 1);
     final singer =
         latest?['userName']?.toString() ??
         relay['completedByName']?.toString() ??
@@ -1107,7 +1108,7 @@ class _RelayMapNode extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                relay['segmentLabel']?.toString() ?? '$order소절',
+                segmentTitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppText.body(
@@ -1159,7 +1160,6 @@ class _MissionSegmentTile extends StatelessWidget {
         .whereType<Map<String, dynamic>>()
         .toList();
     final title = relay['title']?.toString() ?? '릴레이';
-    final segmentLabel = relay['segmentLabel']?.toString() ?? '소절';
     final lyricsLine = relay['lyricsLine']?.toString() ?? '';
     final nextLyricsLine = relay['nextLyricsLine']?.toString() ?? '';
     final lyricsText = relay['lyricsText']?.toString() ?? '';
@@ -1170,6 +1170,10 @@ class _MissionSegmentTile extends StatelessWidget {
     final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
     final completed = _relayCompleted(relay);
     final latest = clips.isEmpty ? null : clips.last;
+    final segmentIndex = missionRelays.indexWhere(
+      (item) => item['id']?.toString() == relay['id']?.toString(),
+    );
+    final segmentTitle = _segmentDisplayLabel(relay, segmentIndex);
     final singer =
         latest?['userName']?.toString() ??
         relay['completedByName']?.toString() ??
@@ -1197,7 +1201,7 @@ class _MissionSegmentTile extends StatelessWidget {
           relayTitle: title,
           guideAudioUrl: guideAudioUrl,
           mrAudioUrl: mrAudioUrl,
-          segmentLabel: segmentLabel,
+          segmentLabel: segmentTitle,
           lyricsLine: lyricsLine,
           nextLyricsLine: nextLyricsLine,
           lyricsText: lyricsText,
@@ -1236,7 +1240,7 @@ class _MissionSegmentTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    segmentLabel,
+                    segmentTitle,
                     style: AppText.body(13, weight: FontWeight.w900),
                   ),
                   const SizedBox(height: 2),
@@ -1512,6 +1516,11 @@ void _openRelayStudio(
   WidgetRef ref, {
   List<Map<String, dynamic>>? missionRelays,
 }) {
+  final segmentIndex =
+      missionRelays?.indexWhere(
+        (item) => item['id']?.toString() == relay['id']?.toString(),
+      ) ??
+      ((relay['segmentOrder'] as num?)?.toInt() ?? 1) - 1;
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1523,7 +1532,7 @@ void _openRelayStudio(
       relayTitle: relay['title']?.toString() ?? '릴레이',
       guideAudioUrl: relay['guideAudioUrl']?.toString() ?? '',
       mrAudioUrl: relay['mrAudioUrl']?.toString() ?? '',
-      segmentLabel: relay['segmentLabel']?.toString() ?? '소절',
+      segmentLabel: _segmentDisplayLabel(relay, segmentIndex),
       lyricsLine: relay['lyricsLine']?.toString() ?? '',
       nextLyricsLine: relay['nextLyricsLine']?.toString() ?? '',
       lyricsText: relay['lyricsText']?.toString() ?? '',
@@ -1562,6 +1571,26 @@ List<Map<String, dynamic>> _previousMissionClipsFor(
     if (clips.isNotEmpty) return [clips.last];
   }
   return const [];
+}
+
+String _segmentDisplayLabel(Map<String, dynamic> relay, int index) {
+  final fallbackOrder = index >= 0 ? index + 1 : 1;
+  final order = (relay['segmentOrder'] as num?)?.toInt() ?? fallbackOrder;
+  final rawLabel = relay['segmentLabel']?.toString().trim() ?? '';
+  final lyric = _firstText([
+    relay['lyricsLine']?.toString(),
+    _lyricLineFromRelayText(relay, index),
+  ]);
+  if (lyric.isNotEmpty && _isGenericSegmentLabel(rawLabel)) {
+    return '$order소절 · $lyric';
+  }
+  return _firstText([rawLabel, lyric, '$order소절']);
+}
+
+bool _isGenericSegmentLabel(String label) {
+  final trimmed = label.trim();
+  if (trimmed.isEmpty || trimmed == '소절') return true;
+  return RegExp(r'^\d+\s*소절$').hasMatch(trimmed);
 }
 
 String _firstText(List<String?> values) {
@@ -3285,7 +3314,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                             ? null
                             : _isRecording
                             ? _stopRecording
-                            : previousClipCount > 0
+                            : previousClipCount > 0 || hasArGuide
                             ? _listenThenRecord
                             : () => _countdownThenStartRecording(
                                 backingUrl: _recordingBackingUrl,
@@ -3300,6 +3329,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                               ? '녹음 완료'
                               : previousClipCount > 0
                               ? (hasMrBacking ? '듣고 MR 녹음' : '듣고 녹음')
+                              : hasArGuide
+                              ? (hasMrBacking ? 'AR 듣고 MR 녹음' : 'AR 듣고 녹음')
                               : selectedAttempt == null
                               ? (hasMrBacking ? 'MR로 녹음 시작' : '녹음 시작')
                               : (hasMrBacking ? '다른 테이크 녹음' : '다시 녹음'),
@@ -3600,15 +3631,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _recordSeconds = 0;
       });
       if (hasBacking) {
-        final segmentDuration = _segmentDuration;
-        _segmentStopTimer?.cancel();
-        unawaited(
-          _guidePlayer.play(UrlSource(backingUrl), position: _segmentStart),
-        );
-        if (segmentDuration > Duration.zero) {
-          _segmentStopTimer = Timer(segmentDuration, () {
-            unawaited(_stopRecording());
-          });
+        try {
+          await _startRecordingBacking(backingUrl);
+        } catch (_) {
+          _showMessage('MR 반주를 재생하지 못했어요. 녹음은 계속 진행됩니다.');
         }
       }
     } catch (_) {
@@ -3618,6 +3644,19 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         return;
       }
       _showMessage('녹음을 시작할 수 없습니다. 마이크 권한을 확인해주세요.');
+    }
+  }
+
+  Future<void> _startRecordingBacking(String backingUrl) async {
+    final segmentDuration = _segmentDuration;
+    _segmentStopTimer?.cancel();
+    await _guidePlayer.stop();
+    await _guidePlayer.setVolume(1);
+    await _guidePlayer.play(UrlSource(backingUrl), position: _segmentStart);
+    if (segmentDuration > Duration.zero) {
+      _segmentStopTimer = Timer(segmentDuration, () {
+        unawaited(_stopRecording());
+      });
     }
   }
 

@@ -816,8 +816,20 @@ class FirebaseService {
         .snapshots()
         .asyncMap((snapshot) async {
           final relays = <Map<String, dynamic>>[];
+          List<Map<String, dynamic>>? sheetMusicCache;
+          Future<List<Map<String, dynamic>>> loadSheetMusic() async {
+            return sheetMusicCache ??= await getSheetMusic();
+          }
+
           for (final doc in snapshot.docs) {
-            final data = doc.data();
+            var data = Map<String, dynamic>.from(doc.data());
+            if (_harmonyRelayNeedsGuideFallback(data)) {
+              data = _mergeHarmonyRelayGuideFallback(
+                data,
+                await loadSheetMusic(),
+                part,
+              );
+            }
             final clipsSnapshot = await _db
                 .collection('harmony_relay_clips')
                 .where('churchId', isEqualTo: _requireChurchId())
@@ -1091,6 +1103,9 @@ class FirebaseService {
             'guideAudioFileName': guide['guideAudioFileName']?.toString() ?? '',
             'mrAudioUrl': guide['mrAudioUrl']?.toString() ?? '',
             'mrAudioFileName': guide['mrAudioFileName']?.toString() ?? '',
+            'sourceSheetMusicId': sourceId,
+            'sourceTitle': title,
+            'sourceDate': sheetDate,
             'sourceSheetUrl': guide['sheetUrl']?.toString() ?? '',
             'sourcePollId': sourcePollId,
             'lyricsText': guide['lyricsText']?.toString() ?? '',
@@ -1766,6 +1781,216 @@ class FirebaseService {
         final bOrder = (b['order'] as num?)?.toInt() ?? 0;
         return aOrder.compareTo(bOrder);
       });
+  }
+
+  static bool _harmonyRelayNeedsGuideFallback(Map<String, dynamic> relay) {
+    final lyricsText = relay['lyricsText']?.toString().trim() ?? '';
+    final lyricsLine = relay['lyricsLine']?.toString().trim() ?? '';
+    final timeline = _lyricsTimelineFromValue(relay['lyricsTimeline']);
+    final guideAudioUrl = relay['guideAudioUrl']?.toString().trim() ?? '';
+    final mrAudioUrl = relay['mrAudioUrl']?.toString().trim() ?? '';
+    return lyricsText.isEmpty ||
+        lyricsLine.isEmpty ||
+        timeline.isEmpty ||
+        guideAudioUrl.isEmpty ||
+        mrAudioUrl.isEmpty ||
+        _isGenericHarmonySegmentLabel(relay['segmentLabel']?.toString() ?? '');
+  }
+
+  static Map<String, dynamic> _mergeHarmonyRelayGuideFallback(
+    Map<String, dynamic> relay,
+    List<Map<String, dynamic>> sheets,
+    String part,
+  ) {
+    final sheet = _sheetForHarmonyRelay(relay, sheets);
+    if (sheet == null) return relay;
+
+    final partFiles = _asStringMap(sheet['partFiles']);
+    final partFile = _asStringMap(partFiles[part]);
+    final lyricsText = _firstNotEmpty([
+      partFile['lyricsText']?.toString(),
+      sheet['lyricsText']?.toString(),
+    ]);
+    final partTimeline = _lyricsTimelineFromValue(partFile['lyricsTimeline']);
+    final sheetTimeline = _lyricsTimelineFromValue(sheet['lyricsTimeline']);
+    final timeline = partTimeline.isNotEmpty ? partTimeline : sheetTimeline;
+    final lyricLines = _lyricLinesFromText(lyricsText);
+    final segments = _harmonySegmentsForPart(sheet, part);
+    final segment = _matchingHarmonySegment(relay, segments);
+    final order =
+        (relay['segmentOrder'] as num?)?.toInt() ??
+        (segment?['order'] as num?)?.toInt() ??
+        1;
+    final index = (order - 1).clamp(0, 10000);
+    final startSec =
+        (relay['segmentStartSec'] as num?)?.toDouble() ??
+        (segment?['startSec'] as num?)?.toDouble() ??
+        0;
+    final endSec =
+        (relay['segmentEndSec'] as num?)?.toDouble() ??
+        (segment?['endSec'] as num?)?.toDouble() ??
+        0;
+    final lyricLine = _lyricLineForSegment(
+      timeline,
+      lyricLines,
+      index,
+      startSec,
+      endSec,
+    );
+    final nextLyricLine = _nextLyricLineForSegment(
+      timeline,
+      lyricLines,
+      index,
+      endSec,
+    );
+
+    final merged = Map<String, dynamic>.from(relay);
+    void putIfEmpty(String key, dynamic value) {
+      final current = merged[key]?.toString().trim() ?? '';
+      final next = value?.toString().trim() ?? '';
+      if (current.isEmpty && next.isNotEmpty) merged[key] = value;
+    }
+
+    putIfEmpty(
+      'guideAudioUrl',
+      _firstNotEmpty([
+        partFile['guideAudioUrl']?.toString(),
+        sheet['audioUrl']?.toString(),
+      ]),
+    );
+    putIfEmpty(
+      'guideAudioFileName',
+      _firstNotEmpty([
+        partFile['guideAudioFileName']?.toString(),
+        sheet['audioFileName']?.toString(),
+      ]),
+    );
+    putIfEmpty(
+      'mrAudioUrl',
+      _firstNotEmpty([
+        partFile['mrAudioUrl']?.toString(),
+        sheet['mrAudioUrl']?.toString(),
+      ]),
+    );
+    putIfEmpty(
+      'mrAudioFileName',
+      _firstNotEmpty([
+        partFile['mrAudioFileName']?.toString(),
+        sheet['mrAudioFileName']?.toString(),
+      ]),
+    );
+    putIfEmpty('sourceSheetMusicId', sheet['id']?.toString());
+    putIfEmpty('sourceTitle', sheet['songTitle']?.toString());
+    putIfEmpty('sourceDate', sheet['sheetDate']?.toString());
+    putIfEmpty(
+      'sourceSheetUrl',
+      _firstNotEmpty([
+        partFile['sheetUrl']?.toString(),
+        sheet['fileUrl']?.toString(),
+      ]),
+    );
+    putIfEmpty('lyricsText', lyricsText);
+    if (_lyricsTimelineFromValue(merged['lyricsTimeline']).isEmpty &&
+        timeline.isNotEmpty) {
+      merged['lyricsTimeline'] = timeline;
+    }
+    putIfEmpty('lyricsLine', lyricLine);
+    putIfEmpty('nextLyricsLine', nextLyricLine);
+    if (((merged['segmentStartSec'] as num?)?.toDouble() ?? 0) == 0 &&
+        startSec > 0) {
+      merged['segmentStartSec'] = startSec;
+    }
+    if (((merged['segmentEndSec'] as num?)?.toDouble() ?? 0) == 0 &&
+        endSec > 0) {
+      merged['segmentEndSec'] = endSec;
+    }
+    if (((merged['segmentDurationSec'] as num?)?.toDouble() ?? 0) == 0 &&
+        endSec > startSec) {
+      merged['segmentDurationSec'] = endSec - startSec;
+    }
+    final segmentLabel = merged['segmentLabel']?.toString() ?? '';
+    if (_isGenericHarmonySegmentLabel(segmentLabel) && lyricLine.isNotEmpty) {
+      merged['segmentLabel'] = '$order소절 · $lyricLine';
+    }
+    return merged;
+  }
+
+  static Map<String, dynamic>? _sheetForHarmonyRelay(
+    Map<String, dynamic> relay,
+    List<Map<String, dynamic>> sheets,
+  ) {
+    final sourceSheetId = relay['sourceSheetMusicId']?.toString().trim() ?? '';
+    if (sourceSheetId.isNotEmpty) {
+      for (final sheet in sheets) {
+        if (sheet['id']?.toString() == sourceSheetId) return sheet;
+      }
+    }
+
+    final sourcePollId = relay['sourcePollId']?.toString().trim() ?? '';
+    if (sourcePollId.isNotEmpty) {
+      for (final sheet in sheets) {
+        if (sheet['sourcePollId']?.toString() == sourcePollId) return sheet;
+      }
+    }
+
+    final title = _normalHarmonyTitle(
+      _firstNotEmpty([
+        relay['sourceTitle']?.toString(),
+        relay['title']?.toString(),
+      ]),
+    );
+    if (title.isEmpty) return null;
+    for (final sheet in sheets) {
+      final sheetTitle = _normalHarmonyTitle(
+        _firstNotEmpty([
+          sheet['songTitle']?.toString(),
+          sheet['title']?.toString(),
+        ]),
+      );
+      if (sheetTitle.isEmpty) continue;
+      if (sheetTitle == title ||
+          sheetTitle.contains(title) ||
+          title.contains(sheetTitle)) {
+        return sheet;
+      }
+    }
+    return null;
+  }
+
+  static Map<String, dynamic>? _matchingHarmonySegment(
+    Map<String, dynamic> relay,
+    List<Map<String, dynamic>> segments,
+  ) {
+    if (segments.isEmpty) return null;
+    final segmentId = relay['segmentId']?.toString().trim() ?? '';
+    if (segmentId.isNotEmpty) {
+      for (final segment in segments) {
+        if (segment['id']?.toString() == segmentId) return segment;
+      }
+    }
+    final order = (relay['segmentOrder'] as num?)?.toInt() ?? 0;
+    if (order > 0) {
+      for (final segment in segments) {
+        if ((segment['order'] as num?)?.toInt() == order) return segment;
+      }
+      final index = order - 1;
+      if (index >= 0 && index < segments.length) return segments[index];
+    }
+    return segments.first;
+  }
+
+  static bool _isGenericHarmonySegmentLabel(String label) {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty || trimmed == '소절') return true;
+    return RegExp(r'^\d+\s*소절$').hasMatch(trimmed);
+  }
+
+  static String _normalHarmonyTitle(String title) {
+    return title
+        .replaceAll('릴레이', '')
+        .replaceAll(RegExp(r'\s+'), '')
+        .trim()
+        .toLowerCase();
   }
 
   static List<String> _lyricLinesFromText(String text) {
