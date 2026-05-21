@@ -684,6 +684,114 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
   };
 });
 
+exports.deleteScheduleEvent = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  }
+
+  const { churchId, eventId } = request.data || {};
+  if (!churchId || !eventId) {
+    throw new HttpsError("invalid-argument", "churchId와 eventId가 필요합니다.");
+  }
+
+  const db = admin.firestore();
+  const adminDoc = await db.collection("users").doc(request.auth.uid).get();
+  const adminUser = adminDoc.exists
+    ? { uid: request.auth.uid, ...adminDoc.data() }
+    : { uid: request.auth.uid };
+
+  if (!(await isChurchAdmin(adminUser, String(churchId), request.auth.token))) {
+    throw new HttpsError("permission-denied", "관리자 권한이 필요합니다.");
+  }
+
+  const eventRef = db.collection("events").doc(String(eventId));
+  const eventDoc = await eventRef.get();
+  if (!eventDoc.exists) {
+    return { deleted: false, reason: "not-found" };
+  }
+
+  const event = eventDoc.data() || {};
+  if (event.churchId !== churchId) {
+    throw new HttpsError("permission-denied", "선택한 교회의 일정만 삭제할 수 있습니다.");
+  }
+
+  const refsByPath = new Map();
+  const addRef = (ref) => refsByPath.set(ref.path, ref);
+  const addDocIfSameChurch = async (collectionName, id) => {
+    if (!id) return null;
+    const ref = db.collection(collectionName).doc(String(id));
+    const snap = await ref.get();
+    if (!snap.exists || snap.data()?.churchId !== churchId) return null;
+    addRef(ref);
+    return { ref, data: snap.data() || {} };
+  };
+  const addQuery = async (collectionName, field, value) => {
+    if (!value) return [];
+    const snap = await db
+      .collection(collectionName)
+      .where("churchId", "==", churchId)
+      .where(field, "==", value)
+      .get();
+    return snap.docs.map((docSnap) => {
+      addRef(docSnap.ref);
+      return { ref: docSnap.ref, data: docSnap.data() || {} };
+    });
+  };
+
+  const attendanceDocs = [];
+  const pollIds = new Set();
+  const chartIds = new Set();
+
+  const preferredAttendance = await addDocIfSameChurch(
+    "attendance_sessions",
+    event.attendanceSessionId,
+  );
+  if (preferredAttendance) attendanceDocs.push(preferredAttendance);
+  attendanceDocs.push(...await addQuery("attendance_sessions", "sourceEventId", eventId));
+  attendanceDocs.forEach((item) => {
+    if (item.data.pollId) pollIds.add(String(item.data.pollId));
+  });
+
+  if (event.pollId) pollIds.add(String(event.pollId));
+  const eventPolls = await addQuery("polls", "sourceEventId", eventId);
+  eventPolls.forEach((item) => pollIds.add(item.ref.id));
+  for (const attendance of attendanceDocs) {
+    const sessionId = attendance.ref.id;
+    const linkedPolls = [
+      ...await addQuery("polls", "sourceAttendanceSessionId", sessionId),
+      ...await addQuery("polls", "sourceSessionId", sessionId),
+    ];
+    linkedPolls.forEach((item) => pollIds.add(item.ref.id));
+    await addQuery("attendance", "sessionId", sessionId);
+  }
+  for (const pollId of pollIds) {
+    await addDocIfSameChurch("polls", pollId);
+    await addQuery("poll_votes", "pollId", pollId);
+  }
+
+  if (event.seatingChartId) chartIds.add(String(event.seatingChartId));
+  const eventCharts = await addQuery("seating_charts", "sourceEventId", eventId);
+  eventCharts.forEach((item) => chartIds.add(item.ref.id));
+  for (const chartId of chartIds) {
+    await addDocIfSameChurch("seating_charts", chartId);
+    await addQuery("seat_assignments", "chartId", chartId);
+  }
+
+  addRef(eventRef);
+  const refs = Array.from(refsByPath.values());
+  for (let index = 0; index < refs.length; index += 450) {
+    const batch = db.batch();
+    refs.slice(index, index + 450).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+
+  return {
+    deleted: true,
+    deletedCount: refs.length,
+    eventId,
+  };
+});
+
 exports.scanAttendanceQr = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
