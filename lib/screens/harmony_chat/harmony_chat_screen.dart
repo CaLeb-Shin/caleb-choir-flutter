@@ -20,6 +20,10 @@ import 'relay_backing_audio_web.dart'
     if (dart.library.io) 'relay_backing_audio_mobile.dart'
     as relay_backing_audio;
 
+final _lastSubmittedHarmonyRelayProvider = StateProvider<String?>(
+  (ref) => null,
+);
+
 class HarmonyChatScreen extends ConsumerWidget {
   const HarmonyChatScreen({super.key});
 
@@ -310,6 +314,7 @@ class _RelaySection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final highlightedRelayId = ref.watch(_lastSubmittedHarmonyRelayProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -395,6 +400,7 @@ class _RelaySection extends StatelessWidget {
                       part: part,
                       partLabel: partLabel,
                       ref: ref,
+                      highlightedRelayId: highlightedRelayId,
                     ),
                   );
                 }
@@ -406,6 +412,7 @@ class _RelaySection extends StatelessWidget {
                     part: part,
                     partLabel: partLabel,
                     ref: ref,
+                    highlightedRelayId: highlightedRelayId,
                   ),
                 );
               }).toList(),
@@ -467,12 +474,14 @@ class _RelayMissionCard extends StatelessWidget {
     required this.part,
     required this.partLabel,
     required this.ref,
+    required this.highlightedRelayId,
   });
 
   final List<Map<String, dynamic>> relays;
   final String part;
   final String partLabel;
   final WidgetRef ref;
+  final String? highlightedRelayId;
 
   @override
   Widget build(BuildContext context) {
@@ -489,6 +498,13 @@ class _RelayMissionCard extends StatelessWidget {
     final ratio = total == 0 ? 0.0 : (completed / total).clamp(0.0, 1.0);
     final isComplete = completed >= total && total > 0;
     final compact = MediaQuery.sizeOf(context).width < 480;
+    final highlightedIndex = relays.indexWhere(
+      (relay) => relay['id']?.toString() == highlightedRelayId,
+    );
+    final hasSubmittedHighlight = highlightedIndex >= 0;
+    final highlightedLabel = hasSubmittedHighlight
+        ? _segmentDisplayLabel(relays[highlightedIndex], highlightedIndex)
+        : '';
     final profile = ref.watch(profileProvider).valueOrNull;
     final role = profile?.role ?? '';
     final canVote =
@@ -502,13 +518,29 @@ class _RelayMissionCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isComplete ? const Color(0xFFFFFBF0) : AppColors.bg,
+        color: hasSubmittedHighlight
+            ? const Color(0xFFFFFCF2)
+            : isComplete
+            ? const Color(0xFFFFFBF0)
+            : AppColors.bg,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isComplete
+          color: hasSubmittedHighlight
+              ? AppColors.secondary
+              : isComplete
               ? const Color(0xFFE7D39A)
               : AppColors.border.withValues(alpha: 0.35),
+          width: hasSubmittedHighlight ? 1.6 : 1,
         ),
+        boxShadow: hasSubmittedHighlight
+            ? [
+                BoxShadow(
+                  color: AppColors.secondary.withValues(alpha: 0.18),
+                  blurRadius: 22,
+                  offset: const Offset(0, 10),
+                ),
+              ]
+            : null,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,20 +602,52 @@ class _RelayMissionCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          if (hasSubmittedHighlight) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.secondaryContainer.withValues(alpha: 0.62),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: AppColors.secondary.withValues(alpha: 0.28),
+                ),
+              ),
+              child: Text(
+                '$highlightedLabel 업로드 완료. 하모니맵에서 방금 올린 소절을 표시했어요.',
+                style: AppText.body(
+                  12,
+                  weight: FontWeight.w900,
+                  color: AppColors.secondary,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (compact)
-            _CompactMissionRecordCard(
-              title: title,
-              relays: relays,
-              part: part,
-              partLabel: partLabel,
-              ref: ref,
-            )
+            hasSubmittedHighlight
+                ? _RelayProgressMap(
+                    relays: relays,
+                    part: part,
+                    partLabel: partLabel,
+                    ref: ref,
+                    highlightedRelayId: highlightedRelayId,
+                  )
+                : _CompactMissionRecordCard(
+                    title: title,
+                    relays: relays,
+                    part: part,
+                    partLabel: partLabel,
+                    ref: ref,
+                  )
           else ...[
             _RelayProgressMap(
               relays: relays,
               part: part,
               partLabel: partLabel,
               ref: ref,
+              highlightedRelayId: highlightedRelayId,
             ),
             const SizedBox(height: 12),
             ...relays.map(
@@ -595,6 +659,7 @@ class _RelayMissionCard extends StatelessWidget {
                   part: part,
                   partLabel: partLabel,
                   ref: ref,
+                  highlightedRelayId: highlightedRelayId,
                 ),
               ),
             ),
@@ -924,12 +989,14 @@ class _RelayProgressMap extends StatelessWidget {
     required this.part,
     required this.partLabel,
     required this.ref,
+    required this.highlightedRelayId,
   });
 
   final List<Map<String, dynamic>> relays;
   final String part;
   final String partLabel;
   final WidgetRef ref;
+  final String? highlightedRelayId;
 
   @override
   Widget build(BuildContext context) {
@@ -1002,6 +1069,7 @@ class _RelayProgressMap extends StatelessWidget {
                       partLabel: partLabel,
                       missionRelays: relays,
                       ref: ref,
+                      highlightedRelayId: highlightedRelayId,
                     ),
                   );
                 }).toList(),
@@ -1022,6 +1090,7 @@ class _RelayMapNode extends StatelessWidget {
     required this.partLabel,
     required this.missionRelays,
     required this.ref,
+    required this.highlightedRelayId,
   });
 
   final Map<String, dynamic> relay;
@@ -1030,6 +1099,7 @@ class _RelayMapNode extends StatelessWidget {
   final String partLabel;
   final List<Map<String, dynamic>> missionRelays;
   final WidgetRef ref;
+  final String? highlightedRelayId;
 
   @override
   Widget build(BuildContext context) {
@@ -1044,6 +1114,7 @@ class _RelayMapNode extends StatelessWidget {
     final active = completed || isMyTurn || canTestRecord;
     final latest = clips.isEmpty ? null : clips.last;
     final segmentTitle = _segmentDisplayLabel(relay, order - 1);
+    final isHighlighted = relay['id']?.toString() == highlightedRelayId;
     final singer =
         latest?['userName']?.toString() ??
         relay['completedByName']?.toString() ??
@@ -1059,77 +1130,92 @@ class _RelayMapNode extends StatelessWidget {
         : assigneeName;
 
     return Material(
-      color: completed
+      color: isHighlighted
+          ? const Color(0xFFFFF6D8)
+          : completed
           ? const Color(0xFFEAF5EA)
           : active
           ? Colors.white
           : Colors.white.withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => _openRelayStudio(
-          context,
-          relay,
-          part,
-          partLabel,
-          ref,
-          missionRelays: missionRelays,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 260),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isHighlighted ? AppColors.secondary : Colors.transparent,
+            width: isHighlighted ? 2 : 1,
+          ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(9),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 13,
-                    backgroundColor: active
-                        ? (completed ? AppColors.success : AppColors.primary)
-                        : Colors.white.withValues(alpha: 0.16),
-                    child: completed
-                        ? const _InlineCheckIcon(size: 15, color: Colors.white)
-                        : Text(
-                            '$order',
-                            style: AppText.body(
-                              10,
-                              weight: FontWeight.w900,
-                              color: active
-                                  ? Colors.white
-                                  : AppColors.secondaryContainer,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => _openRelayStudio(
+            context,
+            relay,
+            part,
+            partLabel,
+            ref,
+            missionRelays: missionRelays,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(9),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 13,
+                      backgroundColor: active
+                          ? (completed ? AppColors.success : AppColors.primary)
+                          : Colors.white.withValues(alpha: 0.16),
+                      child: completed
+                          ? const _InlineCheckIcon(
+                              size: 15,
+                              color: Colors.white,
+                            )
+                          : Text(
+                              '$order',
+                              style: AppText.body(
+                                10,
+                                weight: FontWeight.w900,
+                                color: active
+                                    ? Colors.white
+                                    : AppColors.secondaryContainer,
+                              ),
                             ),
-                          ),
+                    ),
+                    const Spacer(),
+                    _SegmentStatusIcon(completed: completed, active: active),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  segmentTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(
+                    12,
+                    weight: FontWeight.w900,
+                    color: active
+                        ? (completed ? AppColors.success : AppColors.primary)
+                        : Colors.white,
                   ),
-                  const Spacer(),
-                  _SegmentStatusIcon(completed: completed, active: active),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                segmentTitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.body(
-                  12,
-                  weight: FontWeight.w900,
-                  color: active
-                      ? (completed ? AppColors.success : AppColors.primary)
-                      : Colors.white,
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                status,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.body(
-                  10,
-                  color: active
-                      ? AppColors.onSurfaceVariant
-                      : Colors.white.withValues(alpha: 0.66),
+                const SizedBox(height: 2),
+                Text(
+                  status,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(
+                    10,
+                    color: active
+                        ? AppColors.onSurfaceVariant
+                        : Colors.white.withValues(alpha: 0.66),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1144,6 +1230,7 @@ class _MissionSegmentTile extends StatelessWidget {
     required this.part,
     required this.partLabel,
     required this.ref,
+    required this.highlightedRelayId,
   });
 
   final Map<String, dynamic> relay;
@@ -1151,6 +1238,7 @@ class _MissionSegmentTile extends StatelessWidget {
   final String part;
   final String partLabel;
   final WidgetRef ref;
+  final String? highlightedRelayId;
 
   @override
   Widget build(BuildContext context) {
@@ -1178,6 +1266,7 @@ class _MissionSegmentTile extends StatelessWidget {
         '';
     final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
     final canTestRecord = !completed && _canTestRecordRelayForTest(ref, part);
+    final isHighlighted = relay['id']?.toString() == highlightedRelayId;
     final recordStatusLabel = isMyTurn
         ? '내 차례'
         : canTestRecord
@@ -1213,12 +1302,19 @@ class _MissionSegmentTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: completed ? AppColors.primarySoft : AppColors.card,
+          color: isHighlighted
+              ? const Color(0xFFFFF6D8)
+              : completed
+              ? AppColors.primarySoft
+              : AppColors.card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: completed
+            color: isHighlighted
+                ? AppColors.secondary
+                : completed
                 ? AppColors.primary.withValues(alpha: 0.20)
                 : AppColors.border.withValues(alpha: 0.35),
+            width: isHighlighted ? 1.6 : 1,
           ),
         ),
         child: Row(
@@ -1253,7 +1349,9 @@ class _MissionSegmentTile extends StatelessWidget {
                 ],
               ),
             ),
-            if ((isMyTurn || canTestRecord) && !completed)
+            if (isHighlighted)
+              const _TurnPill(label: '방금 업로드', active: true)
+            else if ((isMyTurn || canTestRecord) && !completed)
               _TurnPill(label: recordStatusLabel, active: true)
             else
               Icon(
@@ -1564,13 +1662,14 @@ List<Map<String, dynamic>> _previousMissionClipsFor(
     (item) => item['id']?.toString() == currentId,
   );
   if (currentIndex <= 0) return const [];
-  for (var index = currentIndex - 1; index >= 0; index -= 1) {
+  final previousClips = <Map<String, dynamic>>[];
+  for (var index = 0; index < currentIndex; index += 1) {
     final clips = ((sorted[index]['clips'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList();
-    if (clips.isNotEmpty) return [clips.last];
+    if (clips.isNotEmpty) previousClips.add(clips.last);
   }
-  return const [];
+  return previousClips;
 }
 
 String _segmentDisplayLabel(Map<String, dynamic> relay, int index) {
@@ -1627,12 +1726,14 @@ class _RelayCard extends StatelessWidget {
     required this.part,
     required this.partLabel,
     required this.ref,
+    required this.highlightedRelayId,
   });
 
   final Map<String, dynamic> relay;
   final String part;
   final String partLabel;
   final WidgetRef ref;
+  final String? highlightedRelayId;
 
   @override
   Widget build(BuildContext context) {
@@ -1656,6 +1757,7 @@ class _RelayCard extends StatelessWidget {
         ? '녹음 가능'
         : '$assigneeName 차례';
     final hasClips = clips.isNotEmpty;
+    final isHighlighted = relay['id']?.toString() == highlightedRelayId;
 
     void openStudio() {
       showModalBottomSheet(
@@ -1683,7 +1785,7 @@ class _RelayCard extends StatelessWidget {
     }
 
     return Material(
-      color: AppColors.card,
+      color: isHighlighted ? const Color(0xFFFFFCF2) : AppColors.card,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
@@ -1693,7 +1795,21 @@ class _RelayCard extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.border.withValues(alpha: 0.35)),
+            border: Border.all(
+              color: isHighlighted
+                  ? AppColors.secondary
+                  : AppColors.border.withValues(alpha: 0.35),
+              width: isHighlighted ? 1.6 : 1,
+            ),
+            boxShadow: isHighlighted
+                ? [
+                    BoxShadow(
+                      color: AppColors.secondary.withValues(alpha: 0.16),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ]
+                : null,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1750,6 +1866,32 @@ class _RelayCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
+              if (isHighlighted) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondaryContainer.withValues(alpha: 0.62),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: AppColors.secondary.withValues(alpha: 0.28),
+                    ),
+                  ),
+                  child: Text(
+                    '업로드 완료. 하모니맵에 방금 올린 녹음을 표시했어요.',
+                    style: AppText.body(
+                      12,
+                      weight: FontWeight.w900,
+                      color: AppColors.secondary,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               _SingleHarmonyMap(
                 clips: clips,
                 isMyTurn: isMyTurn,
@@ -2938,7 +3080,6 @@ class _RelayRecordingAttempt {
 }
 
 class _RelayClipSheetState extends State<_RelayClipSheet> {
-  final _noteController = TextEditingController();
   final _recorder = AudioRecorder();
   final _guidePlayer = AudioPlayer();
   final _backingPlayer = AudioPlayer();
@@ -2957,14 +3098,17 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   bool _isRecording = false;
   bool _isSubmitting = false;
   bool _isGuidePlaying = false;
+  bool _isHandoffPlaying = false;
   bool _isMrRecording = false;
   int _recordAttemptCount = 0;
   int _recordSeconds = 0;
   double _recordElapsedSeconds = 0;
   double _playbackElapsedSeconds = 0;
+  int _handoffPlaybackIndex = 0;
   int? _selectedAttemptNumber;
   int? _playingAttemptNumber;
   double _progress = 0;
+  String _submitError = '';
   int _lastWaveformByteCount = 0;
   List<double> _waveformLevels = List<double>.filled(28, 0.08);
   final _recordingStopwatch = Stopwatch();
@@ -3037,7 +3181,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     unawaited(_guidePlayer.dispose());
     unawaited(_backingPlayer.dispose());
     relay_backing_audio.stopRelayBackingAudio();
-    _noteController.dispose();
     super.dispose();
   }
 
@@ -3053,6 +3196,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isSubmitting ||
         _isRecording ||
         _isGuidePlaying ||
+        _isHandoffPlaying ||
         _countdown != null ||
         _playingAttemptNumber != null;
     return Padding(
@@ -3102,13 +3246,18 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                   segmentLabel: widget.segmentLabel,
                   progress: lyricProgress,
                   isActive:
-                      _isRecording || _isGuidePlaying || _countdown != null,
+                      _isRecording ||
+                      _isGuidePlaying ||
+                      _isHandoffPlaying ||
+                      _countdown != null,
                   statusText: _countdown != null
                       ? '곧 시작'
                       : _isRecording
                       ? '녹음 중'
                       : _isGuidePlaying
                       ? 'AR 재생'
+                      : _isHandoffPlaying
+                      ? '릴레이 재생'
                       : '가사 대기',
                 ),
                 if (widget.guideAudioUrl.isNotEmpty ||
@@ -3151,13 +3300,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                         const SizedBox(height: 6),
                         Text(
                           previousClipCount > 0
-                              ? hasArGuide && hasMrBacking
-                                    ? '내 파트 AR은 따로 듣고 MR에 바로 녹음'
-                                    : hasMrBacking
-                                    ? 'MR에 바로 녹음'
-                                    : hasArGuide
-                                    ? '내 파트 AR은 따로 듣고 바로 녹음'
-                                    : '바로 녹음'
+                              ? hasMrBacking
+                                    ? '앞선 $previousClipCount개 릴레이를 듣고 내 소절부터 MR에 녹음'
+                                    : '앞선 $previousClipCount개 릴레이를 듣고 내 소절부터 바로 녹음'
                               : hasArGuide && hasMrBacking
                               ? '내 파트 AR 확인 후 MR에 바로 녹음'
                               : hasArGuide
@@ -3218,12 +3363,17 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                               child: FilledButton.tonalIcon(
                                 onPressed: isBusy || !_hasAttemptsLeft
                                     ? null
-                                    : () => _countdownThenStartRecording(
-                                        backingUrl: _recordingBackingUrl,
-                                        primeBacking: hasMrBacking,
-                                      ),
+                                    : _recordFromRelayLeadIn,
                                 icon: const _InlineWaveIcon(size: 18),
-                                label: Text(hasMrBacking ? 'MR 녹음' : '바로 녹음'),
+                                label: Text(
+                                  previousClipCount > 0
+                                      ? hasMrBacking
+                                            ? '이어듣고 MR 녹음'
+                                            : '이어듣고 녹음'
+                                      : hasMrBacking
+                                      ? 'MR 녹음'
+                                      : '바로 녹음',
+                                ),
                               ),
                             ),
                           ],
@@ -3281,6 +3431,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                       Text(
                         _countdown != null
                             ? '숨을 고르고 바로 시작합니다'
+                            : _isHandoffPlaying
+                            ? '앞 릴레이 듣는 중 $_handoffPlaybackIndex/$previousClipCount'
                             : _isGuidePlaying
                             ? 'AR 재생 중...'
                             : _isRecording
@@ -3298,7 +3450,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _remainingAttempts == 0
+                        _isHandoffPlaying
+                            ? '내 소절이 오면 카운트다운 후 녹음이 시작돼요.'
+                            : _remainingAttempts == 0
                             ? '3번 모두 녹음했어요. 아래에서 하나를 골라 올려주세요.'
                             : '총 3번 중 $_recordAttemptCount번 사용, $_remainingAttempts번 남음',
                         style: AppText.body(12, color: AppColors.muted),
@@ -3321,10 +3475,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                             ? null
                             : _isRecording
                             ? _stopRecording
-                            : () => _countdownThenStartRecording(
-                                backingUrl: _recordingBackingUrl,
-                                primeBacking: hasMrBacking,
-                              ),
+                            : _recordFromRelayLeadIn,
                         icon: _isRecording
                             ? const _InlineCheckIcon(size: 18)
                             : const _InlineMicIcon(size: 18),
@@ -3332,7 +3483,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                           _isRecording
                               ? '녹음 완료'
                               : selectedAttempt == null
-                              ? (hasMrBacking ? 'MR에 녹음하기' : '녹음하기')
+                              ? (previousClipCount > 0
+                                    ? hasMrBacking
+                                          ? '이어듣고 MR 녹음하기'
+                                          : '이어듣고 녹음하기'
+                                    : hasMrBacking
+                                    ? 'MR에 녹음하기'
+                                    : '녹음하기')
                               : (hasMrBacking ? 'MR에 다시 녹음' : '다시 녹음'),
                         ),
                       ),
@@ -3352,28 +3509,51 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                     onPlay: _toggleAttemptPlayback,
                   ),
                 ],
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _noteController,
-                  minLines: 2,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: '짧은 메모 (선택)',
-                    hintText: '내가 신경쓴 포인트를 남겨주세요',
-                  ),
-                ),
                 if (_isSubmitting) ...[
                   const SizedBox(height: 14),
                   LinearProgressIndicator(
                     value: _progress == 0 ? null : _progress,
                   ),
                 ],
+                if (_submitError.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF2F2),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppColors.error.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Text(
+                      _submitError,
+                      style: AppText.body(
+                        12,
+                        weight: FontWeight.w800,
+                        color: AppColors.error,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _isSubmitting ? null : _submit,
-                    child: Text(_isSubmitting ? '릴레이에 붙이는 중...' : '릴레이에 올리기'),
+                    onPressed:
+                        _isSubmitting ||
+                            (selectedAttempt == null && !_isRecording)
+                        ? null
+                        : _submit,
+                    child: Text(
+                      _isSubmitting
+                          ? '릴레이에 붙이는 중...'
+                          : selectedAttempt == null && !_isRecording
+                          ? '테이크 녹음 후 올리기'
+                          : '릴레이에 올리기',
+                    ),
                   ),
                 ),
               ],
@@ -3412,6 +3592,68 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     if (!mounted) return;
     await _startRecordingInternal(backingUrl: backingUrl);
+  }
+
+  Future<void> _recordFromRelayLeadIn() async {
+    final hasMrBacking = _recordingBackingUrl != null;
+    final previousClips = _playablePreviousClips;
+    if (previousClips.isEmpty) {
+      await _countdownThenStartRecording(
+        backingUrl: _recordingBackingUrl,
+        primeBacking: hasMrBacking,
+      );
+      return;
+    }
+    if (_isRecording ||
+        _isSubmitting ||
+        _isGuidePlaying ||
+        _isHandoffPlaying ||
+        _countdown != null) {
+      return;
+    }
+    if (!_hasAttemptsLeft) {
+      _showMessage('녹음 기회는 3번까지예요.');
+      return;
+    }
+
+    setState(() {
+      _isHandoffPlaying = true;
+      _handoffPlaybackIndex = 0;
+    });
+    try {
+      for (var index = 0; index < previousClips.length; index += 1) {
+        if (!mounted) return;
+        final clip = previousClips[index];
+        final audioUrl = clip['audioUrl']?.toString().trim() ?? '';
+        if (audioUrl.isEmpty) continue;
+        final seconds = (clip['durationSeconds'] as num?)?.toDouble() ?? 0;
+        final duration = seconds > 0
+            ? Duration(milliseconds: (seconds * 1000).round())
+            : Duration.zero;
+        setState(() => _handoffPlaybackIndex = index + 1);
+        await _playAudioAndWait(
+          audioUrl,
+          stopAfter: duration,
+          timeout: duration > Duration.zero
+              ? duration + const Duration(seconds: 3)
+              : const Duration(seconds: 45),
+        );
+      }
+    } catch (_) {
+      _showMessage('앞 릴레이 녹음을 재생하지 못했어요. 내 녹음으로 넘어갑니다.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isHandoffPlaying = false;
+          _handoffPlaybackIndex = 0;
+        });
+      }
+    }
+    if (!mounted) return;
+    await _countdownThenStartRecording(
+      backingUrl: _recordingBackingUrl,
+      primeBacking: hasMrBacking,
+    );
   }
 
   Future<void> _playGuideOnce() async {
@@ -3772,6 +4014,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     setState(() {
       _isSubmitting = true;
       _progress = 0;
+      _submitError = '';
     });
     try {
       final fileName = attempt.fileName.isEmpty
@@ -3779,13 +4022,17 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
           : attempt.fileName;
       if (widget.ref.read(localPreviewModeProvider)) {
         _completePreviewRelayAttempt(attempt, fileName);
+        widget.ref.read(_lastSubmittedHarmonyRelayProvider.notifier).state =
+            widget.relayId;
         await Future<void>.delayed(const Duration(milliseconds: 450));
-        widget.ref.invalidate(harmonyRelaysProvider);
+        _refreshHarmonyRelays();
         if (mounted) {
           final messenger = ScaffoldMessenger.of(context);
           Navigator.pop(context);
           messenger.showSnackBar(
-            SnackBar(content: Text('${attempt.number}번 테이크를 올리는 흐름까지 확인했어요.')),
+            SnackBar(
+              content: Text('${attempt.number}번 테이크를 올렸어요. 하모니맵에 표시했어요.'),
+            ),
           );
         }
         return;
@@ -3804,12 +4051,22 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         audioUrl: audioUrl,
         audioFileName: fileName,
         durationSeconds: attempt.durationSeconds,
-        note: _noteController.text,
       );
-      widget.ref.invalidate(harmonyRelaysProvider);
-      if (mounted) Navigator.pop(context);
+      widget.ref.read(_lastSubmittedHarmonyRelayProvider.notifier).state =
+          widget.relayId;
+      _refreshHarmonyRelays();
+      if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.pop(context);
+        messenger.showSnackBar(
+          SnackBar(content: Text('${attempt.number}번 테이크를 올렸어요. 하모니맵에 표시했어요.')),
+        );
+      }
     } catch (error) {
-      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+      _refreshHarmonyRelays();
+      final message = error.toString().replaceFirst('Exception: ', '');
+      if (mounted) setState(() => _submitError = message);
+      _showMessage(message);
     } finally {
       if (mounted) {
         setState(() {
@@ -3818,6 +4075,15 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         });
       }
     }
+  }
+
+  void _refreshHarmonyRelays() {
+    widget.ref.invalidate(harmonyRelaysProvider);
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 900)).then((_) {
+        widget.ref.invalidate(harmonyRelaysProvider);
+      }),
+    );
   }
 
   void _completePreviewRelayAttempt(

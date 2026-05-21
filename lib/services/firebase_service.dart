@@ -1522,20 +1522,28 @@ class FirebaseService {
       },
     });
     if (isSegmentMission) {
-      await _advanceHarmonyMissionAssignee(
-        completedRelayDoc: relayDoc,
-        part: part,
-        sourcePollId: sourcePollId,
-        excludeUserIds: handoffExcludeUserIds,
-      );
+      try {
+        await _advanceHarmonyMissionAssignee(
+          completedRelayDoc: relayDoc,
+          part: part,
+          sourcePollId: sourcePollId,
+          excludeUserIds: handoffExcludeUserIds,
+        );
+      } catch (_) {
+        // Saving the recording is the primary action. Handoff can recover later.
+      }
     } else if (assignee != null) {
-      await _createRelayNotification(
-        toUserId: assignee['id'].toString(),
-        relayId: relayId,
-        title: '다음 릴레이 차례예요',
-        body:
-            '${userData?['name'] ?? currentUser?.displayName ?? '파트원'}님이 소절을 이어 불렀어요.',
-      );
+      try {
+        await _createRelayNotification(
+          toUserId: assignee['id'].toString(),
+          relayId: relayId,
+          title: '다음 릴레이 차례예요',
+          body:
+              '${userData?['name'] ?? currentUser?.displayName ?? '파트원'}님이 소절을 이어 불렀어요.',
+        );
+      } catch (_) {
+        // Notification failure should not make the upload look unsaved.
+      }
     }
     return doc.id;
   }
@@ -1587,13 +1595,17 @@ class FirebaseService {
     final existingAssigneeName =
         nextData['currentAssigneeName']?.toString().trim() ?? '';
     if (existingAssigneeId.isNotEmpty) {
-      await _createRelayNotification(
-        toUserId: existingAssigneeId,
-        relayId: nextDoc.id,
-        title: '다음 릴레이 차례예요',
-        body:
-            '${nextData['segmentLabel'] ?? '다음 소절'}을 이어서 불러주세요.${existingAssigneeName.isEmpty ? '' : ' ($existingAssigneeName)'}',
-      );
+      try {
+        await _createRelayNotification(
+          toUserId: existingAssigneeId,
+          relayId: nextDoc.id,
+          title: '다음 릴레이 차례예요',
+          body:
+              '${nextData['segmentLabel'] ?? '다음 소절'}을 이어서 불러주세요.${existingAssigneeName.isEmpty ? '' : ' ($existingAssigneeName)'}',
+        );
+      } catch (_) {
+        // Notification failure should not block the completed recording.
+      }
       return;
     }
 
@@ -1618,12 +1630,16 @@ class FirebaseService {
       'assignedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    await _createRelayNotification(
-      toUserId: assignee['id'].toString(),
-      relayId: nextDoc.id,
-      title: '다음 릴레이 차례예요',
-      body: '${nextData['segmentLabel'] ?? '다음 소절'}을 이어서 불러주세요.',
-    );
+    try {
+      await _createRelayNotification(
+        toUserId: assignee['id'].toString(),
+        relayId: nextDoc.id,
+        title: '다음 릴레이 차례예요',
+        body: '${nextData['segmentLabel'] ?? '다음 소절'}을 이어서 불러주세요.',
+      );
+    } catch (_) {
+      // Notification failure should not block the next assignee update.
+    }
   }
 
   static Stream<Map<String, int>> watchHarmonyMvpVotes({
