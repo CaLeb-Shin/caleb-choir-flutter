@@ -1600,18 +1600,14 @@ bool _isGenericSegmentLabel(String label) {
   return RegExp(r'^\d+\s*소절$').hasMatch(trimmed);
 }
 
-final _emojiDisplayPattern = RegExp(
-  r'[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]',
-  unicode: true,
-);
-final _emojiControlPattern = RegExp(r'[\u200D\uFE0E\uFE0F]');
-
 String _cleanDisplayText(String value) {
-  return value
-      .replaceAll(_emojiDisplayPattern, '')
-      .replaceAll(_emojiControlPattern, '')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+  return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String _songTitleFromRelayTitle(String value) {
+  final cleaned = _cleanDisplayText(value);
+  final withoutRelay = cleaned.replaceFirst(RegExp(r'\s*릴레이$'), '').trim();
+  return withoutRelay.isEmpty ? cleaned : withoutRelay;
 }
 
 String _firstText(List<String?> values) {
@@ -3097,6 +3093,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                 ),
                 const SizedBox(height: 12),
                 _KaraokeLyricsPanel(
+                  title: _songTitleFromRelayTitle(widget.relayTitle),
                   currentLine: _currentLyricLine,
                   nextLine: _nextLyricLine,
                   segmentLabel: widget.segmentLabel,
@@ -4143,6 +4140,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
 class _KaraokeLyricsPanel extends StatelessWidget {
   const _KaraokeLyricsPanel({
+    required this.title,
     required this.currentLine,
     required this.nextLine,
     required this.segmentLabel,
@@ -4151,6 +4149,7 @@ class _KaraokeLyricsPanel extends StatelessWidget {
     required this.statusText,
   });
 
+  final String title;
   final String currentLine;
   final String nextLine;
   final String segmentLabel;
@@ -4160,9 +4159,22 @@ class _KaraokeLyricsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeTitle = _cleanDisplayText(title);
     final safeCurrentLine = _cleanDisplayText(currentLine);
     final safeNextLine = _cleanDisplayText(nextLine);
     final safeSegmentLabel = _cleanDisplayText(segmentLabel);
+    final showTitleBeforePlayback = !isActive && safeTitle.isNotEmpty;
+    final mainLine = showTitleBeforePlayback ? safeTitle : safeCurrentLine;
+    final fallbackNextLine = '다음 소절을 이어 받을 준비를 해요';
+    final supportingLine =
+        showTitleBeforePlayback &&
+            safeCurrentLine.isNotEmpty &&
+            safeCurrentLine != safeTitle
+        ? safeCurrentLine
+        : safeNextLine.isEmpty
+        ? fallbackNextLine
+        : safeNextLine;
+    final supportingLineIsFallback = supportingLine == fallbackNextLine;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -4242,8 +4254,8 @@ class _KaraokeLyricsPanel extends StatelessWidget {
               );
             },
             child: _SingleLineLyricText(
-              text: safeCurrentLine,
-              key: ValueKey('current-$safeCurrentLine'),
+              text: mainLine,
+              key: ValueKey('current-$mainLine'),
               style: AppText.body(
                 24,
                 weight: FontWeight.w900,
@@ -4269,13 +4281,13 @@ class _KaraokeLyricsPanel extends StatelessWidget {
               );
             },
             child: _SingleLineLyricText(
-              text: safeNextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : safeNextLine,
-              key: ValueKey('next-$safeNextLine'),
+              text: supportingLine,
+              key: ValueKey('next-$supportingLine'),
               style: AppText.body(
                 14,
                 weight: FontWeight.w700,
                 color: Colors.white.withValues(
-                  alpha: safeNextLine.isEmpty ? 0.36 : 0.52,
+                  alpha: supportingLineIsFallback ? 0.36 : 0.52,
                 ),
               ),
               height: 20,
