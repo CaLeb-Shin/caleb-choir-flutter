@@ -191,9 +191,11 @@ class _TodayGuideCardState extends State<_TodayGuideCard> {
                       color: const Color(0xFFEAD9A8),
                       borderRadius: BorderRadius.circular(15),
                     ),
-                    child: const Icon(
-                      Icons.auto_awesome_motion_rounded,
-                      color: AppColors.secondary,
+                    child: const Center(
+                      child: _RelayStackIcon(
+                        size: 25,
+                        color: AppColors.secondary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -250,8 +252,7 @@ class _TodayGuideCardState extends State<_TodayGuideCard> {
                                 ),
                               ),
                               const SizedBox(width: 2),
-                              const Icon(
-                                Icons.chevron_right_rounded,
+                              const _InlineChevronRightIcon(
                                 color: Colors.white,
                                 size: 17,
                               ),
@@ -4373,6 +4374,121 @@ class _RelayStudioStateIcon extends StatelessWidget {
       return const _InlineStopCircleIcon(size: 38, color: AppColors.secondary);
     }
     return const _InlineMicIcon(size: 38, color: AppColors.primary);
+  }
+}
+
+class _RelayStackIcon extends StatelessWidget {
+  const _RelayStackIcon({this.size = 24, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _RelayStackPainter(resolvedColor)),
+    );
+  }
+}
+
+class _RelayStackPainter extends CustomPainter {
+  const _RelayStackPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.08
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.18, h * 0.16, w * 0.44, h * 0.52),
+        Radius.circular(w * 0.08),
+      ),
+      stroke,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.38, h * 0.32, w * 0.44, h * 0.52),
+        Radius.circular(w * 0.08),
+      ),
+      stroke,
+    );
+    canvas.drawCircle(Offset(w * 0.42, h * 0.42), w * 0.055, fill);
+    canvas.drawLine(
+      Offset(w * 0.48, h * 0.42),
+      Offset(w * 0.66, h * 0.42),
+      stroke,
+    );
+    canvas.drawCircle(Offset(w * 0.58, h * 0.58), w * 0.055, fill);
+    canvas.drawLine(
+      Offset(w * 0.64, h * 0.58),
+      Offset(w * 0.72, h * 0.58),
+      stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RelayStackPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineChevronRightIcon extends StatelessWidget {
+  const _InlineChevronRightIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineChevronRightPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineChevronRightPainter extends CustomPainter {
+  const _InlineChevronRightPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.14
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final path = Path()
+      ..moveTo(size.width * 0.36, size.height * 0.24)
+      ..lineTo(size.width * 0.64, size.height * 0.5)
+      ..lineTo(size.width * 0.36, size.height * 0.76);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineChevronRightPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 
