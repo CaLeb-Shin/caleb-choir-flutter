@@ -218,9 +218,14 @@ class _TodayGuideCardState extends State<_TodayGuideCard> {
                         const SizedBox(height: 2),
                         Text(
                           '$title · ${widget.partLabel}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppText.body(17, weight: FontWeight.w900),
+                          maxLines: 2,
+                          overflow: TextOverflow.clip,
+                          softWrap: true,
+                          style: AppText.body(
+                            16,
+                            weight: FontWeight.w900,
+                            height: 1.18,
+                          ),
                         ),
                       ],
                     ),
