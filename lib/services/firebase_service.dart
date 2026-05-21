@@ -1467,11 +1467,20 @@ class FirebaseService {
     String? note,
   }) async {
     if (uid == null) throw Exception('로그인이 필요합니다');
+    final churchId = _requireChurchId();
     final userData = await _safeUserData(uid);
+    final relayRef = _db.collection('harmony_relays').doc(relayId);
+    final relayDoc = await relayRef.get();
+    final relayData = relayDoc.data();
+    _ensureHarmonyRelayCanReceiveClip(
+      relayData: relayData,
+      churchId: churchId,
+      userData: userData,
+    );
     final score = _relayScore(durationSeconds);
     final feedback = _relayFeedback(durationSeconds);
     final clipData = {
-      'churchId': _requireChurchId(),
+      'churchId': churchId,
       'relayId': relayId,
       'userId': uid,
       'part': part,
@@ -1488,14 +1497,12 @@ class FirebaseService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    final doc = await _db.collection('harmony_relay_clips').add(clipData);
-    final relayRef = _db.collection('harmony_relays').doc(relayId);
-    final relayDoc = await relayRef.get();
+    final clipRef = _db.collection('harmony_relay_clips').doc();
     final isSegmentMission =
-        (relayDoc.data()?['missionGroupId']?.toString() ?? '').isNotEmpty;
-    final sourcePollId = relayDoc.data()?['sourcePollId']?.toString() ?? '';
+        (relayData?['missionGroupId']?.toString() ?? '').isNotEmpty;
+    final sourcePollId = relayData?['sourcePollId']?.toString() ?? '';
     final previousAssigneeId =
-        relayDoc.data()?['currentAssigneeId']?.toString() ?? '';
+        relayData?['currentAssigneeId']?.toString() ?? '';
     final handoffExcludeUserIds = {
       uid,
       if (previousAssigneeId.isNotEmpty) previousAssigneeId,
@@ -1507,24 +1514,40 @@ class FirebaseService {
             sourcePollId: sourcePollId,
             excludeUserIds: handoffExcludeUserIds,
           );
-    await relayRef.update({
-      'clipCount': FieldValue.increment(1),
-      'lastClipAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-      'status': 'completed',
-      'completedBy': uid,
-      'completedByName': userData?['name'] ?? currentUser?.displayName ?? '파트원',
-      'completedAt': FieldValue.serverTimestamp(),
-      if (!isSegmentMission) ...{
-        'currentAssigneeId': assignee?['id'] ?? '',
-        'currentAssigneeName': assignee?['name'] ?? '',
-        'assignedAt': assignee == null ? null : FieldValue.serverTimestamp(),
-      },
-    });
+    final completedRelayDoc = await _db
+        .runTransaction<DocumentSnapshot<Map<String, dynamic>>>((
+          transaction,
+        ) async {
+          final latestRelayDoc = await transaction.get(relayRef);
+          _ensureHarmonyRelayCanReceiveClip(
+            relayData: latestRelayDoc.data(),
+            churchId: churchId,
+            userData: userData,
+          );
+          transaction.set(clipRef, clipData);
+          transaction.update(relayRef, {
+            'clipCount': FieldValue.increment(1),
+            'lastClipAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+            'status': 'completed',
+            'completedBy': uid,
+            'completedByName':
+                userData?['name'] ?? currentUser?.displayName ?? '파트원',
+            'completedAt': FieldValue.serverTimestamp(),
+            if (!isSegmentMission) ...{
+              'currentAssigneeId': assignee?['id'] ?? '',
+              'currentAssigneeName': assignee?['name'] ?? '',
+              'assignedAt': assignee == null
+                  ? null
+                  : FieldValue.serverTimestamp(),
+            },
+          });
+          return latestRelayDoc;
+        });
     if (isSegmentMission) {
       try {
         await _advanceHarmonyMissionAssignee(
-          completedRelayDoc: relayDoc,
+          completedRelayDoc: completedRelayDoc,
           part: part,
           sourcePollId: sourcePollId,
           excludeUserIds: handoffExcludeUserIds,
@@ -1545,7 +1568,7 @@ class FirebaseService {
         // Notification failure should not make the upload look unsaved.
       }
     }
-    return doc.id;
+    return clipRef.id;
   }
 
   static Future<void> _advanceHarmonyMissionAssignee({
@@ -1693,6 +1716,33 @@ class FirebaseService {
   static bool _harmonyRelayDataCompleted(Map<String, dynamic> data) {
     final clips = ((data['clips'] as List?) ?? const []);
     return clips.isNotEmpty || data['status']?.toString() == 'completed';
+  }
+
+  static bool _canAdminModifyHarmonyRelay(Map<String, dynamic>? userData) {
+    final role = userData?['role']?.toString() ?? '';
+    final email = currentUser?.email?.toLowerCase() ?? '';
+    return userData?['isPlatformAdmin'] == true ||
+        email == 'sinbun001@gmail.com' ||
+        role == 'admin' ||
+        role == 'church_admin';
+  }
+
+  static void _ensureHarmonyRelayCanReceiveClip({
+    required Map<String, dynamic>? relayData,
+    required String churchId,
+    required Map<String, dynamic>? userData,
+  }) {
+    if (relayData == null) {
+      throw Exception('릴레이 정보를 찾을 수 없습니다.');
+    }
+    final relayChurchId = relayData['churchId']?.toString() ?? '';
+    if (relayChurchId.isNotEmpty && relayChurchId != churchId) {
+      throw Exception('릴레이 교회 정보가 맞지 않습니다.');
+    }
+    if (_harmonyRelayDataCompleted(relayData) &&
+        !_canAdminModifyHarmonyRelay(userData)) {
+      throw Exception('완료된 릴레이 녹음은 관리자만 수정할 수 있어요.');
+    }
   }
 
   static Future<Map<String, dynamic>?> _pickHarmonyAssignee({

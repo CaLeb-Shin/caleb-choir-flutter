@@ -63,11 +63,10 @@ service firebase.storage {
       allow read: if (isSignedIn() && request.auth.uid == userId)
         || sameChurch(churchId)
         || isChurchAdminOf(churchId);
-      allow create, update: if isSignedIn()
+      allow create: if isSignedIn()
         && request.auth.uid == userId
         && request.resource.size < 50 * 1024 * 1024;
-      allow delete: if isSignedIn()
-        && (request.auth.uid == userId || isChurchAdminOf(churchId));
+      allow update, delete: if isChurchAdminOf(churchId);
     }
 
     match /churches/{churchId}/post_images/{fileName} {

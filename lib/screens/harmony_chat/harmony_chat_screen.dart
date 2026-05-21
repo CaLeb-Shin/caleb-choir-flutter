@@ -1340,13 +1340,6 @@ class _MissionSegmentTile extends StatelessWidget {
     final clips = ((relay['clips'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList();
-    final title = relay['title']?.toString() ?? '릴레이';
-    final lyricsLine = relay['lyricsLine']?.toString() ?? '';
-    final nextLyricsLine = relay['nextLyricsLine']?.toString() ?? '';
-    final lyricsText = relay['lyricsText']?.toString() ?? '';
-    final lyricsTimeline = _lyricsTimelineFromValue(relay['lyricsTimeline']);
-    final guideAudioUrl = relay['guideAudioUrl']?.toString() ?? '';
-    final mrAudioUrl = relay['mrAudioUrl']?.toString() ?? '';
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
     final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
     final completed = _relayCompleted(relay);
@@ -1372,27 +1365,13 @@ class _MissionSegmentTile extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
-      onTap: () => showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => _RelayClipSheet(
-          relayId: relay['id'].toString(),
-          part: part,
-          partLabel: partLabel,
-          relayTitle: title,
-          guideAudioUrl: guideAudioUrl,
-          mrAudioUrl: mrAudioUrl,
-          segmentLabel: segmentTitle,
-          lyricsLine: lyricsLine,
-          nextLyricsLine: nextLyricsLine,
-          lyricsText: lyricsText,
-          lyricsTimeline: lyricsTimeline,
-          segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
-          segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
-          previousClips: _previousMissionClipsFor(relay, missionRelays),
-          ref: ref,
-        ),
+      onTap: () => _openRelayStudio(
+        context,
+        relay,
+        part,
+        partLabel,
+        ref,
+        missionRelays: missionRelays,
       ),
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -1583,6 +1562,18 @@ List<_RelayVoteCandidate> _relayVoteCandidates(
 bool _relayCompleted(Map<String, dynamic> relay) {
   final clips = ((relay['clips'] as List?) ?? const []);
   return clips.isNotEmpty || relay['status']?.toString() == 'completed';
+}
+
+bool _isHarmonyRelayAdminProfile(User? profile) {
+  return profile?.isPlatformAdmin == true || profile?.isAdmin == true;
+}
+
+bool _canAdminModifyHarmonyRelay(WidgetRef ref) {
+  return _isHarmonyRelayAdminProfile(ref.watch(profileProvider).valueOrNull);
+}
+
+bool _canAdminModifyHarmonyRelayNow(WidgetRef ref) {
+  return _isHarmonyRelayAdminProfile(ref.read(profileProvider).valueOrNull);
 }
 
 List<Map<String, dynamic>> _relayClipSequenceForRelays(
@@ -1857,6 +1848,25 @@ List<String> _plainLyricLines(String text) {
       .toList(growable: false);
 }
 
+void _openRelayClipsSheet(
+  BuildContext context,
+  List<Map<String, dynamic>> clips,
+  String title,
+) {
+  if (clips.isEmpty) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('아직 들을 수 있는 녹음이 없어요.')));
+    return;
+  }
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _RelayClipsSheet(title: title, clips: clips),
+  );
+}
+
 void _openRelayStudio(
   BuildContext context,
   Map<String, dynamic> relay,
@@ -1865,6 +1875,23 @@ void _openRelayStudio(
   WidgetRef ref, {
   List<Map<String, dynamic>>? missionRelays,
 }) {
+  final relayClips = ((relay['clips'] as List?) ?? const [])
+      .whereType<Map<String, dynamic>>()
+      .toList();
+  if (_relayCompleted(relay) && !_canAdminModifyHarmonyRelayNow(ref)) {
+    if (relayClips.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('완료된 녹음은 관리자만 수정할 수 있어요.')));
+    } else {
+      _openRelayClipsSheet(
+        context,
+        relayClips,
+        relay['title']?.toString() ?? '완료된 릴레이',
+      );
+    }
+    return;
+  }
   final segmentIndex =
       missionRelays?.indexWhere(
         (item) => item['id']?.toString() == relay['id']?.toString(),
@@ -1889,9 +1916,7 @@ void _openRelayStudio(
       segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
       segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
       previousClips: missionRelays == null
-          ? ((relay['clips'] as List?) ?? const [])
-                .whereType<Map<String, dynamic>>()
-                .toList()
+          ? relayClips
           : _previousMissionClipsFor(relay, missionRelays),
       ref: ref,
     ),
@@ -2002,14 +2027,26 @@ class _RelayCard extends StatelessWidget {
         .toList();
     final title = relay['title']?.toString() ?? '릴레이';
     final segmentLabel = relay['segmentLabel']?.toString() ?? '소절';
-    final guideAudioUrl = relay['guideAudioUrl']?.toString() ?? '';
-    final mrAudioUrl = relay['mrAudioUrl']?.toString() ?? '';
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
     final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
     final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
-    final canTestRecord = _canTestRecordRelayForTest(ref, part);
-    final canRecordNow = isMyTurn || canTestRecord || assigneeName.isEmpty;
-    final status = isMyTurn
+    final completed = _relayCompleted(relay);
+    final canAdminModify = _canAdminModifyHarmonyRelay(ref);
+    final canAdminModifyCompleted = completed && canAdminModify;
+    final canOpenStudio = !completed || canAdminModify;
+    final canTestRecord = !completed && _canTestRecordRelayForTest(ref, part);
+    final canRecordNow =
+        !completed && (isMyTurn || canTestRecord || assigneeName.isEmpty);
+    final latest = clips.isEmpty ? null : clips.last;
+    final singer =
+        latest?['userName']?.toString() ??
+        relay['completedByName']?.toString() ??
+        '';
+    final status = completed
+        ? canAdminModify
+              ? '관리자 수정 가능'
+              : (singer.isEmpty ? '완료됨' : '$singer 완료')
+        : isMyTurn
         ? '내 차례'
         : canTestRecord
         ? '테스트 녹음'
@@ -2020,28 +2057,7 @@ class _RelayCard extends StatelessWidget {
     final isHighlighted = relay['id']?.toString() == highlightedRelayId;
 
     void openStudio() {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => _RelayClipSheet(
-          relayId: relay['id'].toString(),
-          part: part,
-          partLabel: partLabel,
-          relayTitle: title,
-          guideAudioUrl: guideAudioUrl,
-          mrAudioUrl: mrAudioUrl,
-          segmentLabel: segmentLabel,
-          lyricsLine: relay['lyricsLine']?.toString() ?? '',
-          nextLyricsLine: relay['nextLyricsLine']?.toString() ?? '',
-          lyricsText: relay['lyricsText']?.toString() ?? '',
-          lyricsTimeline: _lyricsTimelineFromValue(relay['lyricsTimeline']),
-          segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
-          segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
-          previousClips: clips,
-          ref: ref,
-        ),
-      );
+      _openRelayStudio(context, relay, part, partLabel, ref);
     }
 
     return Material(
@@ -2164,47 +2180,44 @@ class _RelayCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => _openRelayClips(context, clips, title),
+                        onPressed: () =>
+                            _openRelayClipsSheet(context, clips, title),
                         icon: const Icon(Icons.queue_music_rounded, size: 18),
                         label: const Text('듣기'),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: openStudio,
-                        icon: const Icon(Icons.mic_rounded, size: 18),
-                        label: const Text('녹음'),
+                    if (canOpenStudio) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: openStudio,
+                          icon: Icon(
+                            canAdminModifyCompleted
+                                ? Icons.admin_panel_settings_rounded
+                                : Icons.mic_rounded,
+                            size: 18,
+                          ),
+                          label: Text(
+                            canAdminModifyCompleted ? '관리자 수정' : '녹음',
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 )
               else
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: openStudio,
+                    onPressed: canOpenStudio ? openStudio : null,
                     icon: const Icon(Icons.mic_rounded, size: 18),
-                    label: const Text('녹음하기'),
+                    label: Text(canOpenStudio ? '녹음하기' : '완료됨'),
                   ),
                 ),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  void _openRelayClips(
-    BuildContext context,
-    List<Map<String, dynamic>> clips,
-    String title,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _RelayClipsSheet(title: title, clips: clips),
     );
   }
 }
