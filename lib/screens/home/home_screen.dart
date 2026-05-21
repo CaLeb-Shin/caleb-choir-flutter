@@ -692,6 +692,7 @@ class HomeScreen extends ConsumerWidget {
       ),
       MiniActionTile(
         icon: Icons.graphic_eq_rounded,
+        customIcon: const HarmonyChatMenuGlyph(),
         label: '하모니챗',
         tone: 'secondary',
         hasNew: hasNewHarmonyNotes,

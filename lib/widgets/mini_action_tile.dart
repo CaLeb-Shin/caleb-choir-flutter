@@ -261,6 +261,89 @@ class ScoreMenuGlyph extends StatelessWidget {
   }
 }
 
+class HarmonyChatMenuGlyph extends StatelessWidget {
+  final Color color;
+  final Color accentColor;
+
+  const HarmonyChatMenuGlyph({
+    super.key,
+    this.color = Colors.white,
+    this.accentColor = AppColors.secondaryContainer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 22,
+      child: CustomPaint(
+        painter: _HarmonyChatMenuGlyphPainter(color, accentColor),
+      ),
+    );
+  }
+}
+
+class _HarmonyChatMenuGlyphPainter extends CustomPainter {
+  final Color color;
+  final Color accentColor;
+
+  const _HarmonyChatMenuGlyphPainter(this.color, this.accentColor);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.9
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final accent = Paint()
+      ..color = accentColor
+      ..style = PaintingStyle.fill;
+
+    final leftBubble = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w * 0.12, h * 0.22, w * 0.36, h * 0.35),
+      Radius.circular(w * 0.10),
+    );
+    final rightBubble = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w * 0.42, h * 0.38, w * 0.46, h * 0.35),
+      Radius.circular(w * 0.10),
+    );
+    canvas.drawRRect(leftBubble, stroke);
+    canvas.drawRRect(rightBubble, stroke);
+
+    final leftTail = Path()
+      ..moveTo(w * 0.22, h * 0.56)
+      ..lineTo(w * 0.18, h * 0.70)
+      ..lineTo(w * 0.34, h * 0.57);
+    canvas.drawPath(leftTail, stroke);
+
+    final rightTail = Path()
+      ..moveTo(w * 0.72, h * 0.72)
+      ..lineTo(w * 0.84, h * 0.84)
+      ..lineTo(w * 0.78, h * 0.70);
+    canvas.drawPath(rightTail, stroke);
+
+    for (final dx in [0.23, 0.34, 0.55, 0.67, 0.78]) {
+      canvas.drawCircle(
+        Offset(w * dx, h * (dx < 0.5 ? 0.40 : 0.55)),
+        1.05,
+        fill,
+      );
+    }
+    canvas.drawCircle(Offset(w * 0.78, h * 0.30), w * 0.06, accent);
+  }
+
+  @override
+  bool shouldRepaint(covariant _HarmonyChatMenuGlyphPainter oldDelegate) {
+    return oldDelegate.color != color || oldDelegate.accentColor != accentColor;
+  }
+}
+
 class _ScoreMenuGlyphPainter extends CustomPainter {
   final Color color;
   final Color accentColor;
