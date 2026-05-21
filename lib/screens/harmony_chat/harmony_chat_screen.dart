@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/user.dart';
@@ -23,6 +24,9 @@ import 'relay_backing_audio_web.dart'
 final _lastSubmittedHarmonyRelayProvider = StateProvider<String?>(
   (ref) => null,
 );
+
+const _microphonePermissionGrantedKey = 'harmony_microphone_permission_granted';
+bool? _microphonePermissionGrantedInSession;
 
 class HarmonyChatScreen extends ConsumerWidget {
   const HarmonyChatScreen({super.key});
@@ -1598,6 +1602,38 @@ _DecodedAudioData? _decodeDataAudioUrl(String value) {
   } catch (_) {
     return null;
   }
+}
+
+Future<bool> _ensureMicrophonePermission(AudioRecorder recorder) async {
+  if (_microphonePermissionGrantedInSession == true) return true;
+
+  final prefs = await SharedPreferences.getInstance();
+  if (prefs.getBool(_microphonePermissionGrantedKey) == true) {
+    _microphonePermissionGrantedInSession = true;
+    return true;
+  }
+
+  final alreadyGranted = await recorder.hasPermission(request: false);
+  if (alreadyGranted) {
+    await _rememberMicrophonePermissionGranted();
+    return true;
+  }
+
+  final granted = await recorder.hasPermission();
+  if (granted) await _rememberMicrophonePermissionGranted();
+  return granted;
+}
+
+Future<void> _rememberMicrophonePermissionGranted() async {
+  _microphonePermissionGrantedInSession = true;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setBool(_microphonePermissionGrantedKey, true);
+}
+
+Future<void> _forgetMicrophonePermissionGranted() async {
+  _microphonePermissionGrantedInSession = false;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove(_microphonePermissionGrantedKey);
 }
 
 bool _canTestRecordRelayForTest(WidgetRef ref, String part) {
@@ -4090,7 +4126,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     try {
       final hasBacking = backingUrl != null && backingUrl.isNotEmpty;
-      final hasPermission = await _recorder.hasPermission();
+      final hasPermission = await _ensureMicrophonePermission(_recorder);
       if (!hasPermission) {
         if (widget.ref.read(localPreviewModeProvider)) {
           _addPreviewGeneratedAttempt();
@@ -4188,6 +4224,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isMrRecording = hasBacking;
       });
     } catch (_) {
+      unawaited(_forgetMicrophonePermissionGranted());
       unawaited(_backingPlayer.stop());
       relay_backing_audio.stopRelayBackingAudio();
       _primedBackingUrl = null;
@@ -6604,7 +6641,7 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
 
   Future<void> _startRecording() async {
     try {
-      final hasPermission = await _recorder.hasPermission();
+      final hasPermission = await _ensureMicrophonePermission(_recorder);
       if (!hasPermission) {
         _showMessage('마이크 권한이 필요합니다.');
         return;
@@ -6662,6 +6699,7 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
         _audioName = null;
       });
     } catch (_) {
+      unawaited(_forgetMicrophonePermissionGranted());
       _showMessage('녹음을 시작할 수 없습니다. 브라우저의 마이크 권한을 확인해주세요.');
     }
   }
