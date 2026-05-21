@@ -112,6 +112,10 @@ service cloud.firestore {
           ? request.resource.data.get('approvalStatus', '') == 'pending'
           : isBootstrapAdminEmail()
       );
+      // 부트스트랩 관리자 계정은 기존 users 문서의 platform/church 관리자 필드 보정 허용.
+      allow update: if isSignedIn()
+        && request.auth.uid == userId
+        && isBootstrapAdminEmail();
       // 본인 업데이트 (일반): 민감 필드 금지 + approvalStatus 불변
       allow update: if isSignedIn() && request.auth.uid == userId &&
         !request.resource.data.diff(resource.data).affectedKeys()
