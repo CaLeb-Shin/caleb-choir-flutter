@@ -63,7 +63,7 @@ service firebase.storage {
       allow read: if sameChurch(churchId) || isChurchAdminOf(churchId);
       allow create, update: if isSignedIn()
         && request.auth.uid == userId
-        && (sameChurch(churchId) || isChurchAdminOf(churchId))
+        && hasProfile()
         && request.resource.size < 50 * 1024 * 1024
         && (
           request.resource.contentType.matches('audio/.*')
