@@ -1601,7 +1601,11 @@ bool _isGenericSegmentLabel(String label) {
 }
 
 String _cleanDisplayText(String value) {
-  return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return value
+      .replaceAll(_emojiDisplayPattern, '')
+      .replaceAll(_emojiControlPattern, '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 }
 
 String _songTitleFromRelayTitle(String value) {
@@ -1609,6 +1613,12 @@ String _songTitleFromRelayTitle(String value) {
   final withoutRelay = cleaned.replaceFirst(RegExp(r'\s*릴레이$'), '').trim();
   return withoutRelay.isEmpty ? cleaned : withoutRelay;
 }
+
+final _emojiDisplayPattern = RegExp(
+  r'[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]',
+  unicode: true,
+);
+final _emojiControlPattern = RegExp(r'[\u200D\uFE0E\uFE0F]');
 
 String _firstText(List<String?> values) {
   for (final value in values) {
@@ -3223,10 +3233,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                         backingUrl: _recordingBackingUrl,
                                         primeBacking: hasMrBacking,
                                       ),
-                                icon: const Icon(
-                                  Icons.graphic_eq_rounded,
-                                  size: 18,
-                                ),
+                                icon: const _InlineWaveIcon(size: 18),
                                 label: Text(hasMrBacking ? 'MR 녹음' : '바로 녹음'),
                               ),
                             ),
@@ -3338,11 +3345,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                 backingUrl: _recordingBackingUrl,
                                 primeBacking: hasMrBacking,
                               ),
-                        icon: Icon(
-                          _isRecording
-                              ? Icons.check_rounded
-                              : Icons.mic_rounded,
-                        ),
+                        icon: _isRecording
+                            ? const Icon(Icons.check_rounded)
+                            : const _InlineMicIcon(size: 18),
                         label: Text(
                           _isRecording
                               ? '녹음 완료'
@@ -4361,6 +4366,113 @@ class _SingleLineLyricText extends StatelessWidget {
   }
 }
 
+class _InlineWaveIcon extends StatelessWidget {
+  const _InlineWaveIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    final widths = size / 7.8;
+    final heights = [0.38, 0.72, 0.48, 0.88, 0.58];
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: heights
+            .map((factor) {
+              return Container(
+                width: widths,
+                height: size * factor,
+                margin: EdgeInsets.symmetric(horizontal: size / 38),
+                decoration: BoxDecoration(
+                  color: resolvedColor,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _InlineMicIcon extends StatelessWidget {
+  const _InlineMicIcon({this.size = 18});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor = IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineMicPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineMicPainter extends CustomPainter {
+  const _InlineMicPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.1
+      ..strokeCap = StrokeCap.round;
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final body = RRect.fromRectAndRadius(
+      Rect.fromCenter(
+        center: Offset(size.width / 2, size.height * 0.38),
+        width: size.width * 0.38,
+        height: size.height * 0.54,
+      ),
+      Radius.circular(size.width * 0.19),
+    );
+    canvas.drawRRect(body, fill);
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: Offset(size.width / 2, size.height * 0.48),
+        width: size.width * 0.74,
+        height: size.height * 0.68,
+      ),
+      0.18,
+      math.pi - 0.36,
+      false,
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(size.width / 2, size.height * 0.75),
+      Offset(size.width / 2, size.height * 0.9),
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.34, size.height * 0.9),
+      Offset(size.width * 0.66, size.height * 0.9),
+      stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineMicPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
 class _RecordingWaveform extends StatelessWidget {
   const _RecordingWaveform({
     required this.levels,
@@ -4384,8 +4496,7 @@ class _RecordingWaveform extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.graphic_eq_rounded,
+          _InlineWaveIcon(
             size: 18,
             color: active ? AppColors.secondary : AppColors.muted,
           ),
