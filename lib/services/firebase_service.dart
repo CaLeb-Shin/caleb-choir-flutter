@@ -919,6 +919,16 @@ class FirebaseService {
       if (guideUrl.isNotEmpty || mrUrl.isNotEmpty) {
         final mainSheetUrl = sheet['fileUrl']?.toString() ?? '';
         final partSheetUrl = partFile['sheetUrl']?.toString() ?? '';
+        final partLyricsText = _firstNotEmpty([
+          partFile['lyricsText']?.toString(),
+          sheet['lyricsText']?.toString(),
+        ]);
+        final partLyricsTimeline = _lyricsTimelineFromValue(
+          partFile['lyricsTimeline'],
+        );
+        final sheetLyricsTimeline = _lyricsTimelineFromValue(
+          sheet['lyricsTimeline'],
+        );
         return {
           'sheetMusicId': sheet['id'],
           'title': songTitle,
@@ -936,11 +946,11 @@ class FirebaseService {
             sheet['mrAudioFileName']?.toString(),
           ]),
           'guide': conductorComment,
-          'lyricsText': sheet['lyricsText']?.toString() ?? '',
-          'lyricsTimeline': _lyricsTimelineFromValue(sheet['lyricsTimeline']),
-          'lyricLines': _lyricLinesFromText(
-            sheet['lyricsText']?.toString() ?? '',
-          ),
+          'lyricsText': partLyricsText,
+          'lyricsTimeline': partLyricsTimeline.isNotEmpty
+              ? partLyricsTimeline
+              : sheetLyricsTimeline,
+          'lyricLines': _lyricLinesFromText(partLyricsText),
           'composer': sheet['composer']?.toString() ?? '',
           'sheetUrl': partSheetUrl.isNotEmpty ? partSheetUrl : mainSheetUrl,
           'sourcePollId': sheet['sourcePollId']?.toString() ?? '',
@@ -1050,6 +1060,7 @@ class FirebaseService {
 
       final createdIds = <String>[];
       final notifiedUsers = <String>{};
+      var handoffSeeded = false;
       for (var index = 0; index < segments.length; index += 1) {
         final segment = segments[index];
         final segmentId = _firstNotEmpty([
@@ -1062,6 +1073,19 @@ class FirebaseService {
         ]);
         final existingDoc = existingBySegment[segmentId];
         if (existingDoc != null) {
+          final existingData = existingDoc.data();
+          final currentAssigneeId =
+              existingData['currentAssigneeId']?.toString() ?? '';
+          final existingCompleted = _harmonyRelayDataCompleted(existingData);
+          final shouldAssign =
+              !handoffSeeded && currentAssigneeId.isEmpty && !existingCompleted;
+          final assignee = shouldAssign
+              ? await _pickHarmonyAssignee(
+                  part: part,
+                  sourcePollId: sourcePollId,
+                  excludeUserIds: {uid},
+                )
+              : null;
           await existingDoc.reference.update({
             'guideAudioUrl': guide['guideAudioUrl']?.toString() ?? '',
             'guideAudioFileName': guide['guideAudioFileName']?.toString() ?? '',
@@ -1090,17 +1114,37 @@ class FirebaseService {
             'segmentEndSec': (segment['endSec'] as num?)?.toDouble() ?? 0,
             'segmentDurationSec':
                 (segment['durationSec'] as num?)?.toDouble() ?? 0,
+            if (assignee != null) ...{
+              'currentAssigneeId': assignee['id']?.toString() ?? '',
+              'currentAssigneeName': assignee['name']?.toString() ?? '',
+              'assignedAt': FieldValue.serverTimestamp(),
+            },
             'updatedAt': FieldValue.serverTimestamp(),
           });
           createdIds.add(existingDoc.id);
+          final assigneeId = assignee?['id']?.toString() ?? '';
+          if (assigneeId.isNotEmpty && notifiedUsers.add(assigneeId)) {
+            await _createRelayNotification(
+              toUserId: assigneeId,
+              relayId: existingDoc.id,
+              title: '하모니 릴레이 미션이 열렸어요',
+              body: '$title $label을 이어서 불러주세요.',
+            );
+          }
+          if (!existingCompleted &&
+              (currentAssigneeId.isNotEmpty || assignee != null)) {
+            handoffSeeded = true;
+          }
           continue;
         }
 
-        final assignee = await _pickHarmonyAssignee(
-          part: part,
-          sourcePollId: sourcePollId,
-          excludeUserIds: {uid},
-        );
+        final assignee = handoffSeeded
+            ? null
+            : await _pickHarmonyAssignee(
+                part: part,
+                sourcePollId: sourcePollId,
+                excludeUserIds: {uid},
+              );
         final relayId = await createHarmonyRelay(
           part: part,
           title: '$title 릴레이',
@@ -1151,6 +1195,7 @@ class FirebaseService {
             body: '$title $label을 이어서 불러주세요.',
           );
         }
+        if (assignee != null) handoffSeeded = true;
       }
       if (createdIds.isNotEmpty) return createdIds.first;
     }
@@ -1165,6 +1210,15 @@ class FirebaseService {
       for (final doc in existing.docs) {
         final data = doc.data();
         if (data['churchId'] == churchId && data['part'] == part) {
+          final currentAssigneeId = data['currentAssigneeId']?.toString() ?? '';
+          final assignee =
+              currentAssigneeId.isEmpty && !_harmonyRelayDataCompleted(data)
+              ? await _pickHarmonyAssignee(
+                  part: part,
+                  sourcePollId: sourcePollId,
+                  excludeUserIds: {uid},
+                )
+              : null;
           await doc.reference.update({
             'guideAudioUrl': guide['guideAudioUrl']?.toString() ?? '',
             'guideAudioFileName': guide['guideAudioFileName']?.toString() ?? '',
@@ -1187,8 +1241,21 @@ class FirebaseService {
               0,
               0,
             ),
+            if (assignee != null) ...{
+              'currentAssigneeId': assignee['id']?.toString() ?? '',
+              'currentAssigneeName': assignee['name']?.toString() ?? '',
+              'assignedAt': FieldValue.serverTimestamp(),
+            },
             'updatedAt': FieldValue.serverTimestamp(),
           });
+          if (assignee != null) {
+            await _createRelayNotification(
+              toUserId: assignee['id'].toString(),
+              relayId: doc.id,
+              title: '파트 릴레이가 도착했어요',
+              body: '$title 한 소절을 이어서 불러주세요.',
+            );
+          }
           return doc.id;
         }
       }
@@ -1204,6 +1271,15 @@ class FirebaseService {
       for (final doc in existing.docs) {
         final data = doc.data();
         if (data['churchId'] == churchId && data['part'] == part) {
+          final currentAssigneeId = data['currentAssigneeId']?.toString() ?? '';
+          final assignee =
+              currentAssigneeId.isEmpty && !_harmonyRelayDataCompleted(data)
+              ? await _pickHarmonyAssignee(
+                  part: part,
+                  sourcePollId: sourcePollId,
+                  excludeUserIds: {uid},
+                )
+              : null;
           await doc.reference.update({
             'guide': guide['guide']?.toString() ?? '',
             'sourcePollId': sourcePollId,
@@ -1223,8 +1299,21 @@ class FirebaseService {
               0,
               0,
             ),
+            if (assignee != null) ...{
+              'currentAssigneeId': assignee['id']?.toString() ?? '',
+              'currentAssigneeName': assignee['name']?.toString() ?? '',
+              'assignedAt': FieldValue.serverTimestamp(),
+            },
             'updatedAt': FieldValue.serverTimestamp(),
           });
+          if (assignee != null) {
+            await _createRelayNotification(
+              toUserId: assignee['id'].toString(),
+              relayId: doc.id,
+              title: '파트 릴레이가 도착했어요',
+              body: '$title 한 소절을 이어서 불러주세요.',
+            );
+          }
           return doc.id;
         }
       }
@@ -1390,12 +1479,18 @@ class FirebaseService {
     final isSegmentMission =
         (relayDoc.data()?['missionGroupId']?.toString() ?? '').isNotEmpty;
     final sourcePollId = relayDoc.data()?['sourcePollId']?.toString() ?? '';
+    final previousAssigneeId =
+        relayDoc.data()?['currentAssigneeId']?.toString() ?? '';
+    final handoffExcludeUserIds = {
+      uid,
+      if (previousAssigneeId.isNotEmpty) previousAssigneeId,
+    };
     final assignee = isSegmentMission
         ? null
         : await _pickHarmonyAssignee(
             part: part,
             sourcePollId: sourcePollId,
-            excludeUserIds: {uid},
+            excludeUserIds: handoffExcludeUserIds,
           );
     await relayRef.update({
       'clipCount': FieldValue.increment(1),
@@ -1411,7 +1506,14 @@ class FirebaseService {
         'assignedAt': assignee == null ? null : FieldValue.serverTimestamp(),
       },
     });
-    if (assignee != null) {
+    if (isSegmentMission) {
+      await _advanceHarmonyMissionAssignee(
+        completedRelayDoc: relayDoc,
+        part: part,
+        sourcePollId: sourcePollId,
+        excludeUserIds: handoffExcludeUserIds,
+      );
+    } else if (assignee != null) {
       await _createRelayNotification(
         toUserId: assignee['id'].toString(),
         relayId: relayId,
@@ -1421,6 +1523,92 @@ class FirebaseService {
       );
     }
     return doc.id;
+  }
+
+  static Future<void> _advanceHarmonyMissionAssignee({
+    required DocumentSnapshot<Map<String, dynamic>> completedRelayDoc,
+    required String part,
+    required String sourcePollId,
+    required Set<String?> excludeUserIds,
+  }) async {
+    final completedData = completedRelayDoc.data() ?? {};
+    final missionGroupId = completedData['missionGroupId']?.toString() ?? '';
+    if (missionGroupId.isEmpty) return;
+
+    final churchId = _requireChurchId();
+    final snapshot = await _db
+        .collection('harmony_relays')
+        .where('churchId', isEqualTo: churchId)
+        .where('part', isEqualTo: part)
+        .where('missionGroupId', isEqualTo: missionGroupId)
+        .get();
+    final relays =
+        snapshot.docs
+            .where((doc) => doc.data()['churchId'] == churchId)
+            .toList()
+          ..sort((a, b) {
+            final aOrder = (a.data()['segmentOrder'] as num?)?.toInt() ?? 0;
+            final bOrder = (b.data()['segmentOrder'] as num?)?.toInt() ?? 0;
+            return aOrder.compareTo(bOrder);
+          });
+    final currentIndex = relays.indexWhere(
+      (doc) => doc.id == completedRelayDoc.id,
+    );
+    if (currentIndex < 0) return;
+
+    QueryDocumentSnapshot<Map<String, dynamic>>? nextDoc;
+    for (var index = currentIndex + 1; index < relays.length; index += 1) {
+      final candidate = relays[index];
+      if (!_harmonyRelayDataCompleted(candidate.data())) {
+        nextDoc = candidate;
+        break;
+      }
+    }
+    if (nextDoc == null) return;
+
+    final nextData = nextDoc.data();
+    final existingAssigneeId =
+        nextData['currentAssigneeId']?.toString().trim() ?? '';
+    final existingAssigneeName =
+        nextData['currentAssigneeName']?.toString().trim() ?? '';
+    if (existingAssigneeId.isNotEmpty) {
+      await _createRelayNotification(
+        toUserId: existingAssigneeId,
+        relayId: nextDoc.id,
+        title: '다음 릴레이 차례예요',
+        body:
+            '${nextData['segmentLabel'] ?? '다음 소절'}을 이어서 불러주세요.${existingAssigneeName.isEmpty ? '' : ' ($existingAssigneeName)'}',
+      );
+      return;
+    }
+
+    final alreadyRecordedUserIds = <String?>{...excludeUserIds};
+    for (final relay in relays.take(currentIndex + 1)) {
+      final relayData = relay.data();
+      final completedBy = relayData['completedBy']?.toString() ?? '';
+      if (completedBy.isNotEmpty) alreadyRecordedUserIds.add(completedBy);
+    }
+    final assignee = await _pickHarmonyAssignee(
+      part: part,
+      sourcePollId: (nextData['sourcePollId']?.toString() ?? '').isNotEmpty
+          ? nextData['sourcePollId']?.toString()
+          : sourcePollId,
+      excludeUserIds: alreadyRecordedUserIds,
+    );
+    if (assignee == null) return;
+
+    await nextDoc.reference.update({
+      'currentAssigneeId': assignee['id']?.toString() ?? '',
+      'currentAssigneeName': assignee['name']?.toString() ?? '',
+      'assignedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await _createRelayNotification(
+      toUserId: assignee['id'].toString(),
+      relayId: nextDoc.id,
+      title: '다음 릴레이 차례예요',
+      body: '${nextData['segmentLabel'] ?? '다음 소절'}을 이어서 불러주세요.',
+    );
   }
 
   static Stream<Map<String, int>> watchHarmonyMvpVotes({
@@ -1469,6 +1657,11 @@ class FirebaseService {
           'updatedAt': FieldValue.serverTimestamp(),
           'createdAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+  }
+
+  static bool _harmonyRelayDataCompleted(Map<String, dynamic> data) {
+    final clips = ((data['clips'] as List?) ?? const []);
+    return clips.isNotEmpty || data['status']?.toString() == 'completed';
   }
 
   static Future<Map<String, dynamic>?> _pickHarmonyAssignee({

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -482,6 +483,7 @@ class _RelayMissionCard extends StatelessWidget {
     final completed = relays.where(_relayCompleted).length;
     final ratio = total == 0 ? 0.0 : (completed / total).clamp(0.0, 1.0);
     final isComplete = completed >= total && total > 0;
+    final compact = MediaQuery.sizeOf(context).width < 480;
     final profile = ref.watch(profileProvider).valueOrNull;
     final role = profile?.role ?? '';
     final canVote =
@@ -558,24 +560,35 @@ class _RelayMissionCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          _RelayProgressMap(
-            relays: relays,
-            part: part,
-            partLabel: partLabel,
-            ref: ref,
-          ),
-          const SizedBox(height: 12),
-          ...relays.map(
-            (relay) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _MissionSegmentTile(
-                relay: relay,
-                part: part,
-                partLabel: partLabel,
-                ref: ref,
+          if (compact)
+            _CompactMissionRecordCard(
+              title: title,
+              relays: relays,
+              part: part,
+              partLabel: partLabel,
+              ref: ref,
+            )
+          else ...[
+            _RelayProgressMap(
+              relays: relays,
+              part: part,
+              partLabel: partLabel,
+              ref: ref,
+            ),
+            const SizedBox(height: 12),
+            ...relays.map(
+              (relay) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _MissionSegmentTile(
+                  relay: relay,
+                  missionRelays: relays,
+                  part: part,
+                  partLabel: partLabel,
+                  ref: ref,
+                ),
               ),
             ),
-          ),
+          ],
           if (isComplete) ...[
             const SizedBox(height: 8),
             TweenAnimationBuilder<double>(
@@ -627,6 +640,269 @@ class _RelayMissionCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _CompactMissionRecordCard extends StatelessWidget {
+  const _CompactMissionRecordCard({
+    required this.title,
+    required this.relays,
+    required this.part,
+    required this.partLabel,
+    required this.ref,
+  });
+
+  final String title;
+  final List<Map<String, dynamic>> relays;
+  final String part;
+  final String partLabel;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final targetRelay = _focusRelayForMission(relays);
+    final completed = relays.where(_relayCompleted).length;
+    final total = relays.length;
+    final isComplete = completed >= total && total > 0;
+    final targetIndex = relays.indexOf(targetRelay);
+    final segmentLabel =
+        targetRelay['segmentLabel']?.toString() ??
+        (targetIndex >= 0 ? '${targetIndex + 1}소절' : '소절');
+    final currentLine = _firstText([
+      targetRelay['lyricsLine']?.toString(),
+      _lyricLineFromRelayText(targetRelay, targetIndex),
+      isComplete ? '모든 소절이 이어졌어요' : '가사를 보며 이어 불러주세요',
+    ]);
+    final nextLine = _firstText([
+      targetRelay['nextLyricsLine']?.toString(),
+      _nextLyricLineFromRelayText(targetRelay, targetIndex),
+    ]);
+    final assigneeId = targetRelay['currentAssigneeId']?.toString() ?? '';
+    final assigneeName = targetRelay['currentAssigneeName']?.toString() ?? '';
+    final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
+    final targetDone = _relayCompleted(targetRelay);
+    final canTestRecord = !targetDone && _canTestRecordRelayForTest(ref, part);
+    final canRecordNow =
+        !targetDone && (isMyTurn || canTestRecord || assigneeName.isEmpty);
+    final status = isComplete
+        ? '완주'
+        : targetDone
+        ? '완료'
+        : isMyTurn
+        ? '내 차례'
+        : canTestRecord
+        ? '테스트 녹음'
+        : assigneeName.isEmpty
+        ? '녹음 가능'
+        : '$assigneeName 차례';
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _openRelayStudio(
+          context,
+          targetRelay,
+          part,
+          partLabel,
+          ref,
+          missionRelays: relays,
+        ),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border.withValues(alpha: 0.38)),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withValues(alpha: 0.05),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '지금 할 일',
+                          style: AppText.body(
+                            11,
+                            weight: FontWeight.w900,
+                            color: AppColors.secondary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '$title · $partLabel',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.body(14, weight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _TurnPill(label: status, active: canRecordNow || isComplete),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            segmentLabel,
+                            style: AppText.body(
+                              11,
+                              weight: FontWeight.w900,
+                              color: AppColors.secondaryContainer,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '$completed/$total',
+                          style: AppText.body(
+                            12,
+                            weight: FontWeight.w900,
+                            color: Colors.white.withValues(alpha: 0.84),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      child: Text(
+                        currentLine,
+                        key: ValueKey(currentLine),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(
+                          22,
+                          weight: FontWeight.w900,
+                          color: Colors.white,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                    if (nextLine.isNotEmpty) ...[
+                      const SizedBox(height: 9),
+                      Text(
+                        nextLine,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(
+                          14,
+                          weight: FontWeight.w800,
+                          color: Colors.white.withValues(alpha: 0.46),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              _CompactRelayStepDots(relays: relays, focusIndex: targetIndex),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => _openRelayStudio(
+                    context,
+                    targetRelay,
+                    part,
+                    partLabel,
+                    ref,
+                    missionRelays: relays,
+                  ),
+                  icon: Icon(
+                    isComplete ? Icons.play_arrow_rounded : Icons.mic_rounded,
+                  ),
+                  label: Text(isComplete ? '완주 듣기' : '가사 보며 녹음'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactRelayStepDots extends StatelessWidget {
+  const _CompactRelayStepDots({required this.relays, required this.focusIndex});
+
+  final List<Map<String, dynamic>> relays;
+  final int focusIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: relays.asMap().entries.map((entry) {
+        final index = entry.key;
+        final relay = entry.value;
+        final done = _relayCompleted(relay);
+        final active = index == focusIndex && !done;
+        return Container(
+          width: active ? 32 : 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: done
+                ? AppColors.success
+                : active
+                ? AppColors.secondary
+                : AppColors.surfaceLow,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: active
+                  ? AppColors.secondary
+                  : AppColors.border.withValues(alpha: 0.45),
+            ),
+          ),
+          child: Center(
+            child: done
+                ? const Icon(Icons.check_rounded, size: 14, color: Colors.white)
+                : Text(
+                    '${index + 1}',
+                    style: AppText.body(
+                      10,
+                      weight: FontWeight.w900,
+                      color: active ? AppColors.primary : AppColors.muted,
+                    ),
+                  ),
+          ),
+        );
+      }).toList(),
     );
   }
 }
@@ -712,6 +988,7 @@ class _RelayProgressMap extends StatelessWidget {
                       order: index + 1,
                       part: part,
                       partLabel: partLabel,
+                      missionRelays: relays,
                       ref: ref,
                     ),
                   );
@@ -731,6 +1008,7 @@ class _RelayMapNode extends StatelessWidget {
     required this.order,
     required this.part,
     required this.partLabel,
+    required this.missionRelays,
     required this.ref,
   });
 
@@ -738,6 +1016,7 @@ class _RelayMapNode extends StatelessWidget {
   final int order;
   final String part;
   final String partLabel;
+  final List<Map<String, dynamic>> missionRelays;
   final WidgetRef ref;
 
   @override
@@ -749,6 +1028,8 @@ class _RelayMapNode extends StatelessWidget {
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
     final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
     final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
+    final canTestRecord = !completed && _canTestRecordRelayForTest(ref, part);
+    final active = completed || isMyTurn || canTestRecord;
     final latest = clips.isEmpty ? null : clips.last;
     final singer =
         latest?['userName']?.toString() ??
@@ -758,20 +1039,29 @@ class _RelayMapNode extends StatelessWidget {
         ? (singer.isEmpty ? '완료' : singer)
         : isMyTurn
         ? '내 차례'
+        : canTestRecord
+        ? '테스트'
         : assigneeName.isEmpty
-        ? '대기'
+        ? '녹음 가능'
         : assigneeName;
 
     return Material(
       color: completed
           ? const Color(0xFFEAF5EA)
-          : isMyTurn
+          : active
           ? Colors.white
           : Colors.white.withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: () => _openRelayStudio(context, relay, part, partLabel, ref),
+        onTap: () => _openRelayStudio(
+          context,
+          relay,
+          part,
+          partLabel,
+          ref,
+          missionRelays: missionRelays,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(9),
           child: Column(
@@ -781,7 +1071,7 @@ class _RelayMapNode extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 13,
-                    backgroundColor: completed || isMyTurn
+                    backgroundColor: active
                         ? (completed ? AppColors.success : AppColors.primary)
                         : Colors.white.withValues(alpha: 0.16),
                     child: completed
@@ -795,7 +1085,7 @@ class _RelayMapNode extends StatelessWidget {
                             style: AppText.body(
                               10,
                               weight: FontWeight.w900,
-                              color: isMyTurn
+                              color: active
                                   ? Colors.white
                                   : AppColors.secondaryContainer,
                             ),
@@ -805,11 +1095,11 @@ class _RelayMapNode extends StatelessWidget {
                   Icon(
                     completed
                         ? Icons.check_circle_rounded
-                        : isMyTurn
+                        : active
                         ? Icons.mic_rounded
                         : Icons.more_horiz_rounded,
                     size: 16,
-                    color: completed || isMyTurn
+                    color: active
                         ? (completed ? AppColors.success : AppColors.primary)
                         : Colors.white.withValues(alpha: 0.62),
                   ),
@@ -823,7 +1113,7 @@ class _RelayMapNode extends StatelessWidget {
                 style: AppText.body(
                   12,
                   weight: FontWeight.w900,
-                  color: completed || isMyTurn
+                  color: active
                       ? (completed ? AppColors.success : AppColors.primary)
                       : Colors.white,
                 ),
@@ -835,7 +1125,7 @@ class _RelayMapNode extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: AppText.body(
                   10,
-                  color: completed || isMyTurn
+                  color: active
                       ? AppColors.onSurfaceVariant
                       : Colors.white.withValues(alpha: 0.66),
                 ),
@@ -851,12 +1141,14 @@ class _RelayMapNode extends StatelessWidget {
 class _MissionSegmentTile extends StatelessWidget {
   const _MissionSegmentTile({
     required this.relay,
+    required this.missionRelays,
     required this.part,
     required this.partLabel,
     required this.ref,
   });
 
   final Map<String, dynamic> relay;
+  final List<Map<String, dynamic>> missionRelays;
   final String part;
   final String partLabel;
   final WidgetRef ref;
@@ -883,6 +1175,14 @@ class _MissionSegmentTile extends StatelessWidget {
         relay['completedByName']?.toString() ??
         '';
     final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
+    final canTestRecord = !completed && _canTestRecordRelayForTest(ref, part);
+    final recordStatusLabel = isMyTurn
+        ? '내 차례'
+        : canTestRecord
+        ? '테스트 녹음'
+        : assigneeName.isEmpty
+        ? '녹음 가능'
+        : '다음 $assigneeName';
 
     return InkWell(
       borderRadius: BorderRadius.circular(16),
@@ -904,7 +1204,7 @@ class _MissionSegmentTile extends StatelessWidget {
           lyricsTimeline: lyricsTimeline,
           segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
           segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
-          previousClips: clips,
+          previousClips: _previousMissionClipsFor(relay, missionRelays),
           ref: ref,
         ),
       ),
@@ -943,9 +1243,7 @@ class _MissionSegmentTile extends StatelessWidget {
                   Text(
                     completed
                         ? '${singer.isEmpty ? '파트원' : singer} 완료'
-                        : assigneeName.isEmpty
-                        ? '다음 주자 대기'
-                        : '다음 $assigneeName',
+                        : recordStatusLabel,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppText.body(11, color: AppColors.muted),
@@ -953,8 +1251,8 @@ class _MissionSegmentTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (isMyTurn && !completed)
-              _TurnPill(label: '내 차례', active: true)
+            if ((isMyTurn || canTestRecord) && !completed)
+              _TurnPill(label: recordStatusLabel, active: true)
             else
               Icon(
                 completed
@@ -1092,13 +1390,128 @@ bool _relayCompleted(Map<String, dynamic> relay) {
   return clips.isNotEmpty || relay['status']?.toString() == 'completed';
 }
 
+bool _canTestRecordRelayForTest(WidgetRef ref, String part) {
+  final profile = ref.watch(profileProvider).valueOrNull;
+  final role = profile?.role ?? '';
+  final leaderPart = _firstText([profile?.partLeaderFor, profile?.part]);
+  return role == 'admin' ||
+      role == 'church_admin' ||
+      (role == 'part_leader' && leaderPart == part);
+}
+
+class _PreviewAssignee {
+  const _PreviewAssignee(this.id, this.name);
+
+  final String id;
+  final String name;
+}
+
+_PreviewAssignee _previewNextAssignee(
+  String part, {
+  Set<String> excludedUserIds = const {},
+}) {
+  final queues = <String, List<_PreviewAssignee>>{
+    'soprano': const [
+      _PreviewAssignee('preview-soprano-2', '오높음'),
+      _PreviewAssignee('preview-soprano-3', '정소절'),
+      _PreviewAssignee('preview-soprano-1', '윤소프'),
+    ],
+    'alto': const [
+      _PreviewAssignee('preview-alto-2', '정화음'),
+      _PreviewAssignee('preview-alto-3', '한중음'),
+      _PreviewAssignee('preview-alto-1', '최알토'),
+    ],
+    'bass': const [
+      _PreviewAssignee('preview-bass-2', '박저음'),
+      _PreviewAssignee('preview-bass-3', '이든든'),
+      _PreviewAssignee('preview-bass-1', '김베이스'),
+    ],
+    'tenor': const [
+      _PreviewAssignee('preview-tenor-2', '서맑음'),
+      _PreviewAssignee('preview-tenor-3', '남울림'),
+      _PreviewAssignee('preview-tenor-1', '강테너'),
+    ],
+  };
+  final queue = queues[part] ?? queues['soprano']!;
+  return queue.firstWhere(
+    (assignee) => !excludedUserIds.contains(assignee.id),
+    orElse: () => queue.first,
+  );
+}
+
+Map<String, dynamic> _focusRelayForMission(List<Map<String, dynamic>> relays) {
+  if (relays.isEmpty) return const {};
+  for (final relay in relays) {
+    final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
+    if (!_relayCompleted(relay) &&
+        assigneeId.isNotEmpty &&
+        assigneeId == FirebaseService.uid) {
+      return relay;
+    }
+  }
+  for (final relay in relays) {
+    if (!_relayCompleted(relay)) return relay;
+  }
+  return relays.last;
+}
+
+String _lyricLineFromRelayText(Map<String, dynamic> relay, int index) {
+  final timeline = _lyricsTimelineFromValue(relay['lyricsTimeline']);
+  if (timeline.isNotEmpty) {
+    final start = (relay['segmentStartSec'] as num?)?.toDouble() ?? 0;
+    final byStart = timeline.cast<Map<String, dynamic>?>().lastWhere(
+      (entry) => ((entry?['timeSec'] as num?)?.toDouble() ?? 0) <= start + 0.4,
+      orElse: () => null,
+    );
+    final textByStart = byStart?['text']?.toString().trim() ?? '';
+    if (textByStart.isNotEmpty) return textByStart;
+    if (index >= 0 && index < timeline.length) {
+      return timeline[index]['text']?.toString().trim() ?? '';
+    }
+  }
+  final lines = _plainLyricLines(relay['lyricsText']?.toString() ?? '');
+  if (index >= 0 && index < lines.length) return lines[index];
+  return lines.isNotEmpty ? lines.first : '';
+}
+
+String _nextLyricLineFromRelayText(Map<String, dynamic> relay, int index) {
+  final timeline = _lyricsTimelineFromValue(relay['lyricsTimeline']);
+  if (timeline.isNotEmpty) {
+    final end = (relay['segmentEndSec'] as num?)?.toDouble() ?? 0;
+    if (end > 0) {
+      for (final entry in timeline) {
+        final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
+        final text = entry['text']?.toString().trim() ?? '';
+        if (time > end + 0.2 && text.isNotEmpty) return text;
+      }
+    }
+    final nextIndex = index + 1;
+    if (nextIndex >= 0 && nextIndex < timeline.length) {
+      return timeline[nextIndex]['text']?.toString().trim() ?? '';
+    }
+  }
+  final lines = _plainLyricLines(relay['lyricsText']?.toString() ?? '');
+  final nextIndex = index + 1;
+  if (nextIndex >= 0 && nextIndex < lines.length) return lines[nextIndex];
+  return '';
+}
+
+List<String> _plainLyricLines(String text) {
+  return text
+      .split(RegExp(r'\r?\n'))
+      .map((line) => line.replaceAll(RegExp(r'\[[^\]]+\]'), '').trim())
+      .where((line) => line.isNotEmpty)
+      .toList(growable: false);
+}
+
 void _openRelayStudio(
   BuildContext context,
   Map<String, dynamic> relay,
   String part,
   String partLabel,
-  WidgetRef ref,
-) {
+  WidgetRef ref, {
+  List<Map<String, dynamic>>? missionRelays,
+}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -1117,12 +1530,38 @@ void _openRelayStudio(
       lyricsTimeline: _lyricsTimelineFromValue(relay['lyricsTimeline']),
       segmentStartSec: (relay['segmentStartSec'] as num?)?.toDouble() ?? 0,
       segmentEndSec: (relay['segmentEndSec'] as num?)?.toDouble() ?? 0,
-      previousClips: ((relay['clips'] as List?) ?? const [])
-          .whereType<Map<String, dynamic>>()
-          .toList(),
+      previousClips: missionRelays == null
+          ? ((relay['clips'] as List?) ?? const [])
+                .whereType<Map<String, dynamic>>()
+                .toList()
+          : _previousMissionClipsFor(relay, missionRelays),
       ref: ref,
     ),
   );
+}
+
+List<Map<String, dynamic>> _previousMissionClipsFor(
+  Map<String, dynamic> relay,
+  List<Map<String, dynamic>> missionRelays,
+) {
+  final sorted = [...missionRelays]
+    ..sort((a, b) {
+      final aOrder = (a['segmentOrder'] as num?)?.toInt() ?? 0;
+      final bOrder = (b['segmentOrder'] as num?)?.toInt() ?? 0;
+      return aOrder.compareTo(bOrder);
+    });
+  final currentId = relay['id']?.toString() ?? '';
+  final currentIndex = sorted.indexWhere(
+    (item) => item['id']?.toString() == currentId,
+  );
+  if (currentIndex <= 0) return const [];
+  for (var index = currentIndex - 1; index >= 0; index -= 1) {
+    final clips = ((sorted[index]['clips'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    if (clips.isNotEmpty) return [clips.last];
+  }
+  return const [];
 }
 
 String _firstText(List<String?> values) {
@@ -1158,10 +1597,14 @@ class _RelayCard extends StatelessWidget {
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
     final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
     final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
+    final canTestRecord = _canTestRecordRelayForTest(ref, part);
+    final canRecordNow = isMyTurn || canTestRecord || assigneeName.isEmpty;
     final status = isMyTurn
         ? '내 차례'
+        : canTestRecord
+        ? '테스트 녹음'
         : assigneeName.isEmpty
-        ? '대기'
+        ? '녹음 가능'
         : '$assigneeName 차례';
     final hasClips = clips.isNotEmpty;
 
@@ -1212,14 +1655,16 @@ class _RelayCard extends StatelessWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: isMyTurn
+                      color: canRecordNow
                           ? AppColors.primary
                           : AppColors.primarySoft,
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Icon(
-                      isMyTurn ? Icons.mic_rounded : Icons.play_arrow_rounded,
-                      color: isMyTurn ? Colors.white : AppColors.primary,
+                      canRecordNow
+                          ? Icons.mic_rounded
+                          : Icons.play_arrow_rounded,
+                      color: canRecordNow ? Colors.white : AppColors.primary,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1259,6 +1704,7 @@ class _RelayCard extends StatelessWidget {
               _SingleHarmonyMap(
                 clips: clips,
                 isMyTurn: isMyTurn,
+                canTestRecord: canTestRecord,
                 assigneeName: assigneeName,
               ),
               const SizedBox(height: 12),
@@ -1318,11 +1764,13 @@ class _SingleHarmonyMap extends StatelessWidget {
   const _SingleHarmonyMap({
     required this.clips,
     required this.isMyTurn,
+    required this.canTestRecord,
     required this.assigneeName,
   });
 
   final List<Map<String, dynamic>> clips;
   final bool isMyTurn;
+  final bool canTestRecord;
   final String assigneeName;
 
   @override
@@ -1333,10 +1781,12 @@ class _SingleHarmonyMap extends StatelessWidget {
     final hiddenCount = clips.length - visibleClips.length;
     final currentCaption = isMyTurn
         ? '내 차례'
+        : canTestRecord
+        ? '테스트 녹음'
         : assigneeName.isEmpty
-        ? '대기'
+        ? '녹음 가능'
         : assigneeName;
-    final currentStatus = isMyTurn
+    final currentStatus = isMyTurn || canTestRecord
         ? _HarmonyStepStatus.mine
         : _HarmonyStepStatus.waiting;
 
@@ -1359,7 +1809,7 @@ class _SingleHarmonyMap extends StatelessWidget {
     }
     steps.add(
       _HarmonyStepNode(
-        label: isMyTurn ? 'REC' : '${clips.length + 1}',
+        label: isMyTurn || canTestRecord ? 'REC' : '${clips.length + 1}',
         caption: currentCaption,
         status: currentStatus,
       ),
@@ -2422,16 +2872,33 @@ class _RelayClipSheet extends StatefulWidget {
   State<_RelayClipSheet> createState() => _RelayClipSheetState();
 }
 
+class _RelayRecordingAttempt {
+  const _RelayRecordingAttempt({
+    required this.number,
+    required this.bytes,
+    required this.fileName,
+    required this.contentType,
+    required this.durationSeconds,
+  });
+
+  final int number;
+  final Uint8List bytes;
+  final String fileName;
+  final String contentType;
+  final int durationSeconds;
+}
+
 class _RelayClipSheetState extends State<_RelayClipSheet> {
   final _noteController = TextEditingController();
   final _recorder = AudioRecorder();
   final _guidePlayer = AudioPlayer();
+  final List<_RelayRecordingAttempt> _attempts = [];
   final List<int> _recordedBytes = [];
   StreamSubscription<Uint8List>? _recordingSub;
+  StreamSubscription<void>? _playerCompleteSub;
   Timer? _recordingTimer;
   Timer? _playbackTimer;
   Timer? _segmentStopTimer;
-  Uint8List? _audioBytes;
   String _audioFileName = '';
   String _contentType = 'audio/webm';
   bool _streamRecording = false;
@@ -2446,6 +2913,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   int _recordAttemptCount = 0;
   int _recordSeconds = 0;
   int _playbackSeconds = 0;
+  int? _selectedAttemptNumber;
+  int? _playingAttemptNumber;
   double _progress = 0;
 
   static const _sampleRate = 44100;
@@ -2463,9 +2932,22 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   bool get _hasAttemptsLeft => _recordAttemptCount < _maxRecordAttempts;
 
+  String? get _recordingBackingUrl {
+    final url = widget.mrAudioUrl.trim();
+    return url.isEmpty ? null : url;
+  }
+
   int get _remainingAttempts {
     final remaining = _maxRecordAttempts - _recordAttemptCount;
     return remaining < 0 ? 0 : remaining;
+  }
+
+  _RelayRecordingAttempt? get _selectedAttempt {
+    if (_attempts.isEmpty) return null;
+    for (final attempt in _attempts) {
+      if (attempt.number == _selectedAttemptNumber) return attempt;
+    }
+    return _attempts.last;
   }
 
   Duration get _segmentStart {
@@ -2481,11 +2963,21 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _playerCompleteSub = _guidePlayer.onPlayerComplete.listen((_) {
+      if (!mounted || _playingAttemptNumber == null) return;
+      setState(() => _playingAttemptNumber = null);
+    });
+  }
+
+  @override
   void dispose() {
     _recordingTimer?.cancel();
     _playbackTimer?.cancel();
     _segmentStopTimer?.cancel();
     _recordingSub?.cancel();
+    _playerCompleteSub?.cancel();
     unawaited(_recorder.dispose());
     unawaited(_guidePlayer.dispose());
     _noteController.dispose();
@@ -2497,289 +2989,364 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     final bottom = MediaQuery.of(context).viewInsets.bottom;
     final lyricProgress = _lyricProgress;
     final previousClipCount = _playablePreviousClips.length;
+    final hasArGuide = widget.guideAudioUrl.trim().isNotEmpty;
+    final hasMrBacking = _recordingBackingUrl != null;
+    final selectedAttempt = _selectedAttempt;
     final isBusy =
         _isSubmitting ||
         _isRecording ||
         _isGuidePlaying ||
         _isListeningPrevious ||
-        _countdown != null;
+        _countdown != null ||
+        _playingAttemptNumber != null;
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+        ),
         decoration: const BoxDecoration(
           color: AppColors.bg,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: SafeArea(
           top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '릴레이 스튜디오',
-                      style: AppText.body(20, weight: FontWeight.w900),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: _isSubmitting
-                        ? null
-                        : () => Navigator.pop(context),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${widget.relayTitle} · ${widget.partLabel}',
-                style: AppText.body(13, color: AppColors.muted),
-              ),
-              const SizedBox(height: 12),
-              _KaraokeLyricsPanel(
-                currentLine: _currentLyricLine,
-                nextLine: _nextLyricLine,
-                segmentLabel: widget.segmentLabel,
-                progress: lyricProgress,
-                isActive:
-                    _isRecording ||
-                    _isGuidePlaying ||
-                    _isListeningPrevious ||
-                    _countdown != null,
-                statusText: _countdown != null
-                    ? '곧 시작'
-                    : _isListeningPrevious
-                    ? '앞소절 재생'
-                    : _isRecording
-                    ? '녹음 중'
-                    : _isGuidePlaying
-                    ? '가이드 재생'
-                    : '가사 대기',
-              ),
-              if (widget.guideAudioUrl.isNotEmpty ||
-                  widget.mrAudioUrl.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: AppColors.border.withValues(alpha: 0.35),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              widget.segmentLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.body(
-                                12,
-                                color: AppColors.secondary,
-                                weight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _AttemptPill(
-                            used: _recordAttemptCount,
-                            max: _maxRecordAttempts,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        previousClipCount > 0
-                            ? '앞소절 $previousClipCount개 후 바로 녹음'
-                            : widget.guideAudioUrl.isNotEmpty
-                            ? '가이드 후 바로 녹음'
-                            : '녹음 기회는 3번',
-                        style: AppText.body(
-                          12,
-                          color: AppColors.muted,
-                          height: 1.35,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: isBusy || widget.guideAudioUrl.isEmpty
-                                  ? null
-                                  : _playGuideOnce,
-                              icon: const Icon(
-                                Icons.play_arrow_rounded,
-                                size: 18,
-                              ),
-                              label: const Text('보컬 가이드'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: FilledButton.tonalIcon(
-                              onPressed: isBusy || !_hasAttemptsLeft
-                                  ? null
-                                  : _listenThenRecord,
-                              icon: const Icon(
-                                Icons.graphic_eq_rounded,
-                                size: 18,
-                              ),
-                              label: Text(
-                                previousClipCount > 0 ? '듣고 녹음' : '가이드 후 녹음',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: _isRecording
-                      ? AppColors.secondarySoft
-                      : AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color:
-                        (_isRecording ? AppColors.secondary : AppColors.border)
-                            .withValues(alpha: 0.5),
-                  ),
-                ),
-                child: Column(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Icon(
-                      _countdown != null
-                          ? Icons.timer_rounded
-                          : _isRecording
-                          ? Icons.stop_circle_rounded
-                          : Icons.mic_rounded,
-                      color: _countdown != null
-                          ? AppColors.secondary
-                          : _isRecording
-                          ? AppColors.secondary
-                          : AppColors.primary,
-                      size: 38,
-                    ),
-                    const SizedBox(height: 8),
-                    if (_countdown != null) ...[
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        transitionBuilder: (child, animation) =>
-                            ScaleTransition(
-                              scale: animation,
-                              child: FadeTransition(
-                                opacity: animation,
-                                child: child,
-                              ),
-                            ),
-                        child: Text(
-                          '$_countdown',
-                          key: ValueKey(_countdown),
-                          style: AppText.headline(
-                            46,
-                            color: AppColors.secondary,
-                          ),
-                        ),
+                    Expanded(
+                      child: Text(
+                        '릴레이 스튜디오',
+                        style: AppText.body(20, weight: FontWeight.w900),
                       ),
-                      const SizedBox(height: 4),
-                    ],
-                    Text(
-                      _countdown != null
-                          ? '숨을 고르고 바로 시작합니다'
-                          : _isListeningPrevious
-                          ? '앞소절 $_listeningClipIndex/$previousClipCount 듣는 중...'
-                          : _isGuidePlaying
-                          ? (_isGuidedFlow ? '보컬 가이드를 듣는 중...' : '가이드 재생 중...')
-                          : _isRecording
-                          ? (_isMrRecording
-                                ? 'MR에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
-                                : '녹음 중 ${_formatDuration(_recordSeconds)}')
-                          : !_hasAttemptsLeft && _audioBytes == null
-                          ? '3번의 기회를 모두 사용했어요'
-                          : _audioBytes == null
-                          ? previousClipCount > 0
-                                ? '앞소절 듣고 녹음'
-                                : '한 소절을 이어 받을 준비가 됐어요'
-                          : '녹음 준비 완료',
-                      style: AppText.body(16, weight: FontWeight.w900),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _remainingAttempts == 0
-                          ? '남은 기회 없음'
-                          : '남은 기회 $_remainingAttempts번',
-                      style: AppText.body(12, color: AppColors.muted),
-                    ),
-                    const SizedBox(height: 10),
-                    FilledButton.tonalIcon(
-                      onPressed:
-                          _isSubmitting ||
-                              _countdown != null ||
-                              _isGuidePlaying ||
-                              _isListeningPrevious ||
-                              (!_isRecording && !_hasAttemptsLeft)
+                    IconButton(
+                      onPressed: _isSubmitting
                           ? null
-                          : _isRecording
-                          ? _stopRecording
-                          : previousClipCount > 0
-                          ? _listenThenRecord
-                          : _countdownThenStartRecording,
-                      icon: Icon(
-                        _isRecording ? Icons.check_rounded : Icons.mic_rounded,
-                      ),
-                      label: Text(
-                        _isRecording
-                            ? '녹음 완료'
-                            : previousClipCount > 0
-                            ? '듣고 녹음'
-                            : _audioBytes == null
-                            ? '녹음 시작'
-                            : '다시 녹음',
-                      ),
+                          : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _noteController,
-                minLines: 2,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: '짧은 메모 (선택)',
-                  hintText: '내가 신경쓴 포인트를 남겨주세요',
+                const SizedBox(height: 4),
+                Text(
+                  '${widget.relayTitle} · ${widget.partLabel}',
+                  style: AppText.body(13, color: AppColors.muted),
                 ),
-              ),
-              if (_isSubmitting) ...[
+                const SizedBox(height: 12),
+                _KaraokeLyricsPanel(
+                  currentLine: _currentLyricLine,
+                  nextLine: _nextLyricLine,
+                  segmentLabel: widget.segmentLabel,
+                  progress: lyricProgress,
+                  isActive:
+                      _isRecording ||
+                      _isGuidePlaying ||
+                      _isListeningPrevious ||
+                      _countdown != null,
+                  statusText: _countdown != null
+                      ? '곧 시작'
+                      : _isListeningPrevious
+                      ? '앞소절 재생'
+                      : _isRecording
+                      ? '녹음 중'
+                      : _isGuidePlaying
+                      ? 'AR 재생'
+                      : '가사 대기',
+                ),
+                if (widget.guideAudioUrl.isNotEmpty ||
+                    widget.mrAudioUrl.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: AppColors.border.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.segmentLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.body(
+                                  12,
+                                  color: AppColors.secondary,
+                                  weight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _AttemptPill(
+                              used: _recordAttemptCount,
+                              max: _maxRecordAttempts,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          previousClipCount > 0
+                              ? hasArGuide
+                                    ? 'AR과 앞소절을 듣고 이어 녹음'
+                                    : hasMrBacking
+                                    ? '앞소절 $previousClipCount개를 듣고 MR로 녹음'
+                                    : '앞소절 $previousClipCount개를 듣고 녹음'
+                              : hasArGuide && hasMrBacking
+                              ? 'AR로 먼저 듣고 MR에 맞춰 녹음'
+                              : hasArGuide
+                              ? 'AR로 먼저 듣고 녹음'
+                              : hasMrBacking
+                              ? 'MR에 맞춰 녹음'
+                              : 'AR/MR 음원이 없습니다',
+                          style: AppText.body(
+                            12,
+                            color: AppColors.muted,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondarySoft,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.info_rounded,
+                                color: AppColors.secondary,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '녹음 기회는 총 3번이에요. 각 테이크를 들어보고 마음에 드는 것만 골라 올릴 수 있어요.',
+                                  style: AppText.body(
+                                    12,
+                                    weight: FontWeight.w700,
+                                    color: AppColors.secondary,
+                                    height: 1.35,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed:
+                                    isBusy || widget.guideAudioUrl.isEmpty
+                                    ? null
+                                    : _playGuideOnce,
+                                icon: const Icon(
+                                  Icons.play_arrow_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text('AR 듣기'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: FilledButton.tonalIcon(
+                                onPressed: isBusy || !_hasAttemptsLeft
+                                    ? null
+                                    : _listenThenRecord,
+                                icon: const Icon(
+                                  Icons.graphic_eq_rounded,
+                                  size: 18,
+                                ),
+                                label: Text(
+                                  previousClipCount > 0
+                                      ? (hasMrBacking ? '듣고 MR 녹음' : '듣고 녹음')
+                                      : hasArGuide
+                                      ? (hasMrBacking
+                                            ? 'AR 듣고 MR 녹음'
+                                            : 'AR 듣고 녹음')
+                                      : (hasMrBacking ? 'MR 녹음' : '녹음'),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
-                LinearProgressIndicator(
-                  value: _progress == 0 ? null : _progress,
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: _isRecording
+                        ? AppColors.secondarySoft
+                        : AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color:
+                          (_isRecording
+                                  ? AppColors.secondary
+                                  : AppColors.border)
+                              .withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(
+                        _countdown != null
+                            ? Icons.timer_rounded
+                            : _isRecording
+                            ? Icons.stop_circle_rounded
+                            : Icons.mic_rounded,
+                        color: _countdown != null
+                            ? AppColors.secondary
+                            : _isRecording
+                            ? AppColors.secondary
+                            : AppColors.primary,
+                        size: 38,
+                      ),
+                      const SizedBox(height: 8),
+                      if (_countdown != null) ...[
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          transitionBuilder: (child, animation) =>
+                              ScaleTransition(
+                                scale: animation,
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                ),
+                              ),
+                          child: Text(
+                            '$_countdown',
+                            key: ValueKey(_countdown),
+                            style: AppText.headline(
+                              46,
+                              color: AppColors.secondary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                      ],
+                      Text(
+                        _countdown != null
+                            ? '숨을 고르고 바로 시작합니다'
+                            : _isListeningPrevious
+                            ? '앞소절 $_listeningClipIndex/$previousClipCount 듣는 중...'
+                            : _isGuidePlaying
+                            ? (_isGuidedFlow ? 'AR 가이드를 듣는 중...' : 'AR 재생 중...')
+                            : _isRecording
+                            ? (_isMrRecording
+                                  ? 'MR에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
+                                  : '녹음 중 ${_formatDuration(_recordSeconds)}')
+                            : !_hasAttemptsLeft && selectedAttempt == null
+                            ? '3번의 기회를 모두 사용했어요'
+                            : selectedAttempt == null
+                            ? previousClipCount > 0
+                                  ? '앞소절 듣고 녹음'
+                                  : hasMrBacking
+                                  ? 'MR 반주에 맞춰 이어 부를 준비가 됐어요'
+                                  : '한 소절을 이어 받을 준비가 됐어요'
+                            : '${selectedAttempt.number}번 테이크가 선택됐어요',
+                        style: AppText.body(16, weight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _remainingAttempts == 0
+                            ? '3번 모두 녹음했어요. 아래에서 하나를 골라 올려주세요.'
+                            : '총 3번 중 $_recordAttemptCount번 사용, $_remainingAttempts번 남음',
+                        style: AppText.body(12, color: AppColors.muted),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton.tonalIcon(
+                        onPressed:
+                            _isSubmitting ||
+                                _countdown != null ||
+                                _isGuidePlaying ||
+                                _isListeningPrevious ||
+                                (!_isRecording && !_hasAttemptsLeft)
+                            ? null
+                            : _isRecording
+                            ? _stopRecording
+                            : previousClipCount > 0
+                            ? _listenThenRecord
+                            : () => _countdownThenStartRecording(
+                                backingUrl: _recordingBackingUrl,
+                              ),
+                        icon: Icon(
+                          _isRecording
+                              ? Icons.check_rounded
+                              : Icons.mic_rounded,
+                        ),
+                        label: Text(
+                          _isRecording
+                              ? '녹음 완료'
+                              : previousClipCount > 0
+                              ? (hasMrBacking ? '듣고 MR 녹음' : '듣고 녹음')
+                              : selectedAttempt == null
+                              ? (hasMrBacking ? 'MR로 녹음 시작' : '녹음 시작')
+                              : (hasMrBacking ? '다른 테이크 녹음' : '다시 녹음'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (_attempts.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _RelayRecordingAttemptsPanel(
+                    attempts: _attempts,
+                    selectedNumber: selectedAttempt?.number,
+                    playingNumber: _playingAttemptNumber,
+                    isBusy: isBusy,
+                    onSelect: (number) {
+                      setState(() => _selectedAttemptNumber = number);
+                    },
+                    onPlay: _toggleAttemptPlayback,
+                  ),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _noteController,
+                  minLines: 2,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: '짧은 메모 (선택)',
+                    hintText: '내가 신경쓴 포인트를 남겨주세요',
+                  ),
+                ),
+                if (_isSubmitting) ...[
+                  const SizedBox(height: 14),
+                  LinearProgressIndicator(
+                    value: _progress == 0 ? null : _progress,
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _isSubmitting ? null : _submit,
+                    child: Text(_isSubmitting ? '릴레이에 붙이는 중...' : '릴레이에 올리기'),
+                  ),
                 ),
               ],
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: _isSubmitting ? null : _submit,
-                  child: Text(_isSubmitting ? '릴레이에 붙이는 중...' : '릴레이에 올리기'),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -2836,19 +3403,31 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       return;
     }
     try {
-      setState(() {
-        _isGuidePlaying = true;
-        _isGuidedFlow = true;
-      });
+      setState(() => _isGuidedFlow = true);
       final previousClips = _playablePreviousClips;
+      var playbackHadIssue = false;
       if (previousClips.isNotEmpty) {
         setState(() {
           _isListeningPrevious = true;
-          _isGuidePlaying = false;
         });
-        await _playPreviousClips(previousClips);
-      } else if (widget.guideAudioUrl.isNotEmpty) {
-        await _playGuideAndWait(widget.guideAudioUrl);
+        try {
+          await _playPreviousClips(previousClips);
+        } catch (_) {
+          playbackHadIssue = true;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _isListeningPrevious = false;
+        _listeningClipIndex = 0;
+        _isGuidePlaying = widget.guideAudioUrl.isNotEmpty;
+      });
+      if (widget.guideAudioUrl.isNotEmpty) {
+        try {
+          await _playGuideAndWait(widget.guideAudioUrl);
+        } catch (_) {
+          playbackHadIssue = true;
+        }
       }
       if (!mounted) return;
       setState(() {
@@ -2856,9 +3435,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isListeningPrevious = false;
         _listeningClipIndex = 0;
       });
-      await _countdownThenStartRecording(
-        backingUrl: widget.mrAudioUrl.isEmpty ? null : widget.mrAudioUrl,
-      );
+      if (playbackHadIssue) {
+        _showMessage('일부 음원을 끝까지 재생하지 못했지만 녹음으로 넘어갈게요.');
+      }
+      await _countdownThenStartRecording(backingUrl: _recordingBackingUrl);
     } catch (_) {
       _showMessage('듣고 녹음을 시작하지 못했습니다.');
     } finally {
@@ -2939,6 +3519,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       final hasBacking = backingUrl != null && backingUrl.isNotEmpty;
       final hasPermission = await _recorder.hasPermission();
       if (!hasPermission) {
+        if (widget.ref.read(localPreviewModeProvider)) {
+          _addPreviewGeneratedAttempt();
+          _showMessage('이 미리보기 브라우저는 마이크가 막혀 있어 테스트용 테이크를 만들었어요.');
+          return;
+        }
         _showMessage('마이크 권한이 필요합니다.');
         return;
       }
@@ -2947,23 +3532,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _streamRecording = false;
       _contentType = 'audio/webm';
       _audioFileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.webm';
-      try {
-        if (!await _recorder.isEncoderSupported(AudioEncoder.opus)) {
-          throw StateError('Opus recorder is not supported.');
-        }
-        await _recorder.start(
-          RecordConfig(
-            encoder: AudioEncoder.opus,
-            bitRate: 128000,
-            sampleRate: _sampleRate,
-            numChannels: _channels,
-            echoCancel: !hasBacking,
-            noiseSuppress: true,
-            autoGain: true,
-          ),
-          path: '',
-        );
-      } catch (_) {
+      _playingAttemptNumber = null;
+      await _guidePlayer.stop();
+      if (kIsWeb) {
         final stream = await _recorder.startStream(
           RecordConfig(
             encoder: AudioEncoder.pcm16bits,
@@ -2978,6 +3549,39 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _contentType = 'audio/wav';
         _audioFileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.wav';
         _recordingSub = stream.listen(_recordedBytes.addAll);
+      } else {
+        try {
+          if (!await _recorder.isEncoderSupported(AudioEncoder.opus)) {
+            throw StateError('Opus recorder is not supported.');
+          }
+          await _recorder.start(
+            RecordConfig(
+              encoder: AudioEncoder.opus,
+              bitRate: 128000,
+              sampleRate: _sampleRate,
+              numChannels: _channels,
+              echoCancel: !hasBacking,
+              noiseSuppress: true,
+              autoGain: true,
+            ),
+            path: '',
+          );
+        } catch (_) {
+          final stream = await _recorder.startStream(
+            RecordConfig(
+              encoder: AudioEncoder.pcm16bits,
+              sampleRate: _sampleRate,
+              numChannels: _channels,
+              echoCancel: !hasBacking,
+              noiseSuppress: true,
+              autoGain: true,
+            ),
+          );
+          _streamRecording = true;
+          _contentType = 'audio/wav';
+          _audioFileName = 'relay_${DateTime.now().millisecondsSinceEpoch}.wav';
+          _recordingSub = stream.listen(_recordedBytes.addAll);
+        }
       }
       final nextAttemptCount = _recordAttemptCount + 1;
       if (!mounted) {
@@ -2994,10 +3598,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isRecording = true;
         _isMrRecording = hasBacking;
         _recordSeconds = 0;
-        _audioBytes = null;
       });
       if (hasBacking) {
-        await _guidePlayer.stop();
         final segmentDuration = _segmentDuration;
         _segmentStopTimer?.cancel();
         unawaited(
@@ -3010,8 +3612,43 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         }
       }
     } catch (_) {
+      if (widget.ref.read(localPreviewModeProvider)) {
+        _addPreviewGeneratedAttempt();
+        _showMessage('이 미리보기 브라우저는 마이크가 막혀 있어 테스트용 테이크를 만들었어요.');
+        return;
+      }
       _showMessage('녹음을 시작할 수 없습니다. 마이크 권한을 확인해주세요.');
     }
+  }
+
+  void _addPreviewGeneratedAttempt({int? number}) {
+    if (number == null && !_hasAttemptsLeft) {
+      _showMessage('녹음 기회는 3번까지예요.');
+      return;
+    }
+    final attemptNumber = number ?? _recordAttemptCount + 1;
+    const durationSeconds = 3;
+    final pcm = Uint8List(_sampleRate * _channels * 2 * durationSeconds);
+    final attempt = _RelayRecordingAttempt(
+      number: attemptNumber,
+      bytes: _wavFromPcmBytes(
+        pcm,
+        sampleRate: _sampleRate,
+        channels: _channels,
+      ),
+      fileName: 'relay_${DateTime.now().millisecondsSinceEpoch}.wav',
+      contentType: 'audio/wav',
+      durationSeconds: durationSeconds,
+    );
+    setState(() {
+      _isRecording = false;
+      _isMrRecording = false;
+      _recordAttemptCount = attemptNumber;
+      _recordSeconds = durationSeconds;
+      _attempts.removeWhere((item) => item.number == attempt.number);
+      _attempts.add(attempt);
+      _selectedAttemptNumber = attempt.number;
+    });
   }
 
   Future<void> _stopRecording() async {
@@ -3028,6 +3665,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _recordingSub = null;
       _recordingTimer?.cancel();
       _recordingTimer = null;
+      final attemptNumber = _recordAttemptCount;
+      final durationSeconds = _recordSeconds;
+      final fileName = _audioFileName;
+      final contentType = _contentType;
       Uint8List recorded;
       if (recordedPath != null && recordedPath.isNotEmpty) {
         recorded = await _bytesFromRecordedPath(recordedPath);
@@ -3042,22 +3683,42 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
               );
       }
       if (recorded.isEmpty) {
+        if (widget.ref.read(localPreviewModeProvider)) {
+          _addPreviewGeneratedAttempt(number: attemptNumber);
+          _showMessage('이 미리보기 브라우저는 실제 음성이 들어오지 않아 테스트용 테이크를 만들었어요.');
+          return;
+        }
         setState(() {
           _isRecording = false;
           _isMrRecording = false;
+          _recordAttemptCount = (_recordAttemptCount - 1)
+              .clamp(0, _maxRecordAttempts)
+              .toInt();
         });
         _showMessage('녹음된 소리가 없습니다. 다시 시도해주세요.');
         return;
       }
+      final attempt = _RelayRecordingAttempt(
+        number: attemptNumber,
+        bytes: recorded,
+        fileName: fileName,
+        contentType: contentType,
+        durationSeconds: durationSeconds,
+      );
       setState(() {
         _isRecording = false;
         _isMrRecording = false;
-        _audioBytes = recorded;
+        _attempts.removeWhere((item) => item.number == attempt.number);
+        _attempts.add(attempt);
+        _selectedAttemptNumber = attempt.number;
       });
     } catch (_) {
       setState(() {
         _isRecording = false;
         _isMrRecording = false;
+        _recordAttemptCount = (_recordAttemptCount - 1)
+            .clamp(0, _maxRecordAttempts)
+            .toInt();
       });
       _showMessage('녹음을 마무리하지 못했습니다. 다시 시도해주세요.');
     }
@@ -3065,8 +3726,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   Future<void> _submit() async {
     if (_isRecording) await _stopRecording();
-    final bytes = _audioBytes;
-    if (bytes == null) {
+    final attempt = _selectedAttempt;
+    if (attempt == null) {
       _showMessage(_hasAttemptsLeft ? '먼저 소절을 녹음해주세요.' : '3번의 기회를 모두 사용했어요.');
       return;
     }
@@ -3075,13 +3736,26 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _progress = 0;
     });
     try {
-      final fileName = _audioFileName.isEmpty
+      final fileName = attempt.fileName.isEmpty
           ? 'relay_${DateTime.now().millisecondsSinceEpoch}.webm'
-          : _audioFileName;
+          : attempt.fileName;
+      if (widget.ref.read(localPreviewModeProvider)) {
+        _completePreviewRelayAttempt(attempt, fileName);
+        await Future<void>.delayed(const Duration(milliseconds: 450));
+        widget.ref.invalidate(harmonyRelaysProvider);
+        if (mounted) {
+          final messenger = ScaffoldMessenger.of(context);
+          Navigator.pop(context);
+          messenger.showSnackBar(
+            SnackBar(content: Text('${attempt.number}번 테이크를 올리는 흐름까지 확인했어요.')),
+          );
+        }
+        return;
+      }
       final audioUrl = await FirebaseService.uploadHarmonyAudio(
-        bytes,
+        attempt.bytes,
         fileName: fileName,
-        contentType: _contentType,
+        contentType: attempt.contentType,
         onProgress: (value) {
           if (mounted) setState(() => _progress = value);
         },
@@ -3091,7 +3765,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         part: widget.part,
         audioUrl: audioUrl,
         audioFileName: fileName,
-        durationSeconds: _recordSeconds,
+        durationSeconds: attempt.durationSeconds,
         note: _noteController.text,
       );
       widget.ref.invalidate(harmonyRelaysProvider);
@@ -3105,6 +3779,154 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
           _progress = 0;
         });
       }
+    }
+  }
+
+  void _completePreviewRelayAttempt(
+    _RelayRecordingAttempt attempt,
+    String fileName,
+  ) {
+    final profile = widget.ref.read(profileProvider).valueOrNull;
+    final userId = profile?.id ?? FirebaseService.uid ?? 'preview-user';
+    final userName = _firstText([profile?.name, profile?.displayName, '파트원']);
+    final now = DateTime.now().toIso8601String();
+    final audioUrl =
+        'data:${attempt.contentType};base64,${base64Encode(attempt.bytes)}';
+    final clip = {
+      'id': 'preview-clip-${DateTime.now().microsecondsSinceEpoch}',
+      'userId': userId,
+      'userName': userName,
+      'userPart': widget.part,
+      'audioUrl': audioUrl,
+      'audioFileName': fileName,
+      'durationSeconds': attempt.durationSeconds,
+      'autoScore': 88,
+      'autoFeedback': '미리보기 녹음이 연결됐어요. 다음 소절로 넘길 수 있습니다.',
+      'createdAt': now,
+    };
+
+    widget.ref.read(previewHarmonyRelaysProvider.notifier).update((relays) {
+      final nextRelays = relays.map((relay) {
+        return {
+          ...relay,
+          'lyricsTimeline': ((relay['lyricsTimeline'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList(),
+          'clips': ((relay['clips'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((entry) => Map<String, dynamic>.from(entry))
+              .toList(),
+        };
+      }).toList();
+      final currentIndex = nextRelays.indexWhere(
+        (relay) => relay['id']?.toString() == widget.relayId,
+      );
+      if (currentIndex < 0) return nextRelays;
+
+      final current = nextRelays[currentIndex];
+      final clips = ((current['clips'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      clips.add(clip);
+      current
+        ..['clips'] = clips
+        ..['clipCount'] = clips.length
+        ..['status'] = 'completed'
+        ..['completedBy'] = userId
+        ..['completedByName'] = userName
+        ..['completedAt'] = now
+        ..['lastClipAt'] = now
+        ..['updatedAt'] = now;
+
+      final missionGroupId = current['missionGroupId']?.toString() ?? '';
+      if (missionGroupId.isEmpty) {
+        final previousAssigneeId =
+            current['currentAssigneeId']?.toString() ?? '';
+        final nextAssignee = _previewNextAssignee(
+          widget.part,
+          excludedUserIds: {
+            userId,
+            if (previousAssigneeId.isNotEmpty) previousAssigneeId,
+          },
+        );
+        current
+          ..['currentAssigneeId'] = nextAssignee.id
+          ..['currentAssigneeName'] = nextAssignee.name
+          ..['assignedAt'] = now;
+        return nextRelays;
+      }
+
+      final missionIndexes =
+          nextRelays
+              .asMap()
+              .entries
+              .where(
+                (entry) =>
+                    entry.value['missionGroupId']?.toString() == missionGroupId,
+              )
+              .toList()
+            ..sort((a, b) {
+              final aOrder = (a.value['segmentOrder'] as num?)?.toInt() ?? 0;
+              final bOrder = (b.value['segmentOrder'] as num?)?.toInt() ?? 0;
+              return aOrder.compareTo(bOrder);
+            });
+      final sortedCurrentIndex = missionIndexes.indexWhere(
+        (entry) => entry.key == currentIndex,
+      );
+      if (sortedCurrentIndex < 0) return nextRelays;
+      final recordedUserIds = <String>{userId};
+      final previousAssigneeId = current['currentAssigneeId']?.toString() ?? '';
+      if (previousAssigneeId.isNotEmpty) {
+        recordedUserIds.add(previousAssigneeId);
+      }
+      for (final entry in missionIndexes.take(sortedCurrentIndex + 1)) {
+        final completedBy = entry.value['completedBy']?.toString() ?? '';
+        if (completedBy.isNotEmpty) recordedUserIds.add(completedBy);
+      }
+      for (var i = sortedCurrentIndex + 1; i < missionIndexes.length; i += 1) {
+        final relay = nextRelays[missionIndexes[i].key];
+        if (_relayCompleted(relay)) continue;
+        final existingAssignee = relay['currentAssigneeId']?.toString() ?? '';
+        if (existingAssignee.isEmpty) {
+          final nextAssignee = _previewNextAssignee(
+            widget.part,
+            excludedUserIds: recordedUserIds,
+          );
+          relay
+            ..['currentAssigneeId'] = nextAssignee.id
+            ..['currentAssigneeName'] = nextAssignee.name
+            ..['assignedAt'] = now
+            ..['updatedAt'] = now;
+        }
+        break;
+      }
+      return nextRelays;
+    });
+  }
+
+  Future<void> _toggleAttemptPlayback(_RelayRecordingAttempt attempt) async {
+    if (_isRecording ||
+        _isSubmitting ||
+        _isGuidePlaying ||
+        _isListeningPrevious ||
+        _countdown != null) {
+      return;
+    }
+    try {
+      if (_playingAttemptNumber == attempt.number) {
+        await _guidePlayer.stop();
+        if (mounted) setState(() => _playingAttemptNumber = null);
+        return;
+      }
+      await _guidePlayer.stop();
+      setState(() => _playingAttemptNumber = attempt.number);
+      await _guidePlayer.play(
+        BytesSource(attempt.bytes, mimeType: attempt.contentType),
+      );
+    } catch (_) {
+      if (mounted) setState(() => _playingAttemptNumber = null);
+      _showMessage('녹음 후보를 재생할 수 없습니다.');
     }
   }
 
@@ -3274,27 +4096,59 @@ class _KaraokeLyricsPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Text(
-            currentLine,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: AppText.body(
-              24,
-              weight: FontWeight.w900,
-              color: AppColors.secondaryContainer,
-              height: 1.16,
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 320),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final offset = Tween<Offset>(
+                begin: const Offset(0, 0.18),
+                end: Offset.zero,
+              ).animate(animation);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(position: offset, child: child),
+              );
+            },
+            child: Text(
+              currentLine,
+              key: ValueKey('current-$currentLine'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.body(
+                24,
+                weight: FontWeight.w900,
+                color: AppColors.secondaryContainer,
+                height: 1.16,
+              ),
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            nextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : nextLine,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: AppText.body(
-              14,
-              weight: FontWeight.w700,
-              color: Colors.white.withValues(
-                alpha: nextLine.isEmpty ? 0.46 : 0.7,
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 360),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            transitionBuilder: (child, animation) {
+              final offset = Tween<Offset>(
+                begin: const Offset(0, 0.12),
+                end: Offset.zero,
+              ).animate(animation);
+              return FadeTransition(
+                opacity: animation,
+                child: SlideTransition(position: offset, child: child),
+              );
+            },
+            child: Text(
+              nextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : nextLine,
+              key: ValueKey('next-$nextLine'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.body(
+                14,
+                weight: FontWeight.w700,
+                color: Colors.white.withValues(
+                  alpha: nextLine.isEmpty ? 0.36 : 0.52,
+                ),
               ),
             ),
           ),
@@ -3309,6 +4163,177 @@ class _KaraokeLyricsPanel extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RelayRecordingAttemptsPanel extends StatelessWidget {
+  const _RelayRecordingAttemptsPanel({
+    required this.attempts,
+    required this.selectedNumber,
+    required this.playingNumber,
+    required this.isBusy,
+    required this.onSelect,
+    required this.onPlay,
+  });
+
+  final List<_RelayRecordingAttempt> attempts;
+  final int? selectedNumber;
+  final int? playingNumber;
+  final bool isBusy;
+  final ValueChanged<int> onSelect;
+  final ValueChanged<_RelayRecordingAttempt> onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.fact_check_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '녹음 후보',
+                  style: AppText.body(14, weight: FontWeight.w900),
+                ),
+              ),
+              Text(
+                '${attempts.length}/3',
+                style: AppText.body(
+                  12,
+                  weight: FontWeight.w900,
+                  color: AppColors.secondary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '듣기 버튼으로 확인하고, 올릴 테이크를 선택해주세요.',
+            style: AppText.body(12, color: AppColors.muted),
+          ),
+          const SizedBox(height: 12),
+          ...attempts.map(
+            (attempt) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _RelayRecordingAttemptTile(
+                attempt: attempt,
+                isSelected: attempt.number == selectedNumber,
+                isPlaying: attempt.number == playingNumber,
+                isBusy: isBusy,
+                onSelect: () => onSelect(attempt.number),
+                onPlay: () => onPlay(attempt),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RelayRecordingAttemptTile extends StatelessWidget {
+  const _RelayRecordingAttemptTile({
+    required this.attempt,
+    required this.isSelected,
+    required this.isPlaying,
+    required this.isBusy,
+    required this.onSelect,
+    required this.onPlay,
+  });
+
+  final _RelayRecordingAttempt attempt;
+  final bool isSelected;
+  final bool isPlaying;
+  final bool isBusy;
+  final VoidCallback onSelect;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final canPlay = !isBusy || isPlaying;
+    return Material(
+      color: isSelected ? AppColors.primarySoft : AppColors.bg,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: isBusy ? null : onSelect,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isSelected
+                  ? AppColors.primary
+                  : AppColors.border.withValues(alpha: 0.32),
+            ),
+          ),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  border: Border.all(
+                    color: isSelected ? AppColors.primary : AppColors.border,
+                    width: 2,
+                  ),
+                ),
+                child: isSelected
+                    ? const Icon(
+                        Icons.check_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${attempt.number}번 테이크',
+                      style: AppText.body(13, weight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _formatDuration(attempt.durationSeconds),
+                      style: AppText.body(11, color: AppColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: canPlay ? onPlay : null,
+                icon: Icon(
+                  isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                  size: 18,
+                ),
+                label: Text(isPlaying ? '정지' : '듣기'),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

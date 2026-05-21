@@ -550,12 +550,37 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
     const mrAudioUrl = partFile.mrAudioUrl || sheet.mrAudioUrl || "";
     const mrAudioFileName = partFile.mrAudioFileName || sheet.mrAudioFileName || "";
     const sourceSheetUrl = partFile.sheetUrl || sheet.fileUrl || "";
+    const partLyricsText = String(partFile.lyricsText || lyricsText).trim();
+    const storedPartLyricsTimeline = lyricsTimelineFromValue(partFile.lyricsTimeline);
+    const partLyricsTimeline = storedPartLyricsTimeline.length > 0
+      ? storedPartLyricsTimeline
+      : partLyricsText === lyricsText
+        ? lyricsTimeline
+        : lyricsTimelineFromText(partLyricsText);
+    const partLyricLines = partLyricsText === lyricsText
+      ? lyricLines
+      : lyricLinesFromText(partLyricsText);
+    let handoffSeeded = false;
 
     for (let index = 0; index < segments.length; index += 1) {
       const rawSegment = segments[index] || {};
       const segmentId = rawSegment.id || `seg-${String(index + 1).padStart(2, "0")}`;
       const segmentLabel = rawSegment.label || `${index + 1}소절`;
       const existingDoc = existingBySegment[segmentId];
+      const existingRelay = existingDoc ? existingDoc.data() || {} : {};
+      const existingAssigneeId = String(existingRelay.currentAssigneeId || "").trim();
+      const existingCompleted = String(existingRelay.status || "") === "completed";
+      const existingAssignee =
+        existingDoc && !handoffSeeded && !existingAssigneeId && !existingCompleted
+          ? await pickHarmonyAssignee({
+              db,
+              churchId,
+              part,
+              sourcePollId,
+              excludeUserIds: new Set([request.auth.uid]),
+            })
+          : null;
+      if (existingAssignee) assigneeCount += 1;
       const commonUpdate = {
         guideAudioUrl,
         guideAudioFileName,
@@ -564,18 +589,18 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
         sourceSheetUrl,
         sourcePollId,
         sourceEventId,
-        lyricsText,
-        lyricsTimeline,
+        lyricsText: partLyricsText,
+        lyricsTimeline: partLyricsTimeline,
         lyricsLine: lyricLineForSegment(
-          lyricsTimeline,
-          lyricLines,
+          partLyricsTimeline,
+          partLyricLines,
           index,
           Number(rawSegment.startSec || 0),
           Number(rawSegment.endSec || 0),
         ),
         nextLyricsLine: nextLyricLineForSegment(
-          lyricsTimeline,
-          lyricLines,
+          partLyricsTimeline,
+          partLyricLines,
           index,
           Number(rawSegment.endSec || 0),
         ),
@@ -584,22 +609,46 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
         segmentStartSec: Number(rawSegment.startSec || 0),
         segmentEndSec: Number(rawSegment.endSec || 0),
         segmentDurationSec: Number(rawSegment.durationSec || 0),
+        ...(existingAssignee
+          ? {
+              currentAssigneeId: existingAssignee.id || "",
+              currentAssigneeName: existingAssignee.name || "",
+              assignedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }
+          : {}),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
       if (existingDoc) {
         await existingDoc.ref.update(commonUpdate);
         updatedCount += 1;
+        if (existingAssignee?.id && !notifiedUsers.has(existingAssignee.id)) {
+          notifiedUsers.add(existingAssignee.id);
+          await createHarmonyRelayNotification({
+            db,
+            churchId,
+            toUserId: existingAssignee.id,
+            relayId: existingDoc.id,
+            title: "하모니 릴레이 미션이 열렸어요",
+            body: `${songTitle} ${segmentLabel}을 이어서 불러주세요.`,
+            sentBy: request.auth.uid,
+          });
+        }
+        if (!existingCompleted && (existingAssigneeId || existingAssignee)) {
+          handoffSeeded = true;
+        }
         continue;
       }
 
-      const assignee = await pickHarmonyAssignee({
-        db,
-        churchId,
-        part,
-        sourcePollId,
-        excludeUserIds: new Set([request.auth.uid]),
-      });
+      const assignee = handoffSeeded
+        ? null
+        : await pickHarmonyAssignee({
+            db,
+            churchId,
+            part,
+            sourcePollId,
+            excludeUserIds: new Set([request.auth.uid]),
+          });
       if (assignee) assigneeCount += 1;
 
       const relayRef = await db.collection("harmony_relays").add({
@@ -619,18 +668,18 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
         sourceSheetUrl,
         sourcePollId,
         sourceEventId,
-        lyricsText,
-        lyricsTimeline,
+        lyricsText: partLyricsText,
+        lyricsTimeline: partLyricsTimeline,
         lyricsLine: lyricLineForSegment(
-          lyricsTimeline,
-          lyricLines,
+          partLyricsTimeline,
+          partLyricLines,
           index,
           Number(rawSegment.startSec || 0),
           Number(rawSegment.endSec || 0),
         ),
         nextLyricsLine: nextLyricLineForSegment(
-          lyricsTimeline,
-          lyricLines,
+          partLyricsTimeline,
+          partLyricLines,
           index,
           Number(rawSegment.endSec || 0),
         ),
@@ -666,6 +715,7 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
           sentBy: request.auth.uid,
         });
       }
+      if (assignee) handoffSeeded = true;
     }
   }
 

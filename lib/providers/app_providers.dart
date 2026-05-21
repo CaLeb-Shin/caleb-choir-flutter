@@ -86,6 +86,13 @@ const List<Map<String, dynamic>> _previewMembers = [
     'generation': '7기',
   },
   {
+    'id': 'preview-soprano-3',
+    'name': '정소절',
+    'role': 'member',
+    'part': 'soprano',
+    'generation': '5기',
+  },
+  {
     'id': 'preview-tenor-1',
     'name': '강테너',
     'role': 'part_leader',
@@ -343,7 +350,7 @@ const _previewHarmonyRelays = [
     'id': 'preview-relay-soprano-1',
     'churchId': 'preview-church',
     'part': 'soprano',
-    'title': '후렴 첫 소절 릴레이',
+    'title': '주만 바라볼지라 릴레이',
     'segmentLabel': '후렴 1마디',
     'guide': '첫 음을 너무 밀지 말고, 숨을 같이 들이마신 느낌으로 이어주세요.',
     'lyricsText': '주만 바라볼지라\n염려하지 말고 바라볼지라\n주님만 의지해',
@@ -363,39 +370,107 @@ const _previewHarmonyRelays = [
     'mrAudioUrl':
         'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
     'mrAudioFileName': 'soprano_mr.mp3',
-    'currentAssigneeId': 'preview-soprano-3',
-    'currentAssigneeName': '정소절',
-    'clipCount': 2,
+    'sourceTitle': '주만 바라볼지라',
+    'missionGroupId': 'preview-song-soprano',
+    'missionTotalSegments': 3,
+    'segmentId': 'seg-01',
+    'segmentOrder': 1,
+    'status': 'open',
+    'currentAssigneeId': 'preview-soprano-2',
+    'currentAssigneeName': '오높음',
+    'clipCount': 0,
     'createdAt': '2026-04-28T10:40:00',
-    'lastClipAt': '2026-04-28T10:55:00',
-    'clips': [
-      {
-        'id': 'preview-relay-clip-1',
-        'userName': '윤소프',
-        'userPart': 'soprano',
-        'audioUrl':
-            'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-        'audioFileName': 'relay_1.wav',
-        'durationSeconds': 7,
-        'autoScore': 82,
-        'autoFeedback': '진입이 좋아요. 끝 음을 조금만 더 붙잡으면 안정적입니다.',
-        'createdAt': '2026-04-28T10:45:00',
-      },
-      {
-        'id': 'preview-relay-clip-2',
-        'userName': '오높음',
-        'userPart': 'soprano',
-        'audioUrl':
-            'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-        'audioFileName': 'relay_2.wav',
-        'durationSeconds': 12,
-        'autoScore': 90,
-        'autoFeedback': '호흡 길이와 연결감이 좋습니다. 다음 사람이 받기 편해요.',
-        'createdAt': '2026-04-28T10:55:00',
-      },
+    'clips': [],
+  },
+  {
+    'id': 'preview-relay-soprano-2',
+    'churchId': 'preview-church',
+    'part': 'soprano',
+    'title': '주만 바라볼지라 릴레이',
+    'segmentLabel': '후렴 2마디',
+    'guide': '첫 음을 너무 밀지 말고, 숨을 같이 들이마신 느낌으로 이어주세요.',
+    'lyricsText': '주만 바라볼지라\n염려하지 말고 바라볼지라\n주님만 의지해',
+    'lyricsTimeline': [
+      {'timeSec': 0.0, 'text': '주만 바라볼지라'},
+      {'timeSec': 4.0, 'text': '염려하지 말고 바라볼지라'},
+      {'timeSec': 8.0, 'text': '주님만 의지해'},
     ],
+    'lyricsLine': '염려하지 말고 바라볼지라',
+    'nextLyricsLine': '주님만 의지해',
+    'segmentStartSec': 4.0,
+    'segmentEndSec': 8.0,
+    'segmentDurationSec': 4.0,
+    'guideAudioUrl':
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    'guideAudioFileName': 'soprano_guide.mp3',
+    'mrAudioUrl':
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    'mrAudioFileName': 'soprano_mr.mp3',
+    'sourceTitle': '주만 바라볼지라',
+    'missionGroupId': 'preview-song-soprano',
+    'missionTotalSegments': 3,
+    'segmentId': 'seg-02',
+    'segmentOrder': 2,
+    'status': 'open',
+    'currentAssigneeId': '',
+    'currentAssigneeName': '',
+    'clipCount': 0,
+    'createdAt': '2026-04-28T10:40:00',
+    'clips': [],
+  },
+  {
+    'id': 'preview-relay-soprano-3',
+    'churchId': 'preview-church',
+    'part': 'soprano',
+    'title': '주만 바라볼지라 릴레이',
+    'segmentLabel': '후렴 3마디',
+    'guide': '첫 음을 너무 밀지 말고, 숨을 같이 들이마신 느낌으로 이어주세요.',
+    'lyricsText': '주만 바라볼지라\n염려하지 말고 바라볼지라\n주님만 의지해',
+    'lyricsTimeline': [
+      {'timeSec': 0.0, 'text': '주만 바라볼지라'},
+      {'timeSec': 4.0, 'text': '염려하지 말고 바라볼지라'},
+      {'timeSec': 8.0, 'text': '주님만 의지해'},
+    ],
+    'lyricsLine': '주님만 의지해',
+    'nextLyricsLine': '',
+    'segmentStartSec': 8.0,
+    'segmentEndSec': 12.0,
+    'segmentDurationSec': 4.0,
+    'guideAudioUrl':
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+    'guideAudioFileName': 'soprano_guide.mp3',
+    'mrAudioUrl':
+        'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+    'mrAudioFileName': 'soprano_mr.mp3',
+    'sourceTitle': '주만 바라볼지라',
+    'missionGroupId': 'preview-song-soprano',
+    'missionTotalSegments': 3,
+    'segmentId': 'seg-03',
+    'segmentOrder': 3,
+    'status': 'open',
+    'currentAssigneeId': '',
+    'currentAssigneeName': '',
+    'clipCount': 0,
+    'createdAt': '2026-04-28T10:40:00',
+    'clips': [],
   },
 ];
+
+List<Map<String, dynamic>> _clonePreviewHarmonyRelays() {
+  return _previewHarmonyRelays.map((relay) {
+    return {
+      ...relay,
+      'lyricsTimeline': ((relay['lyricsTimeline'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((entry) => Map<String, dynamic>.from(entry))
+          .toList(),
+      'clips': ((relay['clips'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((clip) => Map<String, dynamic>.from(clip))
+          .toList(),
+    };
+  }).toList();
+}
 
 const _previewComments = [
   {
@@ -570,6 +645,10 @@ final previewSeatAssignmentsProvider =
 
 final previewSeatingPresetsProvider = StateProvider<List<Map<String, dynamic>>>(
   (ref) => const [],
+);
+
+final previewHarmonyRelaysProvider = StateProvider<List<Map<String, dynamic>>>(
+  (ref) => _clonePreviewHarmonyRelays(),
 );
 
 // ─── Logged-out flag (로그아웃 안내 메시지 1회 표시용) ───
@@ -761,8 +840,9 @@ final harmonyRelaysProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final profile = ref.watch(profileProvider).valueOrNull;
   final part = profile?.partLeaderFor ?? profile?.part ?? '';
   if (ref.watch(localPreviewModeProvider)) {
+    final relays = ref.watch(previewHarmonyRelaysProvider);
     return Stream.value(
-      _previewHarmonyRelays.where((relay) => relay['part'] == part).toList(),
+      relays.where((relay) => relay['part'] == part).toList(),
     );
   }
   if (part.isEmpty) return Stream.value(const []);
