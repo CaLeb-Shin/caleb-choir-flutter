@@ -3602,6 +3602,17 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         await _backingPlayer.stop();
         _primedBackingUrl = null;
       }
+      var backingStarted = false;
+      if (hasBacking) {
+        try {
+          await _startRecordingBacking(backingUrl);
+          backingStarted = true;
+        } catch (_) {
+          _primedBackingUrl = null;
+          unawaited(_backingPlayer.stop());
+          _showMessage('MR 반주를 재생하지 못했어요. 녹음은 계속 진행됩니다.');
+        }
+      }
       if (kIsWeb) {
         final stream = await _recorder.startStream(
           RecordConfig(
@@ -3654,6 +3665,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       final nextAttemptCount = _recordAttemptCount + 1;
       if (!mounted) {
         await _recorder.stop();
+        if (backingStarted) await _backingPlayer.stop();
         return;
       }
       _startRecordingTicker();
@@ -3662,17 +3674,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isRecording = true;
         _isMrRecording = hasBacking;
       });
-      if (hasBacking) {
-        try {
-          await _startRecordingBacking(backingUrl);
-        } catch (_) {
-          _primedBackingUrl = null;
-          unawaited(_backingPlayer.stop());
-          _showMessage('MR 반주를 재생하지 못했어요. 녹음은 계속 진행됩니다.');
-        }
-      }
     } catch (_) {
       unawaited(_backingPlayer.stop());
+      _primedBackingUrl = null;
       _stopRecordingTicker();
       if (widget.ref.read(localPreviewModeProvider)) {
         _addPreviewGeneratedAttempt();
@@ -3686,10 +3690,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _startRecordingBacking(String backingUrl) async {
     final segmentDuration = _segmentDuration;
     _segmentStopTimer?.cancel();
+    await _backingPlayer.setReleaseMode(ReleaseMode.stop);
     await _backingPlayer.setVolume(1);
     if (_primedBackingUrl == backingUrl) {
       await _backingPlayer.seek(_segmentStart);
-      await _backingPlayer.resume();
     } else {
       await _backingPlayer.stop();
       await _backingPlayer.play(UrlSource(backingUrl), position: _segmentStart);
@@ -3704,14 +3708,19 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   Future<void> _primeRecordingBacking(String backingUrl) async {
     try {
-      await _backingPlayer.stop();
+      if (_primedBackingUrl != backingUrl) {
+        await _backingPlayer.stop();
+        await _backingPlayer.setReleaseMode(ReleaseMode.loop);
+        await _backingPlayer.setVolume(0);
+        await _backingPlayer.play(
+          UrlSource(backingUrl),
+          position: _segmentStart,
+        );
+        _primedBackingUrl = backingUrl;
+        return;
+      }
       await _backingPlayer.setVolume(0);
-      await _backingPlayer.play(UrlSource(backingUrl), position: _segmentStart);
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      await _backingPlayer.pause();
       await _backingPlayer.seek(_segmentStart);
-      await _backingPlayer.setVolume(1);
-      _primedBackingUrl = backingUrl;
     } catch (_) {
       await _backingPlayer.setVolume(1);
       _primedBackingUrl = null;
@@ -4288,17 +4297,16 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 child: SlideTransition(position: offset, child: child),
               );
             },
-            child: Text(
-              currentLine,
+            child: _SingleLineLyricText(
+              text: currentLine,
               key: ValueKey('current-$currentLine'),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               style: AppText.body(
                 24,
                 weight: FontWeight.w900,
                 color: AppColors.secondaryContainer,
                 height: 1.16,
               ),
+              height: 32,
             ),
           ),
           const SizedBox(height: 10),
@@ -4316,11 +4324,9 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 child: SlideTransition(position: offset, child: child),
               );
             },
-            child: Text(
-              nextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : nextLine,
+            child: _SingleLineLyricText(
+              text: nextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : nextLine,
               key: ValueKey('next-$nextLine'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
               style: AppText.body(
                 14,
                 weight: FontWeight.w700,
@@ -4328,6 +4334,7 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                   alpha: nextLine.isEmpty ? 0.36 : 0.52,
                 ),
               ),
+              height: 20,
             ),
           ),
           const SizedBox(height: 14),
@@ -4341,6 +4348,41 @@ class _KaraokeLyricsPanel extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SingleLineLyricText extends StatelessWidget {
+  const _SingleLineLyricText({
+    super.key,
+    required this.text,
+    required this.style,
+    required this.height,
+  });
+
+  final String text;
+  final TextStyle style;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: height,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            text,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.visible,
+            style: style,
+          ),
+        ),
       ),
     );
   }
