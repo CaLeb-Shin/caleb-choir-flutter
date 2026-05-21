@@ -731,7 +731,7 @@ class _FeedReactionStripState extends State<_FeedReactionStrip> {
         for (final entry in reactionMeta.entries) ...[
           _FeedReactionButton(
             type: entry.key,
-            emoji: entry.value.emoji,
+            icon: entry.value.icon,
             label: entry.value.label,
             count: reactionCounts(reactions)[entry.key] ?? 0,
             active: myReactionType(reactions, widget.myUid) == entry.key,
@@ -746,14 +746,14 @@ class _FeedReactionStripState extends State<_FeedReactionStrip> {
 
 class _FeedReactionButton extends StatefulWidget {
   final String type;
-  final String emoji;
+  final IconData icon;
   final String label;
   final int count;
   final bool active;
   final VoidCallback onTap;
   const _FeedReactionButton({
     required this.type,
-    required this.emoji,
+    required this.icon,
     required this.label,
     required this.count,
     required this.active,
@@ -812,10 +812,7 @@ class _FeedReactionButtonState extends State<_FeedReactionButton>
                       opacity: (1 - value).clamp(0.0, 1.0),
                       child: Transform.scale(
                         scale: 0.7 + value * 0.55,
-                        child: Text(
-                          widget.emoji,
-                          style: const TextStyle(fontSize: 18),
-                        ),
+                        child: Icon(widget.icon, size: 18, color: Colors.white),
                       ),
                     ),
                   ),
@@ -842,7 +839,11 @@ class _FeedReactionButtonState extends State<_FeedReactionButton>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(widget.emoji, style: const TextStyle(fontSize: 12)),
+                    Icon(
+                      widget.icon,
+                      size: 12,
+                      color: widget.active ? AppColors.primary : Colors.white,
+                    ),
                     const SizedBox(width: 3),
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 180),

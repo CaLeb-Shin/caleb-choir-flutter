@@ -22,6 +22,9 @@ class AppColors {
   // Surfaces
   static const bg = Color(0xFFF8F9FA);
   static const card = Color(0xFFFFFFFF);
+  static const paper = Color(0xFFFFFCF5);
+  static const paperLine = Color(0xFFE8DEC8);
+  static const paperFold = Color(0xFFF4EBD9);
   static const surfaceLow = Color(0xFFF3F4F5);
   static const surfaceMid = Color(0xFFEDEEEF);
   static const surfaceHigh = Color(0xFFE7E8E9);
@@ -143,8 +146,8 @@ class AppTheme {
         color: AppColors.card,
         elevation: 0,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: AppColors.border.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(11),
+          side: BorderSide(color: AppColors.border.withValues(alpha: 0.26)),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -152,9 +155,9 @@ class AppTheme {
           backgroundColor: AppColors.primaryContainer,
           foregroundColor: Colors.white,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(10),
           ),
           textStyle: AppText.body(15, weight: FontWeight.w600),
         ),
@@ -163,9 +166,9 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.ink,
           side: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(10),
           ),
           textStyle: AppText.body(15, weight: FontWeight.w600),
         ),
@@ -179,17 +182,17 @@ class AppTheme {
           weight: FontWeight.w400,
         ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(
             color: AppColors.border.withValues(alpha: 0.8),
           ),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(
             color: AppColors.primaryContainer,
             width: 1.4,

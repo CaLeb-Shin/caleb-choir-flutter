@@ -242,6 +242,84 @@ class StoreMenuGlyph extends StatelessWidget {
   }
 }
 
+class ScoreMenuGlyph extends StatelessWidget {
+  final Color color;
+  final Color accentColor;
+
+  const ScoreMenuGlyph({
+    super.key,
+    this.color = Colors.white,
+    this.accentColor = AppColors.secondaryContainer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 22,
+      child: CustomPaint(painter: _ScoreMenuGlyphPainter(color, accentColor)),
+    );
+  }
+}
+
+class _ScoreMenuGlyphPainter extends CustomPainter {
+  final Color color;
+  final Color accentColor;
+
+  const _ScoreMenuGlyphPainter(this.color, this.accentColor);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final accent = Paint()
+      ..color = accentColor
+      ..style = PaintingStyle.fill;
+
+    final cover = RRect.fromRectAndRadius(
+      Rect.fromLTWH(w * 0.18, h * 0.13, w * 0.64, h * 0.72),
+      Radius.circular(w * 0.12),
+    );
+    canvas.drawRRect(cover, stroke);
+    canvas.drawLine(
+      Offset(w * 0.32, h * 0.20),
+      Offset(w * 0.32, h * 0.78),
+      stroke,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.43, h * 0.25, w * 0.26, h * 0.18),
+        Radius.circular(w * 0.04),
+      ),
+      fill,
+    );
+    canvas.drawLine(
+      Offset(w * 0.45, h * 0.56),
+      Offset(w * 0.70, h * 0.56),
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(w * 0.45, h * 0.68),
+      Offset(w * 0.62, h * 0.68),
+      stroke,
+    );
+    canvas.drawCircle(Offset(w * 0.72, h * 0.27), w * 0.055, accent);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScoreMenuGlyphPainter oldDelegate) {
+    return oldDelegate.color != color || oldDelegate.accentColor != accentColor;
+  }
+}
+
 class _StoreMenuGlyphPainter extends CustomPainter {
   final Color color;
 

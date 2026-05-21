@@ -11,10 +11,10 @@ import '../../widgets/app_logo_title.dart';
 import '../../widgets/interactive.dart';
 import '../../widgets/user_badges.dart';
 
-const reactionMeta = <String, ({String label, String emoji})>{
-  'like': (label: '좋아요', emoji: '❤️'),
-  'sad': (label: '슬퍼요', emoji: '😢'),
-  'pray': (label: '기도해요', emoji: '🙏'),
+const reactionMeta = <String, ({String label, IconData icon})>{
+  'like': (label: '좋아요', icon: Icons.favorite_rounded),
+  'sad': (label: '슬퍼요', icon: Icons.sentiment_dissatisfied_rounded),
+  'pray': (label: '기도해요', icon: Icons.volunteer_activism_rounded),
 };
 
 Map<String, int> reactionCounts(Map<String, dynamic> state) {
@@ -616,7 +616,7 @@ class _ReactionRow extends StatelessWidget {
         for (final entry in reactionMeta.entries) ...[
           _ReactionChip(
             type: entry.key,
-            emoji: entry.value.emoji,
+            icon: entry.value.icon,
             label: entry.value.label,
             count: reactionCounts(reactions)[entry.key] ?? 0,
             active: myReactionType(reactions, myUid) == entry.key,
@@ -631,14 +631,14 @@ class _ReactionRow extends StatelessWidget {
 
 class _ReactionChip extends StatefulWidget {
   final String type;
-  final String emoji;
+  final IconData icon;
   final String label;
   final int count;
   final bool active;
   final VoidCallback onTap;
   const _ReactionChip({
     required this.type,
-    required this.emoji,
+    required this.icon,
     required this.label,
     required this.count,
     required this.active,
@@ -694,9 +694,10 @@ class _ReactionChipState extends State<_ReactionChip>
                     opacity: (1 - value).clamp(0.0, 1.0),
                     child: Transform.scale(
                       scale: 0.8 + value * 0.55,
-                      child: Text(
-                        widget.emoji,
-                        style: const TextStyle(fontSize: 20),
+                      child: Icon(
+                        widget.icon,
+                        size: 20,
+                        color: AppColors.primary,
                       ),
                     ),
                   ),
@@ -724,7 +725,13 @@ class _ReactionChipState extends State<_ReactionChip>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(widget.emoji, style: const TextStyle(fontSize: 16)),
+                      Icon(
+                        widget.icon,
+                        size: 16,
+                        color: widget.active
+                            ? AppColors.primary
+                            : AppColors.muted,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         widget.label,

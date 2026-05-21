@@ -226,7 +226,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                             ? Icons.add_business_rounded
                             : (_isPartLeader
                                   ? Icons.star_rounded
-                                  : Icons.music_note_rounded),
+                                  : Icons.groups_rounded),
                         size: 18,
                         color: AppColors.primary,
                       ),
@@ -346,7 +346,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                           ? Icons.admin_panel_settings_rounded
                           : (_isPartLeader
                                 ? Icons.star_rounded
-                                : Icons.music_note_rounded),
+                                : Icons.groups_rounded),
                       color: AppColors.primary,
                       size: 20,
                     ),

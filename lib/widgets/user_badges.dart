@@ -36,16 +36,16 @@ class UserBadges extends ConsumerWidget {
           pills.add(const _BadgeSpec('출석챔피언', _BadgeStyle.champion));
         }
         if (awards.isPrayKing(userId)) {
-          pills.add(const _BadgeSpec('🙏 기도왕', _BadgeStyle.prayKing));
+          pills.add(const _BadgeSpec('기도왕', _BadgeStyle.prayKing));
         }
         if (awards.isCommentKing(userId)) {
-          pills.add(const _BadgeSpec('💬 댓글왕', _BadgeStyle.commentKing));
+          pills.add(const _BadgeSpec('댓글왕', _BadgeStyle.commentKing));
         }
         if (awards.isPerfectAttendance(userId)) {
-          pills.add(const _BadgeSpec('✨ 개근', _BadgeStyle.perfect));
+          pills.add(const _BadgeSpec('개근', _BadgeStyle.perfect));
         }
         if (awards.isNewcomer(userId)) {
-          pills.add(const _BadgeSpec('🌱 신입', _BadgeStyle.newcomer));
+          pills.add(const _BadgeSpec('신입', _BadgeStyle.newcomer));
         }
         final c = awards.countsFor(userId);
         if (c.weeklyCalebWins > 0) {

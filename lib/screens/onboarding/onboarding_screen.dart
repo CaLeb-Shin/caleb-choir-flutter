@@ -1449,7 +1449,7 @@ class _OnboardingHero extends StatelessWidget {
               ],
             ),
             child: const Icon(
-              Icons.music_note_rounded,
+              Icons.groups_rounded,
               color: Colors.white,
               size: 26,
             ),

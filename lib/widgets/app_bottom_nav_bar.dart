@@ -244,18 +244,27 @@ class _CalebNavGlyphPainter extends CustomPainter {
         canvas.drawLine(p(0.50, 0.84), p(0.50, 0.64), stroke);
         canvas.drawCircle(p(0.72, 0.32), w * 0.055, accent);
       case _NavGlyph.score:
-        canvas.drawLine(p(0.60, 0.18), p(0.60, 0.67), stroke);
-        canvas.drawLine(p(0.60, 0.18), p(0.82, 0.26), stroke);
-        canvas.drawLine(p(0.82, 0.26), p(0.82, 0.39), stroke);
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: p(0.43, 0.72),
-            width: w * 0.30,
-            height: h * 0.20,
-          ),
-          stroke,
+        final cover = RRect.fromRectAndRadius(
+          Rect.fromLTWH(w * 0.22, h * 0.16, w * 0.56, h * 0.68),
+          Radius.circular(w * 0.10),
         );
-        canvas.drawCircle(p(0.77, 0.70), w * 0.055, accent);
+        canvas.drawRRect(cover, stroke);
+        canvas.drawLine(p(0.36, 0.24), p(0.36, 0.76), stroke);
+        final label = RRect.fromRectAndRadius(
+          Rect.fromLTWH(w * 0.45, h * 0.28, w * 0.20, h * 0.15),
+          Radius.circular(w * 0.04),
+        );
+        canvas.drawRRect(label, fill);
+        canvas.drawLine(p(0.46, 0.57), p(0.68, 0.57), stroke);
+        canvas.drawLine(p(0.46, 0.69), p(0.61, 0.69), stroke);
+        canvas.drawCircle(p(0.74, 0.27), w * 0.05, accent);
+        canvas.drawCircle(
+          p(0.28, 0.72),
+          w * 0.025,
+          Paint()
+            ..color = accentColor
+            ..style = PaintingStyle.fill,
+        );
       case _NavGlyph.video:
         final frame = RRect.fromRectAndRadius(
           Rect.fromLTWH(w * 0.18, h * 0.26, w * 0.64, h * 0.48),

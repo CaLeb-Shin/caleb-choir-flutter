@@ -16,7 +16,7 @@ class AwardsState {
   final String? currentAttendanceChampionUid;
   final int currentAttendanceChampionCount;
 
-  /// 이번 달 가장 많은 🙏 reactions 받은 사람.
+  /// 이번 달 가장 많은 기도 반응을 받은 사람.
   final String? currentPrayKingUid;
   final int currentPrayKingCount;
 
@@ -192,7 +192,7 @@ final awardsProvider = FutureProvider<AwardsState>((ref) async {
     });
   }
 
-  // 기도왕: 이번 달 게시물에서 받은 🙏 reaction 수 1위.
+  // 기도왕: 이번 달 게시물에서 받은 기도 반응 수 1위.
   final prayReceivedTally = <String, int>{};
   for (final p in posts) {
     final ts = p['createdAt'] as DateTime?;

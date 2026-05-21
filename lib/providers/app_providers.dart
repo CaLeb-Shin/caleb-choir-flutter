@@ -119,7 +119,7 @@ const _previewSheetMusic = [
     'sheetPart': 'soprano',
     'sheetDate': '2026-05-05',
     'composer': '미리보기 악보&음원',
-    'conductorComment': '🎙️ 후렴은 한 호흡으로 넓게 열고, 가사의 방향을 먼저 생각하며 불러주세요.',
+    'conductorComment': '후렴은 한 호흡으로 넓게 열고, 가사의 방향을 먼저 생각하며 불러주세요.',
     'lyricsText': '주만 바라볼지라\n염려하지 말고 바라볼지라\n주님만 의지해\n한 걸음씩 나아가리라',
     'lyricsTimeline': [
       {'timeSec': 0.0, 'text': '주만 바라볼지라'},

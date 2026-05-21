@@ -6,6 +6,7 @@ import '../../models/user.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
+import '../../widgets/caleb_score_surface.dart';
 import '../qr_scan/qr_scan_screen.dart';
 
 class AttendanceScreen extends ConsumerWidget {
@@ -99,204 +100,141 @@ class AttendanceScreen extends ConsumerWidget {
 
           // ── Attendance operator controls
           if (canOperateSession || canScanAttendance) ...[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.secondarySoft,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: AppColors.secondary.withValues(alpha: 0.2),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    canOperateSession ? '출석 운영' : '파트장 스캐너',
-                    style: AppText.label(),
+            _AttendanceOperatorPanel(
+              title: canOperateSession ? '출석 운영' : '파트장 스캐너',
+              subtitle: scannerPartLabel == null
+                  ? (session == null
+                        ? '출석을 열면 QR 스캔을 시작할 수 있습니다'
+                        : '열린 출석 세션의 QR을 스캔합니다')
+                  : '$scannerPartLabel 파트 단원 QR만 출석 처리됩니다',
+              actions: [
+                if (canOperateSession)
+                  _AttendanceControlAction(
+                    label: session != null ? '출석 마감' : '출석 열기',
+                    icon: session != null
+                        ? Icons.stop_rounded
+                        : Icons.play_arrow_rounded,
+                    tone: session != null
+                        ? _AttendanceControlTone.danger
+                        : _AttendanceControlTone.warm,
+                    filled: session == null,
+                    onTap: session != null
+                        ? () async {
+                            await FirebaseService.closeSession(session['id']);
+                            ref.invalidate(activeSessionProvider);
+                          }
+                        : () => _showOpenSessionDialog(context, ref),
                   ),
-                  if (scannerPartLabel != null) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      '$scannerPartLabel 파트 단원 QR만 출석 처리됩니다',
-                      style: AppText.body(12, color: AppColors.muted),
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      if (canOperateSession) ...[
-                        Expanded(
-                          child: session != null
-                              ? ElevatedButton.icon(
-                                  onPressed: () async {
-                                    await FirebaseService.closeSession(
-                                      session['id'],
-                                    );
+                _AttendanceControlAction(
+                  label: scannerPart == null ? 'QR 스캔' : '파트 스캔',
+                  icon: Icons.qr_code_scanner_rounded,
+                  tone: _AttendanceControlTone.primary,
+                  filled: true,
+                  onTap: session == null
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => QrScanScreen(
+                                title: scannerPartLabel == null
+                                    ? '출석 QR 스캔'
+                                    : '$scannerPartLabel 파트 스캔',
+                                instruction: scannerPartLabel == null
+                                    ? '단원의 출석 QR을 카메라에 비춰주세요'
+                                    : '$scannerPartLabel 파트 단원의 출석 QR을 비춰주세요',
+                                onScanned: (code) async {
+                                  final parsed = _attendanceQrFromCode(code);
+                                  final userId = parsed?.userId;
+                                  if (parsed == null || userId == null) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('올바르지 않은 QR 코드입니다'),
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
+                                  if (parsed.churchId != null &&
+                                      profile?.churchId != null &&
+                                      parsed.churchId != profile?.churchId) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('다른 교회 출석 QR입니다'),
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
+                                  if (parsed.sessionId != null &&
+                                      session['id'] != null &&
+                                      parsed.sessionId != session['id']) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('현재 열린 출석 QR이 아닙니다'),
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
+                                  try {
+                                    final result =
+                                        await FirebaseService.adminCheckIn(
+                                          userId,
+                                          allowedPart: scannerPart,
+                                          scannerMode: scannerPart == null
+                                              ? 'mobile_admin'
+                                              : 'mobile_part_leader',
+                                        );
+                                    if (context.mounted) {
+                                      final name = result['userName'] ?? '';
+                                      final already =
+                                          result['alreadyCheckedIn'] == true;
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            already
+                                                ? '$name님은 이미 출석했습니다'
+                                                : '$name님 출석 완료!',
+                                          ),
+                                          backgroundColor: already
+                                              ? null
+                                              : AppColors.success,
+                                        ),
+                                      );
+                                    }
                                     ref.invalidate(activeSessionProvider);
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.error,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  icon: const Icon(
-                                    Icons.stop_rounded,
-                                    size: 18,
-                                  ),
-                                  label: const Text('출석 마감'),
-                                )
-                              : ElevatedButton.icon(
-                                  onPressed: () =>
-                                      _showOpenSessionDialog(context, ref),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.secondary,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                  icon: const Icon(
-                                    Icons.play_arrow_rounded,
-                                    size: 18,
-                                  ),
-                                  label: const Text('출석 열기'),
-                                ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: session == null
-                              ? null
-                              : () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => QrScanScreen(
-                                        title: scannerPartLabel == null
-                                            ? '출석 QR 스캔'
-                                            : '$scannerPartLabel 파트 스캔',
-                                        instruction: scannerPartLabel == null
-                                            ? '단원의 출석 QR을 카메라에 비춰주세요'
-                                            : '$scannerPartLabel 파트 단원의 출석 QR을 비춰주세요',
-                                        onScanned: (code) async {
-                                          final parsed = _attendanceQrFromCode(
-                                            code,
-                                          );
-                                          final userId = parsed?.userId;
-                                          if (parsed == null ||
-                                              userId == null) {
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    '올바르지 않은 QR 코드입니다',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                            return;
-                                          }
-                                          if (parsed.churchId != null &&
-                                              profile?.churchId != null &&
-                                              parsed.churchId !=
-                                                  profile?.churchId) {
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    '다른 교회 출석 QR입니다',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                            return;
-                                          }
-                                          if (parsed.sessionId != null &&
-                                              session['id'] != null &&
-                                              parsed.sessionId !=
-                                                  session['id']) {
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                    '현재 열린 출석 QR이 아닙니다',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                            return;
-                                          }
-                                          try {
-                                            final result =
-                                                await FirebaseService.adminCheckIn(
-                                                  userId,
-                                                  allowedPart: scannerPart,
-                                                  scannerMode:
-                                                      scannerPart == null
-                                                      ? 'mobile_admin'
-                                                      : 'mobile_part_leader',
-                                                );
-                                            if (context.mounted) {
-                                              final name =
-                                                  result['userName'] ?? '';
-                                              final already =
-                                                  result['alreadyCheckedIn'] ==
-                                                  true;
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    already
-                                                        ? '$name님은 이미 출석했습니다'
-                                                        : '$name님 출석 완료!',
-                                                  ),
-                                                  backgroundColor: already
-                                                      ? null
-                                                      : AppColors.success,
-                                                ),
-                                              );
-                                            }
-                                            ref.invalidate(
-                                              activeSessionProvider,
-                                            );
-                                          } catch (e) {
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    '출석 실패: ${_cleanErrorMessage(e)}',
-                                                  ),
-                                                ),
-                                              );
-                                            }
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  );
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '출석 실패: ${_cleanErrorMessage(e)}',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
                                 },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryContainer,
-                            foregroundColor: Colors.white,
-                          ),
-                          icon: const Icon(
-                            Icons.qr_code_scanner_rounded,
-                            size: 18,
-                          ),
-                          label: Text(scannerPart == null ? 'QR 스캔' : '파트 스캔'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                              ),
+                            ),
+                          );
+                        },
+                ),
+              ],
             ),
             const SizedBox(height: 16),
           ],
@@ -570,6 +508,164 @@ class AttendanceScreen extends ConsumerWidget {
   }
 }
 
+class _AttendanceOperatorPanel extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final List<_AttendanceControlAction> actions;
+
+  const _AttendanceOperatorPanel({
+    required this.title,
+    required this.subtitle,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: CalebScoreSurface(
+        padding: const EdgeInsets.fromLTRB(16, 12, 14, 14),
+        spineColor: AppColors.secondary,
+        staffOpacity: 0.34,
+        showVerticalMarks: false,
+        showFold: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 2,
+                  height: 24,
+                  color: AppColors.secondary.withValues(alpha: 0.64),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: AppText.body(
+                          14,
+                          weight: FontWeight.w900,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(11, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                for (var i = 0; i < actions.length; i += 1) ...[
+                  Expanded(child: _AttendanceControlButton(action: actions[i])),
+                  if (i != actions.length - 1) const SizedBox(width: 8),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AttendanceControlAction {
+  final String label;
+  final IconData icon;
+  final _AttendanceControlTone tone;
+  final bool filled;
+  final VoidCallback? onTap;
+
+  const _AttendanceControlAction({
+    required this.label,
+    required this.icon,
+    required this.tone,
+    required this.filled,
+    required this.onTap,
+  });
+}
+
+enum _AttendanceControlTone { primary, warm, danger }
+
+class _AttendanceControlButton extends StatelessWidget {
+  final _AttendanceControlAction action;
+
+  const _AttendanceControlButton({required this.action});
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = action.onTap != null;
+    final color = switch (action.tone) {
+      _AttendanceControlTone.primary => AppColors.primary,
+      _AttendanceControlTone.warm => AppColors.secondary,
+      _AttendanceControlTone.danger => AppColors.error,
+    };
+    final foreground = action.filled ? Colors.white : color;
+    final background = action.filled
+        ? color
+        : enabled
+        ? Colors.white
+        : AppColors.surfaceLow;
+    final borderColor = enabled
+        ? color.withValues(alpha: action.filled ? 0 : 0.42)
+        : AppColors.border.withValues(alpha: 0.34);
+
+    return Material(
+      color: background,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        onTap: action.onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: borderColor),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                action.icon,
+                size: 17,
+                color: enabled ? foreground : AppColors.muted,
+              ),
+              const SizedBox(width: 7),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    action.label,
+                    maxLines: 1,
+                    style: AppText.body(
+                      13,
+                      weight: FontWeight.w800,
+                      color: enabled ? foreground : AppColors.muted,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _LiveAttendanceBadge extends StatefulWidget {
   const _LiveAttendanceBadge();
 
@@ -814,12 +910,15 @@ class _ActiveAttendanceCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.primaryContainer,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(
+          color: AppColors.secondaryContainer.withValues(alpha: 0.16),
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.12),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+            color: AppColors.primary.withValues(alpha: 0.10),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -830,7 +929,7 @@ class _ActiveAttendanceCard extends StatelessWidget {
             height: 42,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(8),
               border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
             ),
             child: const Icon(
@@ -950,100 +1049,108 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
     final attendNames = _voteNames(votes, members, 'attend');
     final absentNames = _voteNames(votes, members, 'absent');
 
-    return Container(
+    return SizedBox(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: widget.highlighted ? AppColors.secondarySoft : AppColors.card,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: widget.highlighted
-              ? AppColors.secondaryContainer.withValues(alpha: 0.8)
-              : AppColors.border.withValues(alpha: 0.35),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                targetDate,
-                style: AppText.body(
-                  12,
-                  weight: FontWeight.w900,
-                  color: AppColors.secondary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.primarySoft,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  scopeLabel,
-                  style: AppText.body(
-                    11,
-                    weight: FontWeight.w800,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              if (effectiveChoice != null)
+      child: CalebScoreSurface(
+        padding: const EdgeInsets.all(12),
+        backgroundColor: widget.highlighted
+            ? AppColors.secondarySoft
+            : AppColors.paper,
+        borderColor: widget.highlighted
+            ? AppColors.secondaryContainer.withValues(alpha: 0.78)
+            : AppColors.paperLine,
+        spineColor: widget.highlighted
+            ? AppColors.secondary
+            : AppColors.primary,
+        staffOpacity: widget.highlighted ? 0.34 : 0.42,
+        showFold: widget.highlighted,
+        showVerticalMarks: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
                 Text(
-                  effectiveChoice == 'attend' ? '내 투표: 참석' : '내 투표: 불참',
+                  targetDate,
                   style: AppText.body(
                     12,
                     weight: FontWeight.w900,
-                    color: AppColors.primary,
+                    color: AppColors.secondary,
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            pollTitle,
-            style: AppText.body(16, weight: FontWeight.w900),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _choiceButton(
-                  label: '참석',
-                  count: attend,
-                  choice: 'attend',
-                  selected: effectiveChoice == 'attend',
-                  color: AppColors.success,
-                  names: attendNames,
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    scopeLabel,
+                    style: AppText.body(
+                      11,
+                      weight: FontWeight.w800,
+                      color: AppColors.primary,
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _choiceButton(
-                  label: '불참',
-                  count: absent,
-                  choice: 'absent',
-                  selected: effectiveChoice == 'absent',
-                  color: AppColors.error,
-                  names: absentNames,
+                const Spacer(),
+                if (effectiveChoice != null)
+                  Text(
+                    effectiveChoice == 'attend' ? '내 투표: 참석' : '내 투표: 불참',
+                    style: AppText.body(
+                      12,
+                      weight: FontWeight.w900,
+                      color: AppColors.primary,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              pollTitle,
+              style: AppText.body(16, weight: FontWeight.w900),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _choiceButton(
+                    label: '참석',
+                    count: attend,
+                    choice: 'attend',
+                    selected: effectiveChoice == 'attend',
+                    color: AppColors.success,
+                    names: attendNames,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            effectiveChoice == null
-                ? '$voted명 투표 · $notVoted명 미투표 · 내 투표: 아직 미투표'
-                : '$voted명 투표 · $notVoted명 미투표',
-            style: AppText.body(11, color: AppColors.muted),
-          ),
-        ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _choiceButton(
+                    label: '불참',
+                    count: absent,
+                    choice: 'absent',
+                    selected: effectiveChoice == 'absent',
+                    color: AppColors.error,
+                    names: absentNames,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              effectiveChoice == null
+                  ? '$voted명 투표 · $notVoted명 미투표 · 내 투표: 아직 미투표'
+                  : '$voted명 투표 · $notVoted명 미투표',
+              style: AppText.body(11, color: AppColors.muted),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1152,7 +1259,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
               : selected
               ? () => _showVoteListSheet(label, names, color)
               : () => _handleVote(choice),
-          borderRadius: BorderRadius.circular(15),
+          borderRadius: BorderRadius.circular(9),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
@@ -1160,7 +1267,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: background,
-              borderRadius: BorderRadius.circular(15),
+              borderRadius: BorderRadius.circular(9),
               border: Border.all(color: borderColor, width: selected ? 1.4 : 1),
               boxShadow: selected
                   ? [
@@ -1180,7 +1287,7 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                   height: 30,
                   decoration: BoxDecoration(
                     color: iconBackground,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(7),
                   ),
                   child: Center(
                     child: pending

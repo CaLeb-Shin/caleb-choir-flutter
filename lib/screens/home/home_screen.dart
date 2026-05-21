@@ -270,7 +270,6 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // ── Quick Actions (3x3 grid, 키즈노트 스타일)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     vertical: 6,
@@ -615,8 +614,6 @@ class HomeScreen extends ConsumerWidget {
         : 0;
 
     // 새 콘텐츠 여부 (최근 7일 이내 등록/미확인)
-    final announcements = ref.watch(announcementsProvider).valueOrNull ?? [];
-    final hasNewAnnouncement = announcements.any((a) => a['isRead'] == false);
     final hasNewSheetMusic =
         (ref.watch(recentSheetMusicProvider).valueOrNull ?? []).isNotEmpty;
     final hasNewVideos =
@@ -667,7 +664,8 @@ class HomeScreen extends ConsumerWidget {
         ),
       ),
       MiniActionTile(
-        icon: Icons.music_note_rounded,
+        icon: Icons.description_rounded,
+        customIcon: const ScoreMenuGlyph(),
         label: '악보&음원',
         tone: 'secondary',
         hasNew: hasNewSheetMusic,
@@ -684,14 +682,6 @@ class HomeScreen extends ConsumerWidget {
         hasNew: hasNewVideos,
         onTap: () =>
             _openSection(context, '영상', const VideosScreen(), navIndex: 2),
-      ),
-      MiniActionTile(
-        icon: Icons.campaign_rounded,
-        label: '공지',
-        tone: 'secondary',
-        hasNew: hasNewAnnouncement,
-        onTap: () =>
-            _openSection(context, '공지', const CommunityScreen(), navIndex: 4),
       ),
       MiniActionTile(
         icon: Icons.chat_bubble_rounded,
@@ -1270,88 +1260,127 @@ class _MySeatHomeCard extends StatelessWidget {
         ? chart['sourcePollTitle'].toString().trim()
         : label;
     final date = _formatSeatDate(chart['eventDate']);
-    final coordinate = '${User.partLabels[part] ?? part} $row열 $col번';
+    final partLabel = User.partLabels[part] ?? part;
+    final coordinate = '$partLabel $row열 $col번';
+    final scheduleLine = date.isEmpty ? eventTitle : '$date · $eventTitle';
 
     return Tappable(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: AppColors.secondarySoft,
-          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFF7E6), Color(0xFFFFFFFF)],
+          ),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(
             color: AppColors.secondaryContainer.withValues(alpha: 0.82),
           ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: AppColors.secondaryContainer,
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: const Icon(
-                Icons.event_seat_rounded,
-                size: 20,
-                color: AppColors.secondary,
-              ),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.secondary.withValues(alpha: 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
             ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          ],
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(child: CustomPaint(painter: _SeatPassPainter())),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(15, 13, 12, 13),
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        '내 자리',
-                        style: AppText.body(
-                          12,
-                          weight: FontWeight.w900,
-                          color: AppColors.secondary,
+                  const _SeatPassMark(),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '내 자리',
+                                style: AppText.body(
+                                  11,
+                                  weight: FontWeight.w900,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                '자리배치로 이동',
+                                style: AppText.body(
+                                  11,
+                                  weight: FontWeight.w800,
+                                  color: AppColors.muted,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(
-                          '클릭하면 자리배치로 이동',
+                        const SizedBox(height: 8),
+                        Text(
+                          scheduleLine,
                           style: AppText.body(
-                            11,
-                            weight: FontWeight.w700,
-                            color: AppColors.muted,
+                            12,
+                            weight: FontWeight.w800,
+                            color: AppColors.onSurfaceVariant,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 3),
+                        Text(
+                          coordinate,
+                          style: AppText.headline(
+                            18,
+                            weight: FontWeight.w900,
+                            color: AppColors.primary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    width: 36,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: AppColors.secondaryContainer.withValues(
+                          alpha: 0.42,
+                        ),
                       ),
-                    ],
+                    ),
+                    child: const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 25,
+                      color: AppColors.secondary,
+                    ),
                   ),
-                  const SizedBox(height: 5),
-                  _SeatMetaRow(
-                    label: '일정',
-                    value: date.isEmpty ? eventTitle : '$date · $eventTitle',
-                  ),
-                  const SizedBox(height: 3),
-                  _SeatMetaRow(label: '좌표', value: coordinate),
                 ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.72),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(
-                Icons.chevron_right_rounded,
-                size: 21,
-                color: AppColors.secondary,
               ),
             ),
           ],
@@ -1370,43 +1399,111 @@ class _MySeatHomeCard extends StatelessWidget {
   }
 }
 
-class _SeatMetaRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _SeatMetaRow({required this.label, required this.value});
+class _SeatPassMark extends StatelessWidget {
+  const _SeatPassMark();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 40,
-          child: Text(
-            label,
-            style: AppText.body(
-              11,
-              weight: FontWeight.w900,
-              color: AppColors.secondary,
+    return Container(
+      width: 54,
+      height: 62,
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.20),
+            blurRadius: 14,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -10,
+            top: -10,
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: AppColors.secondaryContainer.withValues(alpha: 0.28),
+                shape: BoxShape.circle,
+              ),
             ),
           ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: AppText.body(
-              13,
-              weight: FontWeight.w800,
-              color: AppColors.primary,
+          const Center(
+            child: Icon(
+              Icons.event_seat_rounded,
+              size: 25,
+              color: AppColors.secondaryContainer,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+          Positioned(
+            left: 11,
+            right: 11,
+            bottom: 10,
+            child: Container(
+              height: 3,
+              decoration: BoxDecoration(
+                color: AppColors.secondaryContainer.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
+
+class _SeatPassPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rail = Paint()
+      ..color = AppColors.secondary
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(0, 0, 5, size.height),
+        const Radius.circular(2),
+      ),
+      rail,
+    );
+
+    final grid = Paint()
+      ..color = AppColors.secondaryContainer.withValues(alpha: 0.24)
+      ..strokeWidth = 1;
+    for (var x = size.width * 0.58; x < size.width - 46; x += 18) {
+      canvas.drawLine(Offset(x, 18), Offset(x, size.height - 18), grid);
+    }
+    for (var y = 20.0; y < size.height - 16; y += 14) {
+      canvas.drawLine(Offset(92, y), Offset(size.width - 44, y), grid);
+    }
+
+    final fold = Path()
+      ..moveTo(size.width - 54, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, 54)
+      ..close();
+    canvas.drawPath(
+      fold,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.50)
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawLine(
+      Offset(size.width - 54, 0),
+      Offset(size.width, 54),
+      Paint()
+        ..color = AppColors.secondaryContainer.withValues(alpha: 0.44)
+        ..strokeWidth = 1.2,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SeatPassPainter oldDelegate) => false;
 }
 
 // ── Upload Chip for horizontal scroll

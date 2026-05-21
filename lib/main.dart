@@ -17,6 +17,7 @@ import 'screens/approval/rejected_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
 import 'screens/community/community_screen.dart';
+import 'screens/harmony_chat/harmony_chat_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
 import 'screens/videos/videos_screen.dart';
@@ -173,8 +174,17 @@ class _MainShellState extends ConsumerState<MainShell> {
     ProfileScreen(),
   ];
   final _warmedCommunityImageUrls = <String>{};
+  bool _openedPreviewSection = false;
 
   static const _titles = ['홈', '악보&음원', '영상', '출석&투표', '소통', '마이'];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _openInitialPreviewSection();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +216,21 @@ class _MainShellState extends ConsumerState<MainShell> {
       bottomNavigationBar: AppBottomNavBar(
         currentIndex: index,
         popToRootOnTap: false,
+      ),
+    );
+  }
+
+  void _openInitialPreviewSection() {
+    if (_openedPreviewSection || !mounted) return;
+    if (!ref.read(localPreviewModeProvider)) return;
+    if (Uri.base.queryParameters['section'] != 'harmony') return;
+    _openedPreviewSection = true;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const _PreviewSectionScreen(
+          title: '하모니챗',
+          child: HarmonyChatScreen(),
+        ),
       ),
     );
   }
@@ -268,5 +293,28 @@ class _MainShellState extends ConsumerState<MainShell> {
       if (value is String && value.trim().isNotEmpty) return value.trim();
     }
     return '';
+  }
+}
+
+class _PreviewSectionScreen extends StatelessWidget {
+  const _PreviewSectionScreen({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          tooltip: '뒤로가기',
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        title: AppLogoTitle(title: title),
+      ),
+      body: SafeArea(child: child),
+      bottomNavigationBar: const AppBottomNavBar(),
+    );
   }
 }
