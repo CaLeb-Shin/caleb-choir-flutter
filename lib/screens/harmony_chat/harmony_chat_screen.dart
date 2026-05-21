@@ -58,17 +58,17 @@ class HarmonyChatScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 18),
-          _TodayGuideCard(
-            part: part,
-            partLabel: partLabel,
-            guideAsync: guideAsync,
-            ref: ref,
-          ),
-          const SizedBox(height: 16),
           _RelaySection(
             part: part,
             partLabel: partLabel,
             relaysAsync: relaysAsync,
+            ref: ref,
+          ),
+          const SizedBox(height: 16),
+          _TodayGuideCard(
+            part: part,
+            partLabel: partLabel,
+            guideAsync: guideAsync,
             ref: ref,
           ),
           const SizedBox(height: 22),
@@ -634,23 +634,23 @@ class _RelayMissionCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
-          if (compact)
-            hasSubmittedHighlight
-                ? _RelayProgressMap(
-                    relays: relays,
-                    part: part,
-                    partLabel: partLabel,
-                    ref: ref,
-                    highlightedRelayId: highlightedRelayId,
-                  )
-                : _CompactMissionRecordCard(
-                    title: title,
-                    relays: relays,
-                    part: part,
-                    partLabel: partLabel,
-                    ref: ref,
-                  )
-          else ...[
+          if (compact) ...[
+            _RelayProgressMap(
+              relays: relays,
+              part: part,
+              partLabel: partLabel,
+              ref: ref,
+              highlightedRelayId: highlightedRelayId,
+            ),
+            const SizedBox(height: 12),
+            _CompactMissionRecordCard(
+              title: title,
+              relays: relays,
+              part: part,
+              partLabel: partLabel,
+              ref: ref,
+            ),
+          ] else ...[
             _RelayProgressMap(
               relays: relays,
               part: part,
