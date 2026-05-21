@@ -524,11 +524,16 @@ class _RelayMissionCard extends StatelessWidget {
                       : AppColors.primarySoft,
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(
-                  isComplete
-                      ? Icons.workspace_premium_rounded
-                      : Icons.route_rounded,
-                  color: isComplete ? AppColors.secondary : AppColors.primary,
+                child: Center(
+                  child: isComplete
+                      ? const _InlineAwardIcon(
+                          size: 23,
+                          color: AppColors.secondary,
+                        )
+                      : const _InlineRouteIcon(
+                          size: 23,
+                          color: AppColors.primary,
+                        ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -948,10 +953,11 @@ class _RelayProgressMap extends StatelessWidget {
                   color: AppColors.secondaryContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.account_tree_rounded,
-                  color: AppColors.primary,
-                  size: 20,
+                child: const Center(
+                  child: _InlineHarmonyMapIcon(
+                    color: AppColors.primary,
+                    size: 22,
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -1082,11 +1088,7 @@ class _RelayMapNode extends StatelessWidget {
                         ? (completed ? AppColors.success : AppColors.primary)
                         : Colors.white.withValues(alpha: 0.16),
                     child: completed
-                        ? const Icon(
-                            Icons.check_rounded,
-                            size: 15,
-                            color: Colors.white,
-                          )
+                        ? const _InlineCheckIcon(size: 15, color: Colors.white)
                         : Text(
                             '$order',
                             style: AppText.body(
@@ -1099,17 +1101,7 @@ class _RelayMapNode extends StatelessWidget {
                           ),
                   ),
                   const Spacer(),
-                  Icon(
-                    completed
-                        ? Icons.check_circle_rounded
-                        : active
-                        ? Icons.mic_rounded
-                        : Icons.more_horiz_rounded,
-                    size: 16,
-                    color: active
-                        ? (completed ? AppColors.success : AppColors.primary)
-                        : Colors.white.withValues(alpha: 0.62),
-                  ),
+                  _SegmentStatusIcon(completed: completed, active: active),
                 ],
               ),
               const SizedBox(height: 8),
@@ -4377,6 +4369,280 @@ class _RelayStudioStateIcon extends StatelessWidget {
   }
 }
 
+class _SegmentStatusIcon extends StatelessWidget {
+  const _SegmentStatusIcon({required this.completed, required this.active});
+
+  final bool completed;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    if (completed) {
+      return const _InlineCheckCircleIcon(size: 16, color: AppColors.success);
+    }
+    if (active) {
+      return const _InlineMicIcon(size: 16, color: AppColors.primary);
+    }
+    return _InlineMoreIcon(
+      size: 16,
+      color: Colors.white.withValues(alpha: 0.62),
+    );
+  }
+}
+
+class _InlineRouteIcon extends StatelessWidget {
+  const _InlineRouteIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineRoutePainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineRoutePainter extends CustomPainter {
+  const _InlineRoutePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.1
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()..color = color;
+    canvas.drawCircle(Offset(w * 0.24, h * 0.25), w * 0.12, stroke);
+    canvas.drawCircle(Offset(w * 0.76, h * 0.75), w * 0.12, stroke);
+    final path = Path()
+      ..moveTo(w * 0.30, h * 0.31)
+      ..cubicTo(w * 0.78, h * 0.28, w * 0.22, h * 0.70, w * 0.70, h * 0.70);
+    canvas.drawPath(path, stroke);
+    canvas.drawCircle(Offset(w * 0.50, h * 0.50), w * 0.055, fill);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineRoutePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineAwardIcon extends StatelessWidget {
+  const _InlineAwardIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.secondary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineAwardPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineAwardPainter extends CustomPainter {
+  const _InlineAwardPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.09
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()..color = color;
+    canvas.drawCircle(Offset(w * 0.5, h * 0.35), w * 0.25, stroke);
+    final star = Path()
+      ..moveTo(w * 0.5, h * 0.22)
+      ..lineTo(w * 0.55, h * 0.33)
+      ..lineTo(w * 0.67, h * 0.34)
+      ..lineTo(w * 0.58, h * 0.42)
+      ..lineTo(w * 0.61, h * 0.54)
+      ..lineTo(w * 0.5, h * 0.48)
+      ..lineTo(w * 0.39, h * 0.54)
+      ..lineTo(w * 0.42, h * 0.42)
+      ..lineTo(w * 0.33, h * 0.34)
+      ..lineTo(w * 0.45, h * 0.33)
+      ..close();
+    canvas.drawPath(star, fill);
+    canvas.drawLine(
+      Offset(w * 0.38, h * 0.58),
+      Offset(w * 0.28, h * 0.86),
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(w * 0.62, h * 0.58),
+      Offset(w * 0.72, h * 0.86),
+      stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineAwardPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineHarmonyMapIcon extends StatelessWidget {
+  const _InlineHarmonyMapIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineHarmonyMapPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineHarmonyMapPainter extends CustomPainter {
+  const _InlineHarmonyMapPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.1
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fill = Paint()..color = color;
+    final nodes = [
+      Offset(w * 0.25, h * 0.30),
+      Offset(w * 0.68, h * 0.30),
+      Offset(w * 0.68, h * 0.72),
+    ];
+    canvas.drawLine(nodes[0], nodes[1], stroke);
+    canvas.drawLine(nodes[1], nodes[2], stroke);
+    for (final node in nodes) {
+      canvas.drawCircle(node, w * 0.105, fill);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineHarmonyMapPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineCheckCircleIcon extends StatelessWidget {
+  const _InlineCheckCircleIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.success;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineCheckCirclePainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineCheckCirclePainter extends CustomPainter {
+  const _InlineCheckCirclePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.1
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawCircle(size.center(Offset.zero), size.width * 0.42, stroke);
+    final path = Path()
+      ..moveTo(size.width * 0.29, size.height * 0.52)
+      ..lineTo(size.width * 0.44, size.height * 0.66)
+      ..lineTo(size.width * 0.72, size.height * 0.35);
+    canvas.drawPath(path, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineCheckCirclePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineMoreIcon extends StatelessWidget {
+  const _InlineMoreIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.muted;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineMorePainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineMorePainter extends CustomPainter {
+  const _InlineMorePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fill = Paint()..color = color;
+    for (final dx in [0.28, 0.5, 0.72]) {
+      canvas.drawCircle(
+        Offset(size.width * dx, size.height * 0.5),
+        size.width * 0.07,
+        fill,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineMorePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
 class _RelayStackIcon extends StatelessWidget {
   const _RelayStackIcon({this.size = 24, this.color});
 
@@ -4576,13 +4842,15 @@ class _InlinePlayPainter extends CustomPainter {
 }
 
 class _InlineCheckIcon extends StatelessWidget {
-  const _InlineCheckIcon({this.size = 18});
+  const _InlineCheckIcon({this.size = 18, this.color});
 
   final double size;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedColor = IconTheme.of(context).color ?? AppColors.primary;
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
     return SizedBox(
       width: size,
       height: size,
