@@ -3092,7 +3092,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                       onPressed: _isSubmitting
                           ? null
                           : () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
+                      icon: const _InlineCloseIcon(size: 22),
                     ),
                   ],
                 ),
@@ -3188,8 +3188,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                           ),
                           child: Row(
                             children: [
-                              const Icon(
-                                Icons.info_rounded,
+                              const _InlineInfoIcon(
                                 color: AppColors.secondary,
                                 size: 18,
                               ),
@@ -3217,10 +3216,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                     isBusy || widget.guideAudioUrl.isEmpty
                                     ? null
                                     : _playGuideOnce,
-                                icon: const Icon(
-                                  Icons.play_arrow_rounded,
-                                  size: 18,
-                                ),
+                                icon: const _InlinePlayIcon(size: 18),
                                 label: const Text('내 파트 AR'),
                               ),
                             ),
@@ -3262,18 +3258,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                   ),
                   child: Column(
                     children: [
-                      Icon(
-                        _countdown != null
-                            ? Icons.timer_rounded
-                            : _isRecording
-                            ? Icons.stop_circle_rounded
-                            : Icons.mic_rounded,
-                        color: _countdown != null
-                            ? AppColors.secondary
-                            : _isRecording
-                            ? AppColors.secondary
-                            : AppColors.primary,
-                        size: 38,
+                      _RelayStudioStateIcon(
+                        countdown: _countdown,
+                        isRecording: _isRecording,
                       ),
                       const SizedBox(height: 8),
                       if (_countdown != null) ...[
@@ -3346,7 +3333,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                                 primeBacking: hasMrBacking,
                               ),
                         icon: _isRecording
-                            ? const Icon(Icons.check_rounded)
+                            ? const _InlineCheckIcon(size: 18)
                             : const _InlineMicIcon(size: 18),
                         label: Text(
                           _isRecording
@@ -4211,13 +4198,15 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      isActive
-                          ? Icons.graphic_eq_rounded
-                          : Icons.queue_music_rounded,
-                      size: 14,
-                      color: AppColors.primary,
-                    ),
+                    isActive
+                        ? const _InlineWaveIcon(
+                            size: 14,
+                            color: AppColors.primary,
+                          )
+                        : const _InlineMusicNoteIcon(
+                            size: 14,
+                            color: AppColors.primary,
+                          ),
                     const SizedBox(width: 5),
                     Text(
                       statusText,
@@ -4366,6 +4355,374 @@ class _SingleLineLyricText extends StatelessWidget {
   }
 }
 
+class _RelayStudioStateIcon extends StatelessWidget {
+  const _RelayStudioStateIcon({
+    required this.countdown,
+    required this.isRecording,
+  });
+
+  final int? countdown;
+  final bool isRecording;
+
+  @override
+  Widget build(BuildContext context) {
+    if (countdown != null) {
+      return const _InlineTimerIcon(size: 38, color: AppColors.secondary);
+    }
+    if (isRecording) {
+      return const _InlineStopCircleIcon(size: 38, color: AppColors.secondary);
+    }
+    return const _InlineMicIcon(size: 38, color: AppColors.primary);
+  }
+}
+
+class _InlineCloseIcon extends StatelessWidget {
+  const _InlineCloseIcon({this.size = 18});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor = IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineClosePainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineClosePainter extends CustomPainter {
+  const _InlineClosePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.12
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(size.width * 0.22, size.height * 0.22),
+      Offset(size.width * 0.78, size.height * 0.78),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.78, size.height * 0.22),
+      Offset(size.width * 0.22, size.height * 0.78),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineClosePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlinePlayIcon extends StatelessWidget {
+  const _InlinePlayIcon({this.size = 18});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor = IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlinePlayPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlinePlayPainter extends CustomPainter {
+  const _InlinePlayPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(size.width * 0.32, size.height * 0.22)
+      ..lineTo(size.width * 0.32, size.height * 0.78)
+      ..lineTo(size.width * 0.78, size.height * 0.5)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlinePlayPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineCheckIcon extends StatelessWidget {
+  const _InlineCheckIcon({this.size = 18});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor = IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineCheckPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineCheckPainter extends CustomPainter {
+  const _InlineCheckPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.14
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final path = Path()
+      ..moveTo(size.width * 0.22, size.height * 0.52)
+      ..lineTo(size.width * 0.42, size.height * 0.72)
+      ..lineTo(size.width * 0.78, size.height * 0.28);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineCheckPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineInfoIcon extends StatelessWidget {
+  const _InlineInfoIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineInfoPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineInfoPainter extends CustomPainter {
+  const _InlineInfoPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fill = Paint()..color = color;
+    final textStyle = TextStyle(
+      color: Colors.white,
+      fontSize: size.height * 0.62,
+      fontWeight: FontWeight.w900,
+      height: 1,
+    );
+    canvas.drawCircle(size.center(Offset.zero), size.width * 0.5, fill);
+    final painter = TextPainter(
+      text: TextSpan(text: 'i', style: textStyle),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      Offset(
+        (size.width - painter.width) / 2,
+        (size.height - painter.height) / 2,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineInfoPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineMusicNoteIcon extends StatelessWidget {
+  const _InlineMusicNoteIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineMusicNotePainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineMusicNotePainter extends CustomPainter {
+  const _InlineMusicNotePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.1
+      ..strokeCap = StrokeCap.round;
+    final fill = Paint()..color = color;
+    canvas.drawLine(
+      Offset(size.width * 0.34, size.height * 0.26),
+      Offset(size.width * 0.34, size.height * 0.72),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.34, size.height * 0.26),
+      Offset(size.width * 0.72, size.height * 0.18),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.72, size.height * 0.18),
+      Offset(size.width * 0.72, size.height * 0.62),
+      paint,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.25, size.height * 0.74),
+      size.width * 0.13,
+      fill,
+    );
+    canvas.drawCircle(
+      Offset(size.width * 0.63, size.height * 0.64),
+      size.width * 0.13,
+      fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineMusicNotePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineTimerIcon extends StatelessWidget {
+  const _InlineTimerIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineTimerPainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineTimerPainter extends CustomPainter {
+  const _InlineTimerPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.09
+      ..strokeCap = StrokeCap.round;
+    final center = Offset(size.width / 2, size.height * 0.56);
+    final radius = size.width * 0.32;
+    canvas.drawCircle(center, radius, stroke);
+    canvas.drawLine(
+      Offset(size.width * 0.4, size.height * 0.12),
+      Offset(size.width * 0.6, size.height * 0.12),
+      stroke,
+    );
+    canvas.drawLine(
+      Offset(size.width / 2, size.height * 0.12),
+      Offset(size.width / 2, size.height * 0.22),
+      stroke,
+    );
+    canvas.drawLine(
+      center,
+      Offset(size.width * 0.62, size.height * 0.42),
+      stroke,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineTimerPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+class _InlineStopCircleIcon extends StatelessWidget {
+  const _InlineStopCircleIcon({this.size = 18, this.color});
+
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _InlineStopCirclePainter(resolvedColor)),
+    );
+  }
+}
+
+class _InlineStopCirclePainter extends CustomPainter {
+  const _InlineStopCirclePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.09;
+    final fill = Paint()..color = color;
+    canvas.drawCircle(size.center(Offset.zero), size.width * 0.42, stroke);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: size.center(Offset.zero),
+          width: size.width * 0.34,
+          height: size.height * 0.34,
+        ),
+        Radius.circular(size.width * 0.06),
+      ),
+      fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _InlineStopCirclePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
 class _InlineWaveIcon extends StatelessWidget {
   const _InlineWaveIcon({this.size = 18, this.color});
 
@@ -4404,13 +4761,15 @@ class _InlineWaveIcon extends StatelessWidget {
 }
 
 class _InlineMicIcon extends StatelessWidget {
-  const _InlineMicIcon({this.size = 18});
+  const _InlineMicIcon({this.size = 18, this.color});
 
   final double size;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedColor = IconTheme.of(context).color ?? AppColors.primary;
+    final resolvedColor =
+        color ?? IconTheme.of(context).color ?? AppColors.primary;
     return SizedBox(
       width: size,
       height: size,
