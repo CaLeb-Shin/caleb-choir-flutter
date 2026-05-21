@@ -1517,13 +1517,26 @@ List<Map<String, dynamic>> _relayClipSequenceForRelays(
       return _dateTimeAsc(a['createdAt'], b['createdAt']);
     });
   final clips = <Map<String, dynamic>>[];
-  for (final relay in sortedRelays) {
+  for (var index = 0; index < sortedRelays.length; index += 1) {
+    final relay = sortedRelays[index];
+    final mrAudioUrl = relay['mrAudioUrl']?.toString().trim() ?? '';
+    final segmentStartSec = (relay['segmentStartSec'] as num?)?.toDouble() ?? 0;
+    final segmentEndSec = (relay['segmentEndSec'] as num?)?.toDouble() ?? 0;
+    final segmentLabel = _segmentDisplayLabel(relay, index);
     final relayClips =
         ((relay['clips'] as List?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .toList()
           ..sort((a, b) => _dateTimeAsc(a['createdAt'], b['createdAt']));
-    clips.addAll(relayClips);
+    for (final clip in relayClips) {
+      clips.add({
+        ...clip,
+        'mrAudioUrl': mrAudioUrl,
+        'segmentStartSec': segmentStartSec,
+        'segmentEndSec': segmentEndSec,
+        'segmentLabel': segmentLabel,
+      });
+    }
   }
   return _playableRelayClips(clips);
 }
@@ -1540,9 +1553,15 @@ List<Map<String, dynamic>> _playableRelayClips(
 }
 
 String _clipSequenceKey(List<Map<String, dynamic>> clips) {
-  return _playableRelayClips(
-    clips,
-  ).map((clip) => clip['audioUrl']?.toString().trim() ?? '').join('|');
+  return _playableRelayClips(clips)
+      .map((clip) {
+        final url = clip['audioUrl']?.toString().trim() ?? '';
+        final mrUrl = clip['mrAudioUrl']?.toString().trim() ?? '';
+        final start = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
+        final end = (clip['segmentEndSec'] as num?)?.toDouble() ?? 0;
+        return '$url@$mrUrl@$start@$end';
+      })
+      .join('|');
 }
 
 int _dateTimeAsc(dynamic a, dynamic b) {
@@ -2224,9 +2243,16 @@ class _RelaySequencePlayButton extends StatefulWidget {
 
 class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
   final _player = AudioPlayer();
+  final _backingPlayer = AudioPlayer();
+  final _sequenceStopwatch = Stopwatch();
   StreamSubscription<void>? _completeSub;
+  Timer? _sequenceDelayTimer;
+  Completer<void>? _sequenceDelayCompleter;
   int _playingIndex = -1;
+  int _playbackRunId = 0;
   bool _isLoading = false;
+  String _activeBackingUrl = '';
+  Duration _sequenceBasePosition = Duration.zero;
 
   List<Map<String, dynamic>> get _playableClips =>
       _playableRelayClips(widget.clips);
@@ -2252,8 +2278,15 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
 
   @override
   void dispose() {
+    _playbackRunId += 1;
+    _sequenceDelayTimer?.cancel();
+    if (_sequenceDelayCompleter?.isCompleted == false) {
+      _sequenceDelayCompleter?.complete();
+    }
     _completeSub?.cancel();
     unawaited(_player.dispose());
+    unawaited(_backingPlayer.dispose());
+    relay_backing_audio.stopRelayBackingAudio();
     super.dispose();
   }
 
@@ -2335,18 +2368,20 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
       await _stopPlayback();
       return;
     }
-    await _playAt(0);
+    _playbackRunId += 1;
+    await _playAt(0, _playbackRunId);
   }
 
-  Future<void> _playAt(int index) async {
+  Future<void> _playAt(int index, int runId) async {
     final clips = _playableClips;
+    if (runId != _playbackRunId) return;
     if (index < 0 || index >= clips.length) {
       await _stopPlayback();
       return;
     }
     final url = clips[index]['audioUrl']?.toString().trim() ?? '';
     if (url.isEmpty) {
-      await _playAt(index + 1);
+      await _playAt(index + 1, runId);
       return;
     }
     if (mounted) {
@@ -2356,12 +2391,15 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
       });
     }
     try {
+      await _ensureSequenceBacking(clips, index, runId);
+      await _waitForClipStart(clips[index], runId);
+      if (!mounted || runId != _playbackRunId) return;
       await _player.stop();
       await _playRelayAudioSource(_player, url);
       if (mounted) setState(() => _isLoading = false);
     } catch (_) {
       if (index + 1 < clips.length) {
-        await _playAt(index + 1);
+        await _playAt(index + 1, runId);
         return;
       }
       if (!mounted) return;
@@ -2369,9 +2407,11 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
         _playingIndex = -1;
         _isLoading = false;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('릴레이 녹음을 재생할 수 없습니다.')));
+      final messenger = ScaffoldMessenger.of(context);
+      await _stopSequenceBacking();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('릴레이 녹음을 재생할 수 없습니다.')),
+      );
     }
   }
 
@@ -2379,18 +2419,18 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
     if (!_isPlaying) return;
     final nextIndex = _playingIndex + 1;
     if (nextIndex >= _playableClips.length) {
-      if (mounted) {
-        setState(() {
-          _playingIndex = -1;
-          _isLoading = false;
-        });
-      }
+      await _finishPlayback();
       return;
     }
-    await _playAt(nextIndex);
+    await _playAt(nextIndex, _playbackRunId);
   }
 
   Future<void> _stopPlayback() async {
+    _playbackRunId += 1;
+    _sequenceDelayTimer?.cancel();
+    if (_sequenceDelayCompleter?.isCompleted == false) {
+      _sequenceDelayCompleter?.complete();
+    }
     if (mounted) {
       setState(() {
         _playingIndex = -1;
@@ -2398,6 +2438,102 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
       });
     }
     await _player.stop();
+    await _stopSequenceBacking();
+  }
+
+  Future<void> _finishPlayback() async {
+    _sequenceDelayTimer?.cancel();
+    if (_sequenceDelayCompleter?.isCompleted == false) {
+      _sequenceDelayCompleter?.complete();
+    }
+    if (mounted) {
+      setState(() {
+        _playingIndex = -1;
+        _isLoading = false;
+      });
+    }
+    await _stopSequenceBacking();
+  }
+
+  Future<void> _ensureSequenceBacking(
+    List<Map<String, dynamic>> clips,
+    int index,
+    int runId,
+  ) async {
+    final backingUrl = _backingUrlForSequence(clips, index);
+    if (backingUrl.isEmpty) return;
+    final basePosition = _segmentStartForClip(clips.first);
+    if (_activeBackingUrl == backingUrl &&
+        _sequenceBasePosition == basePosition &&
+        _sequenceStopwatch.isRunning) {
+      return;
+    }
+    try {
+      await _stopSequenceBacking();
+      if (!mounted || runId != _playbackRunId) return;
+      _sequenceBasePosition = basePosition;
+      _sequenceStopwatch
+        ..reset()
+        ..start();
+      if (kIsWeb &&
+          relay_backing_audio.startRelayBackingAudio(
+            backingUrl,
+            basePosition,
+          )) {
+        _activeBackingUrl = backingUrl;
+        return;
+      }
+      await _backingPlayer.setReleaseMode(ReleaseMode.stop);
+      await _backingPlayer.setVolume(0.82);
+      await _backingPlayer.play(UrlSource(backingUrl), position: basePosition);
+      _activeBackingUrl = backingUrl;
+    } catch (_) {
+      await _stopSequenceBacking();
+    }
+  }
+
+  String _backingUrlForSequence(List<Map<String, dynamic>> clips, int index) {
+    final current = clips[index]['mrAudioUrl']?.toString().trim() ?? '';
+    if (current.isNotEmpty) return current;
+    for (final clip in clips) {
+      final url = clip['mrAudioUrl']?.toString().trim() ?? '';
+      if (url.isNotEmpty) return url;
+    }
+    return '';
+  }
+
+  Future<void> _waitForClipStart(Map<String, dynamic> clip, int runId) async {
+    if (_activeBackingUrl.isEmpty || !_sequenceStopwatch.isRunning) return;
+    final clipStart = _segmentStartForClip(clip);
+    final targetElapsed = clipStart - _sequenceBasePosition;
+    final delay = targetElapsed - _sequenceStopwatch.elapsed;
+    if (delay <= const Duration(milliseconds: 45)) return;
+    _sequenceDelayTimer?.cancel();
+    final completer = Completer<void>();
+    _sequenceDelayCompleter = completer;
+    _sequenceDelayTimer = Timer(delay, () {
+      if (!completer.isCompleted) completer.complete();
+    });
+    await completer.future;
+    if (_sequenceDelayCompleter == completer) {
+      _sequenceDelayCompleter = null;
+    }
+    if (runId != _playbackRunId) return;
+  }
+
+  Duration _segmentStartForClip(Map<String, dynamic> clip) {
+    final seconds = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
+    if (seconds <= 0) return Duration.zero;
+    return Duration(milliseconds: (seconds * 1000).round());
+  }
+
+  Future<void> _stopSequenceBacking() async {
+    _sequenceStopwatch.stop();
+    _sequenceStopwatch.reset();
+    _activeBackingUrl = '';
+    _sequenceBasePosition = Duration.zero;
+    relay_backing_audio.stopRelayBackingAudio();
+    await _backingPlayer.stop();
   }
 }
 
