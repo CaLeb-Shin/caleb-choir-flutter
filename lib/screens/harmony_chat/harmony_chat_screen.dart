@@ -881,17 +881,16 @@ class _CompactMissionRecordCard extends StatelessWidget {
                     const SizedBox(height: 14),
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 220),
-                      child: Text(
-                        currentLine,
+                      child: _SingleLineLyricText(
+                        text: currentLine,
                         key: ValueKey(currentLine),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                         style: AppText.body(
                           22,
                           weight: FontWeight.w900,
                           color: Colors.white,
                           height: 1.25,
                         ),
+                        height: 30,
                       ),
                     ),
                     if (nextLine.isNotEmpty) ...[
