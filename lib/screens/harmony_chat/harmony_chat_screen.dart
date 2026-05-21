@@ -667,9 +667,10 @@ class _CompactMissionRecordCard extends StatelessWidget {
     final total = relays.length;
     final isComplete = completed >= total && total > 0;
     final targetIndex = relays.indexOf(targetRelay);
-    final segmentLabel =
-        targetRelay['segmentLabel']?.toString() ??
-        (targetIndex >= 0 ? '${targetIndex + 1}소절' : '소절');
+    final segmentLabel = _cleanDisplayText(
+      targetRelay['segmentLabel']?.toString() ??
+          (targetIndex >= 0 ? '${targetIndex + 1}소절' : '소절'),
+    );
     final currentLine = _firstText([
       targetRelay['lyricsLine']?.toString(),
       _lyricLineFromRelayText(targetRelay, targetIndex),
@@ -1504,7 +1505,9 @@ String _nextLyricLineFromRelayText(Map<String, dynamic> relay, int index) {
 List<String> _plainLyricLines(String text) {
   return text
       .split(RegExp(r'\r?\n'))
-      .map((line) => line.replaceAll(RegExp(r'\[[^\]]+\]'), '').trim())
+      .map(
+        (line) => _cleanDisplayText(line.replaceAll(RegExp(r'\[[^\]]+\]'), '')),
+      )
       .where((line) => line.isNotEmpty)
       .toList(growable: false);
 }
@@ -1594,9 +1597,23 @@ bool _isGenericSegmentLabel(String label) {
   return RegExp(r'^\d+\s*소절$').hasMatch(trimmed);
 }
 
+final _emojiDisplayPattern = RegExp(
+  r'[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}]',
+  unicode: true,
+);
+final _emojiControlPattern = RegExp(r'[\u200D\uFE0E\uFE0F]');
+
+String _cleanDisplayText(String value) {
+  return value
+      .replaceAll(_emojiDisplayPattern, '')
+      .replaceAll(_emojiControlPattern, '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
 String _firstText(List<String?> values) {
   for (final value in values) {
-    final trimmed = value?.trim() ?? '';
+    final trimmed = _cleanDisplayText(value ?? '');
     if (trimmed.isNotEmpty) return trimmed;
   }
   return '';
@@ -4053,17 +4070,17 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   String get _currentLyricLine {
     final timelineLine = _timelineLyricAt(_absoluteLyricSeconds);
     if (timelineLine.isNotEmpty) return timelineLine;
-    final direct = widget.lyricsLine.trim();
+    final direct = _cleanDisplayText(widget.lyricsLine);
     if (direct.isNotEmpty) return direct;
     final parsed = _lyricsFromText;
     if (parsed.isNotEmpty) return parsed.first;
-    return widget.segmentLabel;
+    return _cleanDisplayText(widget.segmentLabel);
   }
 
   String get _nextLyricLine {
     final timelineNext = _nextTimelineLyricAfter(_absoluteLyricSeconds);
     if (timelineNext.isNotEmpty) return timelineNext;
-    final direct = widget.nextLyricsLine.trim();
+    final direct = _cleanDisplayText(widget.nextLyricsLine);
     if (direct.isNotEmpty) return direct;
     final parsed = _lyricsFromText;
     if (parsed.length > 1) return parsed[1];
@@ -4073,7 +4090,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   List<String> get _lyricsFromText {
     return widget.lyricsText
         .split(RegExp(r'\r?\n'))
-        .map((line) => line.trim())
+        .map((line) => _cleanDisplayText(line))
         .where((line) => line.isNotEmpty)
         .toList();
   }
@@ -4105,13 +4122,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       if (time > seconds) break;
       selected = entry;
     }
-    return selected?['text']?.toString().trim() ?? '';
+    return _cleanDisplayText(selected?['text']?.toString() ?? '');
   }
 
   String _nextTimelineLyricAfter(double seconds) {
     for (final entry in widget.lyricsTimeline) {
       final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
-      final text = entry['text']?.toString().trim() ?? '';
+      final text = _cleanDisplayText(entry['text']?.toString() ?? '');
       if (time > seconds && text.isNotEmpty) return text;
     }
     return '';
@@ -4219,6 +4236,9 @@ class _KaraokeLyricsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeCurrentLine = _cleanDisplayText(currentLine);
+    final safeNextLine = _cleanDisplayText(nextLine);
+    final safeSegmentLabel = _cleanDisplayText(segmentLabel);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -4271,7 +4291,7 @@ class _KaraokeLyricsPanel extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                segmentLabel,
+                safeSegmentLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppText.body(
@@ -4298,8 +4318,8 @@ class _KaraokeLyricsPanel extends StatelessWidget {
               );
             },
             child: _SingleLineLyricText(
-              text: currentLine,
-              key: ValueKey('current-$currentLine'),
+              text: safeCurrentLine,
+              key: ValueKey('current-$safeCurrentLine'),
               style: AppText.body(
                 24,
                 weight: FontWeight.w900,
@@ -4325,13 +4345,13 @@ class _KaraokeLyricsPanel extends StatelessWidget {
               );
             },
             child: _SingleLineLyricText(
-              text: nextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : nextLine,
-              key: ValueKey('next-$nextLine'),
+              text: safeNextLine.isEmpty ? '다음 소절을 이어 받을 준비를 해요' : safeNextLine,
+              key: ValueKey('next-$safeNextLine'),
               style: AppText.body(
                 14,
                 weight: FontWeight.w700,
                 color: Colors.white.withValues(
-                  alpha: nextLine.isEmpty ? 0.36 : 0.52,
+                  alpha: safeNextLine.isEmpty ? 0.36 : 0.52,
                 ),
               ),
               height: 20,
@@ -5421,7 +5441,7 @@ List<Map<String, dynamic>> _lyricsTimelineFromValue(dynamic value) {
       .map((entry) {
         return {
           'timeSec': (entry['timeSec'] as num?)?.toDouble() ?? 0,
-          'text': entry['text']?.toString() ?? '',
+          'text': _cleanDisplayText(entry['text']?.toString() ?? ''),
         };
       })
       .where((entry) => (entry['text']?.toString() ?? '').trim().isNotEmpty)
