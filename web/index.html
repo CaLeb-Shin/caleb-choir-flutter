@@ -221,11 +221,14 @@
       var audio = null;
       var currentUrl = '';
 
+      function shouldUseBridge() {
+        return true;
+      }
+
       function ensureAudio() {
         if (audio) return audio;
         audio = new Audio();
         audio.preload = 'auto';
-        audio.crossOrigin = 'anonymous';
         audio.playsInline = true;
         audio.setAttribute('playsinline', 'true');
         audio.setAttribute('webkit-playsinline', 'true');
@@ -266,19 +269,27 @@
 
       return {
         prime: function (url, startSeconds) {
+          if (!shouldUseBridge()) return false;
           if (!url) return false;
           var player = load(url);
           player.loop = true;
-          player.muted = true;
+          player.muted = false;
+          player.defaultMuted = false;
+          player.volume = 0;
+          try { player.removeAttribute('muted'); } catch (_) {}
           seek(player, startSeconds);
           return play(player);
         },
         start: function (url, startSeconds) {
+          if (!shouldUseBridge()) return false;
           if (!url) return false;
           var player = load(url);
+          try { player.pause(); } catch (_) {}
           player.loop = false;
           player.muted = false;
+          player.defaultMuted = false;
           player.volume = 1;
+          try { player.removeAttribute('muted'); } catch (_) {}
           seek(player, startSeconds);
           return play(player);
         },
@@ -288,6 +299,9 @@
           try { audio.currentTime = 0; } catch (_) {}
           audio.loop = false;
           audio.muted = false;
+          audio.defaultMuted = false;
+          audio.volume = 1;
+          try { audio.removeAttribute('muted'); } catch (_) {}
         }
       };
     })();

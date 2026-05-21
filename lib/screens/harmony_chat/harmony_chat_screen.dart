@@ -1005,6 +1005,7 @@ class _RelayProgressMap extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final completed = relays.where(_relayCompleted).length;
+    final playbackClips = _relayClipSequenceForRelays(relays);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(13),
@@ -1047,6 +1048,13 @@ class _RelayProgressMap extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
+              _RelaySequencePlayButton(
+                clips: playbackClips,
+                dark: true,
+                label: '지금까지',
+              ),
+              const SizedBox(width: 8),
               _MapStatPill(label: '$completed/${relays.length}', dark: true),
             ],
           ),
@@ -1494,6 +1502,104 @@ bool _relayCompleted(Map<String, dynamic> relay) {
   return clips.isNotEmpty || relay['status']?.toString() == 'completed';
 }
 
+List<Map<String, dynamic>> _relayClipSequenceForRelays(
+  List<Map<String, dynamic>> relays,
+) {
+  final sortedRelays = [...relays]
+    ..sort((a, b) {
+      final aOrder = (a['segmentOrder'] as num?)?.toInt() ?? 0;
+      final bOrder = (b['segmentOrder'] as num?)?.toInt() ?? 0;
+      if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+      return _dateTimeAsc(a['createdAt'], b['createdAt']);
+    });
+  final clips = <Map<String, dynamic>>[];
+  for (final relay in sortedRelays) {
+    final relayClips =
+        ((relay['clips'] as List?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .toList()
+          ..sort((a, b) => _dateTimeAsc(a['createdAt'], b['createdAt']));
+    clips.addAll(relayClips);
+  }
+  return _playableRelayClips(clips);
+}
+
+List<Map<String, dynamic>> _playableRelayClips(
+  List<Map<String, dynamic>> clips,
+) {
+  return clips
+      .where((clip) {
+        final url = clip['audioUrl']?.toString().trim() ?? '';
+        return url.isNotEmpty;
+      })
+      .toList(growable: false);
+}
+
+String _clipSequenceKey(List<Map<String, dynamic>> clips) {
+  return _playableRelayClips(
+    clips,
+  ).map((clip) => clip['audioUrl']?.toString().trim() ?? '').join('|');
+}
+
+int _dateTimeAsc(dynamic a, dynamic b) {
+  final left = _dateTimeFromValue(a);
+  final right = _dateTimeFromValue(b);
+  if (left == null && right == null) return 0;
+  if (left == null) return 1;
+  if (right == null) return -1;
+  return left.compareTo(right);
+}
+
+DateTime? _dateTimeFromValue(dynamic value) {
+  if (value is DateTime) return value;
+  if (value is String) return DateTime.tryParse(value);
+  return null;
+}
+
+class _DecodedAudioData {
+  const _DecodedAudioData({required this.bytes, required this.mimeType});
+
+  final Uint8List bytes;
+  final String mimeType;
+}
+
+Future<void> _playRelayAudioSource(
+  AudioPlayer player,
+  String audioUrl, {
+  Duration position = Duration.zero,
+}) async {
+  final decoded = _decodeDataAudioUrl(audioUrl);
+  if (decoded != null) {
+    final source = BytesSource(decoded.bytes, mimeType: decoded.mimeType);
+    if (position > Duration.zero) {
+      await player.play(source, position: position);
+    } else {
+      await player.play(source);
+    }
+    return;
+  }
+  await player.play(UrlSource(audioUrl), position: position);
+}
+
+_DecodedAudioData? _decodeDataAudioUrl(String value) {
+  if (!value.startsWith('data:')) return null;
+  final commaIndex = value.indexOf(',');
+  if (commaIndex < 0) return null;
+  final metadata = value.substring(5, commaIndex);
+  final payload = Uri.decodeComponent(value.substring(commaIndex + 1));
+  final mimeType = metadata
+      .split(';')
+      .firstWhere((part) => part.contains('/'), orElse: () => 'audio/wav');
+  try {
+    final bytes = metadata.toLowerCase().contains(';base64')
+        ? base64Decode(payload)
+        : Uint8List.fromList(utf8.encode(payload));
+    return _DecodedAudioData(bytes: bytes, mimeType: mimeType);
+  } catch (_) {
+    return null;
+  }
+}
+
 bool _canTestRecordRelayForTest(WidgetRef ref, String part) {
   final profile = ref.watch(profileProvider).valueOrNull;
   final role = profile?.role ?? '';
@@ -1671,7 +1777,16 @@ List<Map<String, dynamic>> _previousMissionClipsFor(
     final clips = ((sorted[index]['clips'] as List?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList();
-    if (clips.isNotEmpty) previousClips.add(clips.last);
+    if (clips.isNotEmpty) {
+      previousClips.add({
+        ...clips.last,
+        'segmentStartSec':
+            (sorted[index]['segmentStartSec'] as num?)?.toDouble() ?? 0,
+        'segmentEndSec':
+            (sorted[index]['segmentEndSec'] as num?)?.toDouble() ?? 0,
+        'segmentLabel': _segmentDisplayLabel(sorted[index], index),
+      });
+    }
   }
   return previousClips;
 }
@@ -2031,6 +2146,8 @@ class _SingleHarmonyMap extends StatelessWidget {
               const SizedBox(width: 7),
               Text('하모니맵', style: AppText.body(13, weight: FontWeight.w900)),
               const Spacer(),
+              _RelaySequencePlayButton(clips: clips, dark: false, label: '듣기'),
+              const SizedBox(width: 8),
               _MapStatPill(label: '${clips.length}명', dark: false),
             ],
           ),
@@ -2045,6 +2162,173 @@ class _SingleHarmonyMap extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _RelaySequencePlayButton extends StatefulWidget {
+  const _RelaySequencePlayButton({
+    required this.clips,
+    required this.dark,
+    required this.label,
+  });
+
+  final List<Map<String, dynamic>> clips;
+  final bool dark;
+  final String label;
+
+  @override
+  State<_RelaySequencePlayButton> createState() =>
+      _RelaySequencePlayButtonState();
+}
+
+class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
+  final _player = AudioPlayer();
+  StreamSubscription<void>? _completeSub;
+  int _playingIndex = -1;
+  bool _isLoading = false;
+
+  List<Map<String, dynamic>> get _playableClips =>
+      _playableRelayClips(widget.clips);
+
+  bool get _isPlaying => _playingIndex >= 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _completeSub = _player.onPlayerComplete.listen((_) {
+      unawaited(_playNextOrStop());
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _RelaySequencePlayButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_isPlaying &&
+        _clipSequenceKey(oldWidget.clips) != _clipSequenceKey(widget.clips)) {
+      unawaited(_stopPlayback());
+    }
+  }
+
+  @override
+  void dispose() {
+    _completeSub?.cancel();
+    unawaited(_player.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final playable = _playableClips;
+    final enabled = playable.isNotEmpty;
+    final foreground = widget.dark ? Colors.white : AppColors.primary;
+    final disabledForeground = widget.dark
+        ? Colors.white.withValues(alpha: 0.42)
+        : AppColors.muted;
+    final background = widget.dark
+        ? Colors.white.withValues(alpha: enabled ? 0.18 : 0.10)
+        : AppColors.card.withValues(alpha: enabled ? 1 : 0.58);
+    final borderColor = widget.dark
+        ? Colors.white.withValues(alpha: enabled ? 0.28 : 0.12)
+        : AppColors.border.withValues(alpha: 0.38);
+    final label = _isPlaying
+        ? '${_playingIndex + 1}/${playable.length}'
+        : widget.label;
+
+    return Tooltip(
+      message: enabled ? '지금까지 릴레이 녹음 듣기' : '녹음이 쌓이면 이어 들을 수 있어요',
+      child: TextButton.icon(
+        onPressed: enabled ? _togglePlayback : null,
+        style: TextButton.styleFrom(
+          foregroundColor: enabled ? foreground : disabledForeground,
+          backgroundColor: background,
+          disabledForegroundColor: disabledForeground,
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(999),
+            side: BorderSide(color: borderColor),
+          ),
+        ),
+        icon: Icon(
+          _isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
+          size: 17,
+        ),
+        label: Text(
+          _isLoading ? '준비' : label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppText.body(11, weight: FontWeight.w900),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _togglePlayback() async {
+    if (_isPlaying || _isLoading) {
+      await _stopPlayback();
+      return;
+    }
+    await _playAt(0);
+  }
+
+  Future<void> _playAt(int index) async {
+    final clips = _playableClips;
+    if (index < 0 || index >= clips.length) {
+      await _stopPlayback();
+      return;
+    }
+    final url = clips[index]['audioUrl']?.toString().trim() ?? '';
+    if (url.isEmpty) {
+      await _playAt(index + 1);
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _playingIndex = index;
+        _isLoading = true;
+      });
+    }
+    try {
+      await _player.stop();
+      await _playRelayAudioSource(_player, url);
+      if (mounted) setState(() => _isLoading = false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _playingIndex = -1;
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('릴레이 녹음을 재생할 수 없습니다.')));
+    }
+  }
+
+  Future<void> _playNextOrStop() async {
+    if (!_isPlaying) return;
+    final nextIndex = _playingIndex + 1;
+    if (nextIndex >= _playableClips.length) {
+      if (mounted) {
+        setState(() {
+          _playingIndex = -1;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+    await _playAt(nextIndex);
+  }
+
+  Future<void> _stopPlayback() async {
+    if (mounted) {
+      setState(() {
+        _playingIndex = -1;
+        _isLoading = false;
+      });
+    }
+    await _player.stop();
   }
 }
 
@@ -3681,16 +3965,24 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         final audioUrl = clip['audioUrl']?.toString().trim() ?? '';
         if (audioUrl.isEmpty) continue;
         final seconds = (clip['durationSeconds'] as num?)?.toDouble() ?? 0;
+        final segmentStart = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
+        final segmentEnd = (clip['segmentEndSec'] as num?)?.toDouble() ?? 0;
+        final segmentSeconds = segmentEnd > segmentStart
+            ? segmentEnd - segmentStart
+            : 0.0;
         final duration = seconds > 0
             ? Duration(milliseconds: (seconds * 1000).round())
+            : segmentSeconds > 0
+            ? Duration(milliseconds: (segmentSeconds * 1000).round())
             : Duration.zero;
         setState(() => _handoffPlaybackIndex = index + 1);
-        await _playAudioAndWait(
-          audioUrl,
+        await _playHandoffAudioAndWait(
+          audioUrl: audioUrl,
+          backingUrl: _recordingBackingUrl,
+          backingPosition: Duration(
+            milliseconds: (segmentStart * 1000).round(),
+          ),
           stopAfter: duration,
-          timeout: duration > Duration.zero
-              ? duration + const Duration(seconds: 3)
-              : const Duration(seconds: 45),
         );
       }
     } catch (_) {
@@ -3708,6 +4000,28 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       backingUrl: _recordingBackingUrl,
       primeBacking: hasMrBacking,
     );
+  }
+
+  Future<void> _playHandoffAudioAndWait({
+    required String audioUrl,
+    required String? backingUrl,
+    required Duration backingPosition,
+    required Duration stopAfter,
+  }) async {
+    final timeout = stopAfter > Duration.zero
+        ? stopAfter + const Duration(seconds: 3)
+        : const Duration(seconds: 45);
+    final hasBacking = backingUrl != null && backingUrl.isNotEmpty;
+    try {
+      if (hasBacking) {
+        await _startHandoffBacking(backingUrl, backingPosition);
+      }
+      await _playAudioAndWait(audioUrl, stopAfter: stopAfter, timeout: timeout);
+    } finally {
+      if (hasBacking) {
+        await _stopHandoffBacking();
+      }
+    }
   }
 
   Future<void> _playGuideOnce() async {
@@ -3747,7 +4061,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     try {
       await _guidePlayer.stop();
       _segmentStopTimer?.cancel();
-      await _guidePlayer.play(UrlSource(audioUrl), position: position);
+      await _playRelayAudioSource(_guidePlayer, audioUrl, position: position);
       _startPlaybackTimer();
       if (stopAfter > Duration.zero) {
         _segmentStopTimer = Timer(stopAfter, () async {
@@ -3887,6 +4201,37 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
   }
 
+  Future<void> _startHandoffBacking(
+    String backingUrl,
+    Duration position,
+  ) async {
+    try {
+      if (kIsWeb &&
+          relay_backing_audio.startRelayBackingAudio(backingUrl, position)) {
+        _primedBackingUrl = backingUrl;
+        return;
+      }
+    } catch (_) {
+      _primedBackingUrl = null;
+    }
+
+    await _backingPlayer.stop();
+    await _backingPlayer.setReleaseMode(ReleaseMode.stop);
+    await _backingPlayer.setVolume(0.82);
+    unawaited(
+      _backingPlayer
+          .play(UrlSource(backingUrl), position: position)
+          .catchError((_) {}),
+    );
+    _primedBackingUrl = backingUrl;
+  }
+
+  Future<void> _stopHandoffBacking() async {
+    relay_backing_audio.stopRelayBackingAudio();
+    await _backingPlayer.stop();
+    _primedBackingUrl = null;
+  }
+
   Future<void> _startRecordingBacking(String backingUrl) async {
     final segmentDuration = _segmentDuration;
     _segmentStopTimer?.cancel();
@@ -3904,9 +4249,14 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     await _backingPlayer.setVolume(1);
     if (_primedBackingUrl == backingUrl) {
       await _backingPlayer.seek(_segmentStart);
+      await _backingPlayer.resume();
     } else {
       await _backingPlayer.stop();
-      await _backingPlayer.play(UrlSource(backingUrl), position: _segmentStart);
+      unawaited(
+        _backingPlayer
+            .play(UrlSource(backingUrl), position: _segmentStart)
+            .catchError((_) {}),
+      );
       _primedBackingUrl = backingUrl;
     }
     if (segmentDuration > Duration.zero) {
@@ -3930,9 +4280,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         await _backingPlayer.stop();
         await _backingPlayer.setReleaseMode(ReleaseMode.loop);
         await _backingPlayer.setVolume(0);
-        await _backingPlayer.play(
-          UrlSource(backingUrl),
-          position: _segmentStart,
+        unawaited(
+          _backingPlayer
+              .play(UrlSource(backingUrl), position: _segmentStart)
+              .catchError((_) {}),
         );
         _primedBackingUrl = backingUrl;
         return;
