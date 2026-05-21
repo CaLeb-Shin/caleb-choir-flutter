@@ -60,7 +60,9 @@ service firebase.storage {
     }
 
     match /churches/{churchId}/harmony_audio/{userId}/{fileName} {
-      allow read: if sameChurch(churchId) || isChurchAdminOf(churchId);
+      allow read: if (isSignedIn() && request.auth.uid == userId)
+        || sameChurch(churchId)
+        || isChurchAdminOf(churchId);
       allow create, update: if isSignedIn()
         && request.auth.uid == userId
         && request.resource.size < 50 * 1024 * 1024;
