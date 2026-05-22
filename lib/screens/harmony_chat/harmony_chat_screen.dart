@@ -4385,33 +4385,66 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _playbackElapsedSeconds = 0;
     });
     var handoffCountdownCompleted = false;
+    var handoffBackingStarted = false;
     try {
+      final backingUrl = _recordingBackingUrl;
+      if (hasMrBacking && backingUrl != null) {
+        await _startHandoffBacking(
+          backingUrl,
+          Duration(milliseconds: (firstHandoffStart * 1000).round()),
+        );
+        handoffBackingStarted = true;
+      }
       for (var index = 0; index < previousClips.length; index += 1) {
         if (!mounted) return;
         final clip = previousClips[index];
         final audioUrl = clip['audioUrl']?.toString().trim() ?? '';
         if (audioUrl.isEmpty) continue;
         final segmentStart = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
-        final duration = _handoffStopAfterFor(
-          previousClips,
-          index,
-          alignToBackingTimeline: false,
-        );
+        final duration = hasMrBacking
+            ? _handoffTimelineStopAfterFor(previousClips, index)
+            : _handoffStopAfterFor(
+                previousClips,
+                index,
+                alignToBackingTimeline: false,
+              );
         setState(() => _handoffPlaybackIndex = index + 1);
         final isLastPreviousClip = index == previousClips.length - 1;
-        await _playHandoffAudioAndWait(
-          audioUrl: audioUrl,
-          backingUrl: _recordingBackingUrl,
-          backingPosition: Duration(
-            milliseconds: (segmentStart * 1000).round(),
-          ),
-          stopAfter: duration,
-          keepBackingPlaying: isLastPreviousClip && hasMrBacking,
-        );
+        if (hasMrBacking) {
+          Future<void>? countdownFuture;
+          var cancelCountdown = false;
+          if (isLastPreviousClip) {
+            countdownFuture = _runCountdownAfter(
+              _countdownDelayForHandoff(duration),
+              shouldRun: () => !cancelCountdown,
+            );
+          }
+          try {
+            await _playAudioAndWait(
+              audioUrl,
+              stopAfter: duration,
+              timeout: duration > Duration.zero
+                  ? duration + const Duration(seconds: 3)
+                  : const Duration(seconds: 45),
+              lyricBaseSeconds: segmentStart,
+              waitForStopAfter: true,
+            );
+            if (countdownFuture != null) {
+              await countdownFuture;
+            }
+          } finally {
+            cancelCountdown = true;
+          }
+        } else {
+          await _playHandoffAudioAndWait(
+            audioUrl: audioUrl,
+            backingUrl: null,
+            backingPosition: Duration.zero,
+            stopAfter: duration,
+            countdownBeforeEnd: isLastPreviousClip,
+          );
+        }
         if (isLastPreviousClip) handoffCountdownCompleted = true;
-      }
-      if (handoffCountdownCompleted) {
-        await _runCountdown();
       }
     } catch (_) {
       _showMessage('앞 릴레이 녹음을 재생하지 못했어요. 내 녹음으로 넘어갑니다.');
@@ -4421,6 +4454,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
           _isHandoffPlaying = false;
           _handoffPlaybackIndex = 0;
         });
+      }
+      if (handoffBackingStarted && !handoffCountdownCompleted) {
+        await _stopHandoffBacking();
       }
     }
     if (!mounted) return;
@@ -4505,6 +4541,27 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     return segmentDuration;
   }
 
+  Duration _handoffTimelineStopAfterFor(
+    List<Map<String, dynamic>> clips,
+    int index,
+  ) {
+    if (index < 0 || index >= clips.length) return Duration.zero;
+    final clip = clips[index];
+    final segmentStart = _clipSegmentStartSeconds(clip);
+    final segmentEnd = _clipSegmentEndSeconds(clip);
+    final nextStart = index + 1 < clips.length
+        ? _clipSegmentStartSeconds(clips[index + 1])
+        : widget.segmentStartSec;
+    final boundary = nextStart > segmentStart
+        ? nextStart
+        : segmentEnd > segmentStart
+        ? segmentEnd
+        : 0.0;
+    final timelineDuration = _durationFromSeconds(boundary - segmentStart);
+    if (timelineDuration > Duration.zero) return timelineDuration;
+    return _handoffStopAfterFor(clips, index, alignToBackingTimeline: false);
+  }
+
   Future<void> _playHandoffAudioAndWait({
     required String audioUrl,
     required String? backingUrl,
@@ -4580,9 +4637,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     Duration stopAfter = Duration.zero,
     Duration timeout = const Duration(seconds: 45),
     double? lyricBaseSeconds,
+    bool waitForStopAfter = false,
   }) async {
     final completer = Completer<void>();
     final sub = _guidePlayer.onPlayerComplete.listen((_) {
+      if (waitForStopAfter && stopAfter > Duration.zero) return;
       if (!completer.isCompleted) completer.complete();
     });
     try {
@@ -4671,7 +4730,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             encoder: AudioEncoder.pcm16bits,
             sampleRate: _sampleRate,
             numChannels: _channels,
-            echoCancel: !hasBacking,
+            echoCancel: true,
             noiseSuppress: true,
             autoGain: true,
           ),
@@ -4691,7 +4750,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
               bitRate: 128000,
               sampleRate: _sampleRate,
               numChannels: _channels,
-              echoCancel: !hasBacking,
+              echoCancel: true,
               noiseSuppress: true,
               autoGain: true,
             ),
@@ -4703,7 +4762,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
               encoder: AudioEncoder.pcm16bits,
               sampleRate: _sampleRate,
               numChannels: _channels,
-              echoCancel: !hasBacking,
+              echoCancel: true,
               noiseSuppress: true,
               autoGain: true,
             ),
