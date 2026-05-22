@@ -112,6 +112,30 @@ class FirebaseService {
     await _db.collection('users').doc(userId).update({'role': role});
   }
 
+  /// 관리자 전용: 다른 사용자 등급/파트/기수 변경
+  static Future<void> updateUserAdminFields(
+    String userId, {
+    required String role,
+    required String part,
+    required String generation,
+  }) async {
+    final updates = <String, dynamic>{
+      'role': role,
+      'part': part,
+      'generation': generation.trim(),
+    };
+
+    if (role == 'part_leader') {
+      updates['partLeaderFor'] = part;
+      updates['partLeaderTitle'] = 'leader';
+    } else {
+      updates['partLeaderFor'] = FieldValue.delete();
+      updates['partLeaderTitle'] = FieldValue.delete();
+    }
+
+    await _db.collection('users').doc(userId).update(updates);
+  }
+
   // ============ Approval Workflow ============
   static Future<List<Map<String, dynamic>>> getPendingUsers() async {
     final snapshot = await _db
@@ -868,7 +892,7 @@ class FirebaseService {
     required String part,
   }) async {
     if (part.trim().isEmpty) return null;
-    final eventGuide = await _latestEventHarmonyGuideForRelay();
+    final eventGuide = await _latestEventHarmonyGuideForRelay(part: part);
     if (eventGuide != null) return eventGuide;
 
     final sheets = await getSheetMusic();
@@ -974,8 +998,9 @@ class FirebaseService {
     return null;
   }
 
-  static Future<Map<String, dynamic>?>
-  _latestEventHarmonyGuideForRelay() async {
+  static Future<Map<String, dynamic>?> _latestEventHarmonyGuideForRelay({
+    required String part,
+  }) async {
     final events = await getEvents();
     final candidates = events.where((event) {
       final enabled = event['harmonyEnabled'] == true;
@@ -1019,7 +1044,7 @@ class FirebaseService {
       'lyricsTimeline': timeline,
       'lyricLines': _lyricLinesFromText(lyricsText),
       'sourceEventId': event['id']?.toString() ?? '',
-      'segments': const [],
+      'segments': _harmonySegmentsForPart(event, part),
     };
   }
 
@@ -1037,6 +1062,7 @@ class FirebaseService {
     final sheetDate = guide['sheetDate']?.toString() ?? '';
     final sourceEventId = guide['sourceEventId']?.toString() ?? '';
     final sourcePollId = guide['sourcePollId']?.toString() ?? '';
+    final missionSourceId = sourceId.isNotEmpty ? sourceId : sourceEventId;
     final rawSegments = (guide['segments'] as List?) ?? const [];
     final lyricLines = _lyricLinesFromText(
       guide['lyricsText']?.toString() ?? '',
@@ -1053,8 +1079,8 @@ class FirebaseService {
             return aOrder.compareTo(bOrder);
           });
 
-    if (sourceId.isNotEmpty && segments.isNotEmpty) {
-      final missionGroupId = '${sourceId}_$part';
+    if (missionSourceId.isNotEmpty && segments.isNotEmpty) {
+      final missionGroupId = '${missionSourceId}_$part';
       final existing = await _db
           .collection('harmony_relays')
           .where('churchId', isEqualTo: churchId)
@@ -1108,6 +1134,7 @@ class FirebaseService {
             'sourceDate': sheetDate,
             'sourceSheetUrl': guide['sheetUrl']?.toString() ?? '',
             'sourcePollId': sourcePollId,
+            'sourceEventId': sourceEventId,
             'lyricsText': guide['lyricsText']?.toString() ?? '',
             'lyricsTimeline': lyricTimeline,
             'lyricsLine': _lyricLineForSegment(
@@ -1836,8 +1863,23 @@ class FirebaseService {
   ) {
     final harmonySegments = _asStringMap(sheet['harmonySegments']);
     final partSegments = _asStringMap(harmonySegments['parts']);
-    final raw = partSegments[part];
-    if (raw is! List) return const [];
+    final raw = partSegments[part] ?? partSegments['all'];
+    if (raw is! List) {
+      for (final value in partSegments.values) {
+        if (value is List && value.isNotEmpty) {
+          return value
+              .whereType<Map>()
+              .map((segment) => Map<String, dynamic>.from(segment))
+              .toList()
+            ..sort((a, b) {
+              final aOrder = (a['order'] as num?)?.toInt() ?? 0;
+              final bOrder = (b['order'] as num?)?.toInt() ?? 0;
+              return aOrder.compareTo(bOrder);
+            });
+        }
+      }
+      return const [];
+    }
     return raw
         .whereType<Map>()
         .map((segment) => Map<String, dynamic>.from(segment))
@@ -2435,6 +2477,7 @@ class FirebaseService {
     required String harmonyGuide,
     required String harmonyLyricsText,
     List<Map<String, dynamic>> harmonyLyricsTimeline = const [],
+    Map<String, dynamic> harmonySegments = const {},
   }) async {
     final normalizedEventId = eventId.trim();
     if (normalizedEventId.isEmpty) throw Exception('일정 ID가 없습니다');
@@ -2449,6 +2492,7 @@ class FirebaseService {
       'harmonyGuide': guide,
       'harmonyLyricsText': lyricsText,
       'harmonyLyricsTimeline': harmonyLyricsTimeline,
+      'harmonySegments': harmonySegments,
       'harmonyGuideUpdatedAt': FieldValue.serverTimestamp(),
       'harmonyLyricsSyncedAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

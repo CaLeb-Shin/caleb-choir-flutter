@@ -50,7 +50,7 @@ class MembersScreen extends ConsumerWidget {
 
               return Tappable(
                 onTap: canEdit && !isMe
-                    ? () => _showRoleDialog(context, ref, m)
+                    ? () => _showMemberEditDialog(context, ref, m)
                     : null,
                 borderRadius: BorderRadius.circular(14),
                 child: Container(
@@ -143,35 +143,95 @@ class MembersScreen extends ConsumerWidget {
     );
   }
 
-  void _showRoleDialog(
+  void _showMemberEditDialog(
     BuildContext context,
     WidgetRef ref,
     Map<String, dynamic> member,
   ) {
+    var selectedRole = (member['role'] ?? 'member').toString();
+    var selectedPart = (member['part'] ?? User.selectableParts.first)
+        .toString();
+    if (!User.selectableParts.contains(selectedPart)) {
+      selectedPart = User.selectableParts.first;
+    }
+    final generationController = TextEditingController(
+      text: member['generation']?.toString() ?? '',
+    );
+
     showDialog(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text('${member['name'] ?? ''}님의 등급'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final entry in User.roleLabels.entries)
-              ListTile(
-                leading: _RoleChip(role: entry.key),
-                title: Text(entry.value),
-                trailing: member['role'] == entry.key
-                    ? const Icon(Icons.check_rounded, color: AppColors.primary)
-                    : null,
-                onTap: () async {
-                  Navigator.pop(dialogCtx);
-                  await FirebaseService.updateUserRole(member['id'], entry.key);
-                  ref.invalidate(membersProvider);
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          title: Text('${member['name'] ?? ''}님 정보 수정'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: selectedRole,
+                decoration: const InputDecoration(labelText: '등급'),
+                items: User.roleLabels.entries
+                    .map(
+                      (entry) => DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(entry.value),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setDialogState(() => selectedRole = value);
                 },
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: selectedPart,
+                decoration: const InputDecoration(labelText: '파트'),
+                items: User.selectableParts
+                    .map(
+                      (part) => DropdownMenuItem(
+                        value: part,
+                        child: Text(User.partLabels[part] ?? part),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setDialogState(() => selectedPart = value);
+                },
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: generationController,
+                decoration: const InputDecoration(
+                  labelText: '기수',
+                  hintText: '예: 1기',
+                ),
+                textInputAction: TextInputAction.done,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(dialogCtx);
+                await FirebaseService.updateUserAdminFields(
+                  member['id'],
+                  role: selectedRole,
+                  part: selectedPart,
+                  generation: generationController.text,
+                );
+                ref.invalidate(membersProvider);
+              },
+              child: const Text('저장'),
+            ),
           ],
         ),
       ),
-    );
+    ).whenComplete(generationController.dispose);
   }
 }
 
@@ -182,8 +242,13 @@ class _RoleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (bg, fg, label) = switch (role) {
-      'admin' => (AppColors.primary, Colors.white, '관리자'),
+      'admin' || 'church_admin' => (AppColors.primary, Colors.white, '관리자'),
       'officer' => (AppColors.secondaryContainer, AppColors.secondary, '임원'),
+      'part_leader' => (
+        AppColors.secondarySoft,
+        AppColors.secondary,
+        '파트장',
+      ),
       _ => (AppColors.surfaceMid, AppColors.muted, '단원'),
     };
     return Container(

@@ -1,5 +1,5 @@
 {
-  "buildCommand": "flutter/bin/flutter build web --release",
+  "buildCommand": "bash scripts/build_web_release.sh",
   "outputDirectory": "build/web",
   "installCommand": "git clone --depth 1 --branch stable https://github.com/flutter/flutter.git || true && flutter/bin/flutter doctor && flutter/bin/flutter pub get",
   "framework": null,
@@ -9,7 +9,25 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/main.dart.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/flutter_bootstrap.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
         }
       ]
     },

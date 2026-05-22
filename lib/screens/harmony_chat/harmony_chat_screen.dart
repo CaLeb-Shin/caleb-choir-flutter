@@ -885,7 +885,7 @@ class _CompactMissionRecordCard extends StatelessWidget {
                     const SizedBox(height: 14),
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 220),
-                      child: _SingleLineLyricText(
+                      child: _LyricDisplayText(
                         text: currentLine,
                         key: ValueKey(currentLine),
                         style: AppText.body(
@@ -894,15 +894,14 @@ class _CompactMissionRecordCard extends StatelessWidget {
                           color: Colors.white,
                           height: 1.25,
                         ),
-                        height: 30,
+                        minHeight: 30,
                       ),
                     ),
                     if (nextLine.isNotEmpty) ...[
                       const SizedBox(height: 9),
                       Text(
                         nextLine,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
                         style: AppText.body(
                           14,
                           weight: FontWeight.w800,
@@ -5319,6 +5318,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   String get _currentLyricLine {
     if (_isHandoffPlaying) {
+      final timelineLine = _timelineLyricAt(
+        _absoluteLyricSeconds,
+        timeline: _activeHandoffLyricsTimeline,
+      );
+      if (timelineLine.isNotEmpty) return timelineLine;
       final handoffLine = _handoffCurrentLyricLine;
       if (handoffLine.isNotEmpty) return handoffLine;
     }
@@ -5333,6 +5337,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   String get _nextLyricLine {
     if (_isHandoffPlaying) {
+      final timelineNext = _nextTimelineLyricAfter(
+        _absoluteLyricSeconds,
+        timeline: _activeHandoffLyricsTimeline,
+      );
+      if (timelineNext.isNotEmpty) return timelineNext;
       final handoffLine = _handoffNextLyricLine;
       if (handoffLine.isNotEmpty) return handoffLine;
     }
@@ -5374,10 +5383,20 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     return _playbackLyricBaseSeconds + _playbackElapsedSeconds;
   }
 
-  String _timelineLyricAt(double seconds) {
-    if (widget.lyricsTimeline.isEmpty) return '';
+  List<Map<String, dynamic>> get _activeHandoffLyricsTimeline {
+    final clip = _activeHandoffClip;
+    if (clip == null) return const [];
+    return _lyricsTimelineFromValue(clip['lyricsTimeline']);
+  }
+
+  String _timelineLyricAt(
+    double seconds, {
+    List<Map<String, dynamic>>? timeline,
+  }) {
+    final activeTimeline = timeline ?? widget.lyricsTimeline;
+    if (activeTimeline.isEmpty) return '';
     Map<String, dynamic>? selected;
-    for (final entry in widget.lyricsTimeline) {
+    for (final entry in activeTimeline) {
       final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
       if (time > seconds) break;
       selected = entry;
@@ -5385,8 +5404,12 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     return _cleanDisplayText(selected?['text']?.toString() ?? '');
   }
 
-  String _nextTimelineLyricAfter(double seconds) {
-    for (final entry in widget.lyricsTimeline) {
+  String _nextTimelineLyricAfter(
+    double seconds, {
+    List<Map<String, dynamic>>? timeline,
+  }) {
+    final activeTimeline = timeline ?? widget.lyricsTimeline;
+    for (final entry in activeTimeline) {
       final time = (entry['timeSec'] as num?)?.toDouble() ?? 0;
       final text = _cleanDisplayText(entry['text']?.toString() ?? '');
       if (time > seconds && text.isNotEmpty) return text;
@@ -5574,14 +5597,17 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Text(
-                safeSegmentLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.body(
-                  11,
-                  weight: FontWeight.w800,
-                  color: Colors.white.withValues(alpha: 0.62),
+              Flexible(
+                child: Text(
+                  safeSegmentLabel,
+                  softWrap: true,
+                  textAlign: TextAlign.end,
+                  style: AppText.body(
+                    11,
+                    weight: FontWeight.w800,
+                    color: Colors.white.withValues(alpha: 0.62),
+                    height: 1.2,
+                  ),
                 ),
               ),
             ],
@@ -5601,7 +5627,7 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 child: SlideTransition(position: offset, child: child),
               );
             },
-            child: _SingleLineLyricText(
+            child: _LyricDisplayText(
               text: mainLine,
               key: ValueKey('current-$mainLine'),
               style: AppText.body(
@@ -5610,7 +5636,7 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 color: AppColors.secondaryContainer,
                 height: 1.16,
               ),
-              height: 32,
+              minHeight: 32,
             ),
           ),
           const SizedBox(height: 10),
@@ -5628,7 +5654,7 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 child: SlideTransition(position: offset, child: child),
               );
             },
-            child: _SingleLineLyricText(
+            child: _LyricDisplayText(
               text: supportingLine,
               key: ValueKey('next-$supportingLine'),
               style: AppText.body(
@@ -5637,8 +5663,9 @@ class _KaraokeLyricsPanel extends StatelessWidget {
                 color: Colors.white.withValues(
                   alpha: supportingLineIsFallback ? 0.36 : 0.52,
                 ),
+                height: 1.28,
               ),
-              height: 20,
+              minHeight: 20,
             ),
           ),
           const SizedBox(height: 14),
@@ -5657,17 +5684,17 @@ class _KaraokeLyricsPanel extends StatelessWidget {
   }
 }
 
-class _SingleLineLyricText extends StatelessWidget {
-  const _SingleLineLyricText({
+class _LyricDisplayText extends StatelessWidget {
+  const _LyricDisplayText({
     super.key,
     required this.text,
     required this.style,
-    required this.height,
+    required this.minHeight,
   });
 
   final String text;
   final TextStyle style;
-  final double height;
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -5677,30 +5704,27 @@ class _SingleLineLyricText extends StatelessWidget {
         final direction = Directionality.of(context);
         final painter = TextPainter(
           text: TextSpan(text: text, style: style),
-          maxLines: 1,
+          maxLines: 2,
           textDirection: direction,
-        )..layout();
+        )..layout(maxWidth: constraints.maxWidth);
         final availableWidth = constraints.maxWidth.isFinite
             ? constraints.maxWidth
             : painter.width;
-        final scale = painter.width <= 0 || availableWidth <= 0
+        final lineWidth = painter.width;
+        final scale = lineWidth <= 0 || availableWidth <= 0
             ? 1.0
-            : math.min(1.0, availableWidth / painter.width);
+            : math.min(1.0, availableWidth / lineWidth);
         final nextStyle = style.copyWith(
           fontSize: math.max(11, baseSize * scale),
         );
 
         return SizedBox(
           width: double.infinity,
-          height: height,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              text,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: nextStyle,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(text, softWrap: true, style: nextStyle),
             ),
           ),
         );

@@ -371,6 +371,10 @@ class _ScheduleTile extends StatelessWidget {
     final hasLyricsSync = _lyricsTimelineFromValue(
       event['harmonyLyricsTimeline'],
     ).isNotEmpty;
+    final harmonySegmentCount = _harmonySegmentsForPart(
+      event['harmonySegments'],
+      'all',
+    ).length;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -453,6 +457,12 @@ class _ScheduleTile extends StatelessWidget {
                         const _MetaPill(
                           label: '싱크',
                           icon: Icons.lyrics_rounded,
+                          color: AppColors.secondary,
+                        ),
+                      if (harmonySegmentCount > 0)
+                        _MetaPill(
+                          label: '$harmonySegmentCount소절',
+                          icon: Icons.call_split_rounded,
                           color: AppColors.secondary,
                         ),
                       if (needsAttendance)
@@ -558,6 +568,7 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
   late final TextEditingController _guideController;
   late final TextEditingController _lyricsController;
   final List<_LyricSyncLine> _syncLines = [];
+  final List<_HarmonySegmentLine> _segmentLines = [];
   String _lyricFileName = '';
   bool _isSaving = false;
 
@@ -584,6 +595,10 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
           : existingSync,
       disposeOld: false,
     );
+    _replaceSegmentLines(
+      _segmentLinesFromValue(widget.event['harmonySegments']),
+      disposeOld: false,
+    );
   }
 
   @override
@@ -592,6 +607,9 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
     _guideController.dispose();
     _lyricsController.dispose();
     for (final line in _syncLines) {
+      line.dispose();
+    }
+    for (final line in _segmentLines) {
       line.dispose();
     }
     super.dispose();
@@ -765,6 +783,121 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
                       ),
                     ),
                   const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '녹음 소절',
+                          style: AppText.body(15, weight: FontWeight.w900),
+                        ),
+                      ),
+                      Text(
+                        '${_segmentLines.length}개',
+                        style: AppText.body(12, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.tonalIcon(
+                        onPressed: _rebuildSegmentsFromSync,
+                        icon: const Icon(Icons.call_split_rounded, size: 18),
+                        label: const Text('싱크로 소절 만들기'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _addSegmentLine,
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text('소절 추가'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_segmentLines.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLow,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: AppColors.border.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        '소절을 나누지 않으면 한 개 릴레이로 녹음됩니다.',
+                        style: AppText.body(12, color: AppColors.muted),
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 300),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: _segmentLines.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final segment = _segmentLines[index];
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(
+                                width: 70,
+                                child: TextField(
+                                  controller: segment.startController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: '시작',
+                                    hintText: '00:00',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              SizedBox(
+                                width: 70,
+                                child: TextField(
+                                  controller: segment.endController,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: '끝',
+                                    hintText: '00:08',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: TextField(
+                                  controller: segment.labelController,
+                                  minLines: 1,
+                                  maxLines: 2,
+                                  decoration: const InputDecoration(
+                                    isDense: true,
+                                    labelText: '라벨',
+                                    hintText: '1소절',
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: () => _removeSegmentLine(index),
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                tooltip: '소절 삭제',
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
@@ -823,6 +956,74 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
       ..addAll(lines);
   }
 
+  void _replaceSegmentLines(
+    List<_HarmonySegmentLine> lines, {
+    bool disposeOld = true,
+  }) {
+    if (disposeOld) {
+      for (final line in _segmentLines) {
+        line.dispose();
+      }
+    }
+    _segmentLines
+      ..clear()
+      ..addAll(lines);
+  }
+
+  void _rebuildSegmentsFromSync() {
+    final timeline = _timelinePayload();
+    if (timeline == null) {
+      _showMessage('가사 시간은 00:12.30 또는 초 단위 숫자로 입력해주세요.');
+      return;
+    }
+    final source = timeline.isNotEmpty
+        ? timeline
+        : _lyricsTimelineFromText(_lyricsController.text.trim());
+    if (source.isEmpty) {
+      _showMessage('가사 싱크를 먼저 만들어주세요.');
+      return;
+    }
+    final nextLines = <_HarmonySegmentLine>[];
+    for (var index = 0; index < source.length; index += 1) {
+      final start = (source[index]['timeSec'] as num?)?.toDouble() ?? 0;
+      final nextStart = index + 1 < source.length
+          ? (source[index + 1]['timeSec'] as num?)?.toDouble() ?? start
+          : start + 4.0;
+      final end = nextStart > start ? nextStart : start + 4.0;
+      nextLines.add(
+        _HarmonySegmentLine(
+          label: '${index + 1}소절',
+          startSec: start,
+          endSec: end,
+        ),
+      );
+    }
+    _replaceSegmentLines(nextLines);
+    setState(() {});
+  }
+
+  void _addSegmentLine() {
+    final lastEnd = _segmentLines.isEmpty
+        ? 0.0
+        : _parseSyncTime(_segmentLines.last.endController.text.trim()) ?? 0.0;
+    setState(() {
+      _segmentLines.add(
+        _HarmonySegmentLine(
+          label: '${_segmentLines.length + 1}소절',
+          startSec: lastEnd,
+          endSec: lastEnd + 4.0,
+        ),
+      );
+    });
+  }
+
+  void _removeSegmentLine(int index) {
+    if (index < 0 || index >= _segmentLines.length) return;
+    final line = _segmentLines.removeAt(index);
+    line.dispose();
+    setState(() {});
+  }
+
   Future<void> _save() async {
     final eventId = widget.event['id']?.toString() ?? '';
     final eventTitle = widget.event['title']?.toString().trim() ?? '';
@@ -846,6 +1047,11 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
       _showMessage('가사 시간은 00:12.30 또는 초 단위 숫자로 입력해주세요.');
       return;
     }
+    final segments = _segmentPayload();
+    if (segments == null) {
+      _showMessage('녹음 소절 시간은 00:12.30 또는 초 단위로 입력하고, 끝은 시작보다 늦어야 해요.');
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(() => _isSaving = true);
     try {
@@ -860,6 +1066,11 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
           harmonyLyricsTimeline: timeline.isEmpty && lyrics.isNotEmpty
               ? _lyricsTimelineFromText(lyrics)
               : timeline,
+          harmonySegments: segments.isEmpty
+              ? const <String, dynamic>{}
+              : {
+                  'parts': {'all': segments},
+                },
         );
         widget.ref.invalidate(eventsProvider);
         widget.ref.invalidate(latestPartGuideProvider);
@@ -891,6 +1102,38 @@ class _EventHarmonyGuideSheetState extends State<_EventHarmonyGuideSheet> {
       return at.compareTo(bt);
     });
     return payload;
+  }
+
+  List<Map<String, dynamic>>? _segmentPayload() {
+    final raw = <Map<String, dynamic>>[];
+    for (final line in _segmentLines) {
+      final start = _parseSyncTime(line.startController.text.trim());
+      final end = _parseSyncTime(line.endController.text.trim());
+      if (start == null || end == null || end <= start) return null;
+      final label = _firstFilled([
+        line.labelController.text,
+        '${raw.length + 1}소절',
+      ]);
+      raw.add({'label': label, 'startSec': start, 'endSec': end});
+    }
+    raw.sort((a, b) {
+      final at = (a['startSec'] as num?)?.toDouble() ?? 0;
+      final bt = (b['startSec'] as num?)?.toDouble() ?? 0;
+      return at.compareTo(bt);
+    });
+    return [
+      for (var index = 0; index < raw.length; index += 1)
+        {
+          'id': 'seg-${(index + 1).toString().padLeft(2, '0')}',
+          'order': index + 1,
+          'label': raw[index]['label']?.toString() ?? '${index + 1}소절',
+          'startSec': (raw[index]['startSec'] as num?)?.toDouble() ?? 0,
+          'endSec': (raw[index]['endSec'] as num?)?.toDouble() ?? 0,
+          'durationSec':
+              ((raw[index]['endSec'] as num?)?.toDouble() ?? 0) -
+              ((raw[index]['startSec'] as num?)?.toDouble() ?? 0),
+        },
+    ];
   }
 
   void _showMessage(String message) {
@@ -1032,7 +1275,7 @@ class _CreateEventRelaySheetState extends State<_CreateEventRelaySheet> {
       } else {
         await FirebaseService.createHarmonyRelayFromGuide(
           part: _selectedPart,
-          guide: _eventHarmonyGuide(widget.event),
+          guide: _eventHarmonyGuide(widget.event, part: _selectedPart),
         );
         widget.ref.invalidate(harmonyRelaysProvider);
       }
@@ -1065,6 +1308,26 @@ class _LyricSyncLine {
   void dispose() {
     timeController.dispose();
     textController.dispose();
+  }
+}
+
+class _HarmonySegmentLine {
+  _HarmonySegmentLine({
+    required String label,
+    required double startSec,
+    required double endSec,
+  }) : labelController = TextEditingController(text: label),
+       startController = TextEditingController(text: _formatSyncTime(startSec)),
+       endController = TextEditingController(text: _formatSyncTime(endSec));
+
+  final TextEditingController labelController;
+  final TextEditingController startController;
+  final TextEditingController endController;
+
+  void dispose() {
+    labelController.dispose();
+    startController.dispose();
+    endController.dispose();
   }
 }
 
@@ -1224,7 +1487,10 @@ List<_RelayPartOption> _relayPartOptionsFor(User? profile) {
       .toList();
 }
 
-Map<String, dynamic> _eventHarmonyGuide(Map<String, dynamic> event) {
+Map<String, dynamic> _eventHarmonyGuide(
+  Map<String, dynamic> event, {
+  String part = '',
+}) {
   final eventTitle = event['title']?.toString().trim() ?? '';
   final title = _firstFilled([
     event['harmonyTitle']?.toString(),
@@ -1245,7 +1511,7 @@ Map<String, dynamic> _eventHarmonyGuide(Map<String, dynamic> event) {
     'lyricsText': lyricsText,
     'lyricsTimeline': _lyricsTimelineFromValue(event['harmonyLyricsTimeline']),
     'lyricLines': _lyricsLinesForAutoTiming(lyricsText),
-    'segments': const [],
+    'segments': _harmonySegmentsForPart(event['harmonySegments'], part),
   };
 }
 
@@ -1260,6 +1526,21 @@ List<_LyricSyncLine> _syncLinesFromValue(dynamic value) {
       .toList();
 }
 
+List<_HarmonySegmentLine> _segmentLinesFromValue(dynamic value) {
+  return _harmonySegmentsForPart(value, 'all')
+      .map(
+        (segment) => _HarmonySegmentLine(
+          label: _firstFilled([
+            segment['label']?.toString(),
+            '${(segment['order'] as num?)?.toInt() ?? 1}소절',
+          ]),
+          startSec: (segment['startSec'] as num?)?.toDouble() ?? 0,
+          endSec: (segment['endSec'] as num?)?.toDouble() ?? 0,
+        ),
+      )
+      .toList();
+}
+
 List<_LyricSyncLine> _syncLinesFromText(String text) {
   return _lyricsTimelineFromText(text)
       .map(
@@ -1269,6 +1550,58 @@ List<_LyricSyncLine> _syncLinesFromText(String text) {
         ),
       )
       .toList();
+}
+
+List<Map<String, dynamic>> _harmonySegmentsForPart(dynamic value, String part) {
+  if (value is! Map) return const [];
+  final map = Map<String, dynamic>.from(value);
+  final partsValue = map['parts'];
+  if (partsValue is! Map) return const [];
+  final parts = Map<String, dynamic>.from(partsValue);
+  final raw = parts[part] ?? parts['all'];
+  if (raw is! List) {
+    for (final value in parts.values) {
+      if (value is List && value.isNotEmpty) {
+        return _normalizeHarmonySegments(value);
+      }
+    }
+    return const [];
+  }
+  return _normalizeHarmonySegments(raw);
+}
+
+List<Map<String, dynamic>> _normalizeHarmonySegments(List raw) {
+  final segments =
+      raw
+          .whereType<Map>()
+          .map((segment) {
+            final start = (segment['startSec'] as num?)?.toDouble() ?? 0;
+            final end = (segment['endSec'] as num?)?.toDouble() ?? start;
+            return {
+              'id': segment['id']?.toString() ?? '',
+              'order': (segment['order'] as num?)?.toInt() ?? 0,
+              'label': segment['label']?.toString() ?? '',
+              'startSec': start,
+              'endSec': end,
+              'durationSec':
+                  (segment['durationSec'] as num?)?.toDouble() ?? (end - start),
+            };
+          })
+          .where((segment) {
+            final end = (segment['endSec'] as num?)?.toDouble() ?? 0;
+            final start = (segment['startSec'] as num?)?.toDouble() ?? 0;
+            return end > start;
+          })
+          .toList()
+        ..sort((a, b) {
+          final aOrder = (a['order'] as num?)?.toInt() ?? 0;
+          final bOrder = (b['order'] as num?)?.toInt() ?? 0;
+          if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+          final at = (a['startSec'] as num?)?.toDouble() ?? 0;
+          final bt = (b['startSec'] as num?)?.toDouble() ?? 0;
+          return at.compareTo(bt);
+        });
+  return segments;
 }
 
 List<Map<String, dynamic>> _lyricsTimelineFromValue(dynamic value) {
