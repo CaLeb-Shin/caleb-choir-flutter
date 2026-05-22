@@ -4353,7 +4353,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     final firstHandoffDuration = _handoffStopAfterFor(
       previousClips,
       0,
-      alignToBackingTimeline: hasMrBacking,
+      alignToBackingTimeline: false,
     );
     setState(() {
       _isHandoffPlaying = true;
@@ -4371,13 +4371,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         final audioUrl = clip['audioUrl']?.toString().trim() ?? '';
         if (audioUrl.isEmpty) continue;
         final segmentStart = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
+        final isLastPreviousClip = index == previousClips.length - 1;
         final duration = _handoffStopAfterFor(
           previousClips,
           index,
-          alignToBackingTimeline: hasMrBacking,
+          alignToBackingTimeline: hasMrBacking && isLastPreviousClip,
         );
         setState(() => _handoffPlaybackIndex = index + 1);
-        final isLastPreviousClip = index == previousClips.length - 1;
         await _playHandoffAudioAndWait(
           audioUrl: audioUrl,
           backingUrl: _recordingBackingUrl,
@@ -4387,7 +4387,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
           stopAfter: duration,
           countdownBeforeEnd: isLastPreviousClip,
           keepBackingPlaying: isLastPreviousClip && hasMrBacking,
-          waitForTimelineBoundary: hasMrBacking,
         );
         if (isLastPreviousClip) handoffCountdownCompleted = true;
       }
@@ -4470,7 +4469,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     required Duration stopAfter,
     bool countdownBeforeEnd = false,
     bool keepBackingPlaying = false,
-    bool waitForTimelineBoundary = false,
   }) async {
     final timeout = stopAfter > Duration.zero
         ? stopAfter + const Duration(seconds: 3)
@@ -4494,7 +4492,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         stopAfter: stopAfter,
         timeout: timeout,
         lyricBaseSeconds: backingPosition.inMilliseconds / 1000,
-        waitForStopAfter: waitForTimelineBoundary,
       );
       if (countdownFuture != null) {
         await countdownFuture;
@@ -4540,11 +4537,9 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     Duration stopAfter = Duration.zero,
     Duration timeout = const Duration(seconds: 45),
     double? lyricBaseSeconds,
-    bool waitForStopAfter = false,
   }) async {
     final completer = Completer<void>();
     final sub = _guidePlayer.onPlayerComplete.listen((_) {
-      if (waitForStopAfter && stopAfter > Duration.zero) return;
       if (!completer.isCompleted) completer.complete();
     });
     try {
