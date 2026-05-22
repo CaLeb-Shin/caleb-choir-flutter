@@ -1944,13 +1944,26 @@ List<Map<String, dynamic>> _previousMissionClipsFor(
         .whereType<Map<String, dynamic>>()
         .toList();
     if (clips.isNotEmpty) {
+      final previousRelay = sorted[index];
       previousClips.add({
         ...clips.last,
         'segmentStartSec':
-            (sorted[index]['segmentStartSec'] as num?)?.toDouble() ?? 0,
+            (previousRelay['segmentStartSec'] as num?)?.toDouble() ?? 0,
         'segmentEndSec':
-            (sorted[index]['segmentEndSec'] as num?)?.toDouble() ?? 0,
-        'segmentLabel': _segmentDisplayLabel(sorted[index], index),
+            (previousRelay['segmentEndSec'] as num?)?.toDouble() ?? 0,
+        'segmentLabel': _segmentDisplayLabel(previousRelay, index),
+        'lyricsLine': _firstText([
+          previousRelay['lyricsLine']?.toString(),
+          _lyricLineFromRelayText(previousRelay, index),
+        ]),
+        'nextLyricsLine': _firstText([
+          previousRelay['nextLyricsLine']?.toString(),
+          _nextLyricLineFromRelayText(previousRelay, index),
+        ]),
+        'lyricsText': previousRelay['lyricsText']?.toString() ?? '',
+        'lyricsTimeline': _lyricsTimelineFromValue(
+          previousRelay['lyricsTimeline'],
+        ),
       });
     }
   }
@@ -3817,6 +3830,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isHandoffPlaying ||
         _countdown != null ||
         _playingAttemptNumber != null;
+    final activeSegmentLabel = _activeLyricSegmentLabel;
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
       child: Container(
@@ -3861,7 +3875,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                   title: _songTitleFromRelayTitle(widget.relayTitle),
                   currentLine: _currentLyricLine,
                   nextLine: _nextLyricLine,
-                  segmentLabel: widget.segmentLabel,
+                  segmentLabel: activeSegmentLabel,
                   progress: lyricProgress,
                   isActive:
                       _isRecording ||
@@ -4189,6 +4203,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _countdownThenStartRecording({
     String? backingUrl,
     bool primeBacking = false,
+    bool permissionReady = false,
   }) async {
     if (_isRecording ||
         _isSubmitting ||
@@ -4200,12 +4215,16 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _showMessage('녹음 기회는 3번까지예요.');
       return;
     }
+    if (!permissionReady && !await _ensureRecordingPermissionReady()) return;
     if (primeBacking && backingUrl != null && backingUrl.isNotEmpty) {
       await _primeRecordingBacking(backingUrl);
     }
     await _runCountdown();
     if (!mounted) return;
-    await _startRecordingInternal(backingUrl: backingUrl);
+    await _startRecordingInternal(
+      backingUrl: backingUrl,
+      permissionReady: true,
+    );
   }
 
   Future<void> _runCountdown() async {
@@ -4330,13 +4349,6 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _recordFromRelayLeadIn() async {
     final hasMrBacking = _recordingBackingUrl != null;
     final previousClips = _playablePreviousClips;
-    if (previousClips.isEmpty) {
-      await _countdownThenStartRecording(
-        backingUrl: _recordingBackingUrl,
-        primeBacking: hasMrBacking,
-      );
-      return;
-    }
     if (_isRecording ||
         _isSubmitting ||
         _isGuidePlaying ||
@@ -4346,6 +4358,15 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     if (!_hasAttemptsLeft) {
       _showMessage('녹음 기회는 3번까지예요.');
+      return;
+    }
+    if (!await _ensureRecordingPermissionReady()) return;
+    if (previousClips.isEmpty) {
+      await _countdownThenStartRecording(
+        backingUrl: _recordingBackingUrl,
+        primeBacking: hasMrBacking,
+        permissionReady: true,
+      );
       return;
     }
 
@@ -4371,13 +4392,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         final audioUrl = clip['audioUrl']?.toString().trim() ?? '';
         if (audioUrl.isEmpty) continue;
         final segmentStart = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
-        final isLastPreviousClip = index == previousClips.length - 1;
         final duration = _handoffStopAfterFor(
           previousClips,
           index,
-          alignToBackingTimeline: hasMrBacking && isLastPreviousClip,
+          alignToBackingTimeline: false,
         );
         setState(() => _handoffPlaybackIndex = index + 1);
+        final isLastPreviousClip = index == previousClips.length - 1;
         await _playHandoffAudioAndWait(
           audioUrl: audioUrl,
           backingUrl: _recordingBackingUrl,
@@ -4385,10 +4406,12 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             milliseconds: (segmentStart * 1000).round(),
           ),
           stopAfter: duration,
-          countdownBeforeEnd: isLastPreviousClip,
           keepBackingPlaying: isLastPreviousClip && hasMrBacking,
         );
         if (isLastPreviousClip) handoffCountdownCompleted = true;
+      }
+      if (handoffCountdownCompleted) {
+        await _runCountdown();
       }
     } catch (_) {
       _showMessage('앞 릴레이 녹음을 재생하지 못했어요. 내 녹음으로 넘어갑니다.');
@@ -4405,13 +4428,27 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       await _startRecordingInternal(
         backingUrl: _recordingBackingUrl,
         continueExistingBacking: hasMrBacking,
+        permissionReady: true,
       );
     } else {
       await _countdownThenStartRecording(
         backingUrl: _recordingBackingUrl,
         primeBacking: hasMrBacking,
+        permissionReady: true,
       );
     }
+  }
+
+  Future<bool> _ensureRecordingPermissionReady() async {
+    final hasPermission = await _ensureMicrophonePermission(_recorder);
+    if (hasPermission) return true;
+    if (widget.ref.read(localPreviewModeProvider)) {
+      _addPreviewGeneratedAttempt();
+      _showMessage('이 미리보기 브라우저는 마이크가 막혀 있어 테스트용 테이크를 만들었어요.');
+      return false;
+    }
+    _showMessage('마이크 권한을 먼저 허용한 뒤 이어듣기를 시작해주세요.');
+    return false;
   }
 
   double _clipSegmentStartSeconds(Map<String, dynamic> clip) {
@@ -4431,7 +4468,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
 
   Duration _recordedClipDuration(Map<String, dynamic> clip) {
     final seconds = (clip['durationSeconds'] as num?)?.toDouble() ?? 0;
-    return _durationFromSeconds(seconds);
+    return _durationFromSeconds(seconds <= 0 ? 0 : seconds + 1);
   }
 
   Duration _handoffStopAfterFor(
@@ -4443,6 +4480,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     final clip = clips[index];
     final segmentStart = _clipSegmentStartSeconds(clip);
     final segmentEnd = _clipSegmentEndSeconds(clip);
+    final segmentDuration = _durationFromSeconds(segmentEnd - segmentStart);
     final recordedDuration = _recordedClipDuration(clip);
 
     if (alignToBackingTimeline) {
@@ -4458,8 +4496,13 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       if (timelineDuration > Duration.zero) return timelineDuration;
     }
 
+    if (recordedDuration > Duration.zero && segmentDuration > Duration.zero) {
+      return recordedDuration > segmentDuration
+          ? recordedDuration
+          : segmentDuration;
+    }
     if (recordedDuration > Duration.zero) return recordedDuration;
-    return _durationFromSeconds(segmentEnd - segmentStart);
+    return segmentDuration;
   }
 
   Future<void> _playHandoffAudioAndWait({
@@ -4575,6 +4618,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   Future<void> _startRecordingInternal({
     String? backingUrl,
     bool continueExistingBacking = false,
+    bool permissionReady = false,
   }) async {
     if (!_hasAttemptsLeft) {
       _showMessage('녹음 기회는 3번까지예요.');
@@ -4582,7 +4626,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     try {
       final hasBacking = backingUrl != null && backingUrl.isNotEmpty;
-      final hasPermission = await _ensureMicrophonePermission(_recorder);
+      final hasPermission =
+          permissionReady || await _ensureMicrophonePermission(_recorder);
       if (!hasPermission) {
         if (widget.ref.read(localPreviewModeProvider)) {
           _addPreviewGeneratedAttempt();
@@ -4847,7 +4892,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       _recordingTimer?.cancel();
       _recordingTimer = null;
       final attemptNumber = _recordAttemptCount;
-      final durationSeconds = _recordSeconds;
+      final durationSeconds = math.max(1, _recordElapsedSeconds.ceil());
       final fileName = _audioFileName;
       final contentType = _contentType;
       Uint8List recorded;
@@ -5153,7 +5198,71 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Map<String, dynamic>? get _activeHandoffClip {
+    if (!_isHandoffPlaying) return null;
+    final clips = _playablePreviousClips;
+    if (clips.isEmpty) return null;
+    final rawIndex = _handoffPlaybackIndex <= 0 ? 0 : _handoffPlaybackIndex - 1;
+    final index = rawIndex.clamp(0, clips.length - 1).toInt();
+    return clips[index];
+  }
+
+  int get _activeHandoffClipIndex {
+    final clips = _playablePreviousClips;
+    if (!_isHandoffPlaying || clips.isEmpty) return -1;
+    final rawIndex = _handoffPlaybackIndex <= 0 ? 0 : _handoffPlaybackIndex - 1;
+    return rawIndex.clamp(0, clips.length - 1).toInt();
+  }
+
+  String get _activeLyricSegmentLabel {
+    final handoffClip = _activeHandoffClip;
+    final handoffLabel = _cleanDisplayText(
+      handoffClip?['segmentLabel']?.toString() ?? '',
+    );
+    if (handoffLabel.isNotEmpty) return handoffLabel;
+    return widget.segmentLabel;
+  }
+
+  String get _handoffCurrentLyricLine {
+    final clip = _activeHandoffClip;
+    if (clip == null) return '';
+    return _firstText([
+      clip['lyricsLine']?.toString(),
+      _lyricFromSegmentLabel(clip['segmentLabel']?.toString() ?? ''),
+    ]);
+  }
+
+  String get _handoffNextLyricLine {
+    final clip = _activeHandoffClip;
+    if (clip == null) return '';
+    final direct = _cleanDisplayText(clip['nextLyricsLine']?.toString() ?? '');
+    if (direct.isNotEmpty) return direct;
+    final clips = _playablePreviousClips;
+    final index = _activeHandoffClipIndex;
+    if (index >= 0 && index + 1 < clips.length) {
+      return _firstText([
+        clips[index + 1]['lyricsLine']?.toString(),
+        _lyricFromSegmentLabel(
+          clips[index + 1]['segmentLabel']?.toString() ?? '',
+        ),
+      ]);
+    }
+    return _cleanDisplayText(widget.lyricsLine);
+  }
+
+  String _lyricFromSegmentLabel(String label) {
+    final cleaned = _cleanDisplayText(label);
+    if (cleaned.isEmpty) return '';
+    final parts = cleaned.split('·');
+    if (parts.length <= 1) return '';
+    return _cleanDisplayText(parts.sublist(1).join('·'));
+  }
+
   String get _currentLyricLine {
+    if (_isHandoffPlaying) {
+      final handoffLine = _handoffCurrentLyricLine;
+      if (handoffLine.isNotEmpty) return handoffLine;
+    }
     final timelineLine = _timelineLyricAt(_absoluteLyricSeconds);
     if (timelineLine.isNotEmpty) return timelineLine;
     final direct = _cleanDisplayText(widget.lyricsLine);
@@ -5164,6 +5273,10 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
   }
 
   String get _nextLyricLine {
+    if (_isHandoffPlaying) {
+      final handoffLine = _handoffNextLyricLine;
+      if (handoffLine.isNotEmpty) return handoffLine;
+    }
     final timelineNext = _nextTimelineLyricAfter(_absoluteLyricSeconds);
     if (timelineNext.isNotEmpty) return timelineNext;
     final direct = _cleanDisplayText(widget.nextLyricsLine);
