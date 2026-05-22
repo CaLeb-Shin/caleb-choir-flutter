@@ -4349,9 +4349,19 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       return;
     }
 
+    final firstHandoffStart = _clipSegmentStartSeconds(previousClips.first);
+    final firstHandoffDuration = _handoffStopAfterFor(
+      previousClips,
+      0,
+      alignToBackingTimeline: hasMrBacking,
+    );
     setState(() {
       _isHandoffPlaying = true;
       _handoffPlaybackIndex = 0;
+      _playbackLyricBaseSeconds = firstHandoffStart;
+      _playbackLyricDurationSeconds =
+          firstHandoffDuration.inMilliseconds / 1000;
+      _playbackElapsedSeconds = 0;
     });
     var handoffCountdownCompleted = false;
     try {
@@ -4360,17 +4370,12 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         final clip = previousClips[index];
         final audioUrl = clip['audioUrl']?.toString().trim() ?? '';
         if (audioUrl.isEmpty) continue;
-        final seconds = (clip['durationSeconds'] as num?)?.toDouble() ?? 0;
         final segmentStart = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
-        final segmentEnd = (clip['segmentEndSec'] as num?)?.toDouble() ?? 0;
-        final segmentSeconds = segmentEnd > segmentStart
-            ? segmentEnd - segmentStart
-            : 0.0;
-        final duration = seconds > 0
-            ? Duration(milliseconds: (seconds * 1000).round())
-            : segmentSeconds > 0
-            ? Duration(milliseconds: (segmentSeconds * 1000).round())
-            : Duration.zero;
+        final duration = _handoffStopAfterFor(
+          previousClips,
+          index,
+          alignToBackingTimeline: hasMrBacking,
+        );
         setState(() => _handoffPlaybackIndex = index + 1);
         final isLastPreviousClip = index == previousClips.length - 1;
         await _playHandoffAudioAndWait(
@@ -4382,6 +4387,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
           stopAfter: duration,
           countdownBeforeEnd: isLastPreviousClip,
           keepBackingPlaying: isLastPreviousClip && hasMrBacking,
+          waitForTimelineBoundary: hasMrBacking,
         );
         if (isLastPreviousClip) handoffCountdownCompleted = true;
       }
@@ -4409,6 +4415,54 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
   }
 
+  double _clipSegmentStartSeconds(Map<String, dynamic> clip) {
+    final seconds = (clip['segmentStartSec'] as num?)?.toDouble() ?? 0;
+    return seconds < 0 ? 0 : seconds;
+  }
+
+  double _clipSegmentEndSeconds(Map<String, dynamic> clip) {
+    final seconds = (clip['segmentEndSec'] as num?)?.toDouble() ?? 0;
+    return seconds < 0 ? 0 : seconds;
+  }
+
+  Duration _durationFromSeconds(double seconds) {
+    if (seconds <= 0) return Duration.zero;
+    return Duration(milliseconds: (seconds * 1000).round());
+  }
+
+  Duration _recordedClipDuration(Map<String, dynamic> clip) {
+    final seconds = (clip['durationSeconds'] as num?)?.toDouble() ?? 0;
+    return _durationFromSeconds(seconds);
+  }
+
+  Duration _handoffStopAfterFor(
+    List<Map<String, dynamic>> clips,
+    int index, {
+    required bool alignToBackingTimeline,
+  }) {
+    if (index < 0 || index >= clips.length) return Duration.zero;
+    final clip = clips[index];
+    final segmentStart = _clipSegmentStartSeconds(clip);
+    final segmentEnd = _clipSegmentEndSeconds(clip);
+    final recordedDuration = _recordedClipDuration(clip);
+
+    if (alignToBackingTimeline) {
+      final nextStart = index + 1 < clips.length
+          ? _clipSegmentStartSeconds(clips[index + 1])
+          : widget.segmentStartSec;
+      final boundary = nextStart > segmentStart
+          ? nextStart
+          : segmentEnd > segmentStart
+          ? segmentEnd
+          : 0.0;
+      final timelineDuration = _durationFromSeconds(boundary - segmentStart);
+      if (timelineDuration > Duration.zero) return timelineDuration;
+    }
+
+    if (recordedDuration > Duration.zero) return recordedDuration;
+    return _durationFromSeconds(segmentEnd - segmentStart);
+  }
+
   Future<void> _playHandoffAudioAndWait({
     required String audioUrl,
     required String? backingUrl,
@@ -4416,6 +4470,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     required Duration stopAfter,
     bool countdownBeforeEnd = false,
     bool keepBackingPlaying = false,
+    bool waitForTimelineBoundary = false,
   }) async {
     final timeout = stopAfter > Duration.zero
         ? stopAfter + const Duration(seconds: 3)
@@ -4439,6 +4494,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         stopAfter: stopAfter,
         timeout: timeout,
         lyricBaseSeconds: backingPosition.inMilliseconds / 1000,
+        waitForStopAfter: waitForTimelineBoundary,
       );
       if (countdownFuture != null) {
         await countdownFuture;
@@ -4484,9 +4540,11 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     Duration stopAfter = Duration.zero,
     Duration timeout = const Duration(seconds: 45),
     double? lyricBaseSeconds,
+    bool waitForStopAfter = false,
   }) async {
     final completer = Completer<void>();
     final sub = _guidePlayer.onPlayerComplete.listen((_) {
+      if (waitForStopAfter && stopAfter > Duration.zero) return;
       if (!completer.isCompleted) completer.complete();
     });
     try {
