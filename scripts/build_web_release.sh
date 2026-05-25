@@ -6,7 +6,8 @@ if [[ ! -x "$FLUTTER_BIN" ]]; then
   FLUTTER_BIN="flutter"
 fi
 
-"$FLUTTER_BIN" build web --release --no-tree-shake-icons
+ENABLE_HARMONY_CHAT="${ENABLE_HARMONY_CHAT:-true}"
+"$FLUTTER_BIN" build web --release --no-tree-shake-icons --dart-define=ENABLE_HARMONY_CHAT="$ENABLE_HARMONY_CHAT"
 
 export ICON_ASSET_VERSION="${ICON_ASSET_VERSION:-icons-20260521}"
 MAIN_JS="build/web/main.dart.js"

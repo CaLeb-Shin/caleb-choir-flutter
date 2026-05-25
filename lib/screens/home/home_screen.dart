@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../models/user.dart' show User;
+import '../../config/feature_flags.dart';
 import '../../widgets/interactive.dart';
 import '../attendance/attendance_screen.dart';
 import '../community/community_screen.dart';
 import '../seating/seating_screen.dart';
 import '../events/events_screen.dart';
+import '../harmony_chat/harmony_chat_development_screen.dart';
 import '../harmony_chat/harmony_chat_screen.dart';
 import '../sheet_music/sheet_music_screen.dart';
 import '../videos/videos_screen.dart';
@@ -79,8 +81,10 @@ class HomeScreen extends ConsumerWidget {
             ref.invalidate(recentSheetMusicProvider);
             ref.invalidate(recentVideosProvider);
             ref.invalidate(pollsProvider);
-            ref.invalidate(harmonyNotesProvider);
-            ref.invalidate(harmonyRelaysProvider);
+            if (FeatureFlags.harmonyChatEnabled) {
+              ref.invalidate(harmonyNotesProvider);
+              ref.invalidate(harmonyRelaysProvider);
+            }
             ref.invalidate(seatingChartsProvider);
             if (currentSeatingChart != null) {
               ref.invalidate(
@@ -620,13 +624,21 @@ class HomeScreen extends ConsumerWidget {
         (ref.watch(recentVideosProvider).valueOrNull ?? []).isNotEmpty;
     final posts = ref.watch(postsProvider).valueOrNull ?? [];
     final hasNewPosts = posts.any((p) => _isRecent(p['createdAt']));
-    final harmonyNotes = ref.watch(harmonyNotesProvider).valueOrNull ?? [];
-    final harmonyRelays = ref.watch(harmonyRelaysProvider).valueOrNull ?? [];
+    final harmonyChatEnabled = FeatureFlags.harmonyChatEnabled;
+    final harmonyNotes = harmonyChatEnabled
+        ? ref.watch(harmonyNotesProvider).valueOrNull ??
+              const <Map<String, dynamic>>[]
+        : const <Map<String, dynamic>>[];
+    final harmonyRelays = harmonyChatEnabled
+        ? ref.watch(harmonyRelaysProvider).valueOrNull ??
+              const <Map<String, dynamic>>[]
+        : const <Map<String, dynamic>>[];
     final hasNewHarmonyNotes =
-        harmonyNotes.any((n) => _isRecent(n['createdAt'])) ||
-        harmonyRelays.any(
-          (r) => _isRecent(r['createdAt']) || _isRecent(r['lastClipAt']),
-        );
+        harmonyChatEnabled &&
+        (harmonyNotes.any((n) => _isRecent(n['createdAt'])) ||
+            harmonyRelays.any(
+              (r) => _isRecent(r['createdAt']) || _isRecent(r['lastClipAt']),
+            ));
     final events = ref.watch(eventsProvider).valueOrNull ?? [];
     final now = DateTime.now();
     final hasNewEvents = events.any((e) {
@@ -695,8 +707,15 @@ class HomeScreen extends ConsumerWidget {
         customIcon: const HarmonyChatMenuGlyph(),
         label: '하모니챗',
         tone: 'secondary',
+        statusLabel: harmonyChatEnabled ? null : '개발중',
         hasNew: hasNewHarmonyNotes,
-        onTap: () => _openSection(context, '하모니챗', const HarmonyChatScreen()),
+        onTap: () => _openSection(
+          context,
+          '하모니챗',
+          harmonyChatEnabled
+              ? const HarmonyChatScreen()
+              : const HarmonyChatDevelopmentScreen(),
+        ),
       ),
       MiniActionTile(
         icon: Icons.calendar_today_rounded,

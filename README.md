@@ -15,6 +15,13 @@ flutter run
 flutter run -d chrome
 ```
 
+하모니챗을 강제로 켜거나 끌 때:
+
+```sh
+flutter run -d chrome --dart-define=ENABLE_HARMONY_CHAT=true
+flutter run -d chrome --dart-define=ENABLE_HARMONY_CHAT=false
+```
+
 ## 검증 명령
 
 Codex나 로컬 작업 후 기본으로 아래 명령을 확인합니다.
@@ -35,9 +42,11 @@ npm --prefix functions ci
 
 이 저장소는 GitHub `main` 브랜치에 push되면 Vercel이 `vercel.json` 설정으로 Flutter web을 빌드해 자동 배포합니다.
 
-- Build command: `flutter/bin/flutter build web --release`
+- Build command: `bash scripts/build_web_release.sh`
 - Output directory: `build/web`
 - Production URL: https://caleb-choir-flutter.vercel.app
+
+하모니챗은 기본 배포에서 노출됩니다. 임시로 숨겨야 할 때만 `ENABLE_HARMONY_CHAT=false` 환경변수를 설정하세요.
 
 기존 편의 스크립트도 사용할 수 있습니다.
 

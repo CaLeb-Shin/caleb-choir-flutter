@@ -651,6 +651,52 @@ final previewHarmonyRelaysProvider = StateProvider<List<Map<String, dynamic>>>(
   (ref) => _clonePreviewHarmonyRelays(),
 );
 
+final previewHarmonyPracticeProgressProvider =
+    StateProvider<Map<String, dynamic>>(
+      (ref) => {
+        'id': _previewUserId,
+        'userId': _previewUserId,
+        'part': 'soprano',
+        'xp': 180,
+        'level': FirebaseService.harmonyLevelForXp(180),
+        'practiceCount': 6,
+        'lastPracticeDate': '2026-05-26',
+        'practiceDates': const ['2026-05-24', '2026-05-25', '2026-05-26'],
+        'completedTutorialSteps': const {
+          'mrRecording': true,
+          'dailyMission': true,
+        },
+      },
+    );
+
+final previewHarmonyPracticeSubmissionsProvider =
+    StateProvider<List<Map<String, dynamic>>>(
+      (ref) => const [
+        {
+          'id': 'preview-practice-1',
+          'churchId': 'preview-church',
+          'userId': 'preview-soprano-2',
+          'userName': '오높음',
+          'part': 'soprano',
+          'title': '주만 바라볼지라 개인연습',
+          'missionTitle': '후렴 첫 호흡을 MR에 맞춰 녹음',
+          'audioUrl':
+              'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+          'audioFileName': 'preview_practice.wav',
+          'mrAudioUrl':
+              'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
+          'mrAudioFileName': '파트MR.mp3',
+          'durationSeconds': 12,
+          'xpAwarded': 35,
+          'status': 'reviewed',
+          'leaderFeedback': '첫 진입이 좋아졌어요. 다음에는 마지막 음을 조금만 더 길게 잡아봐요.',
+          'feedbackByName': '정소프라노 파트장',
+          'createdAt': '2026-05-26T09:20:00',
+          'feedbackAt': '2026-05-26T10:05:00',
+        },
+      ],
+    );
+
 // ─── Logged-out flag (로그아웃 안내 메시지 1회 표시용) ───
 final loggedOutProvider = StateProvider<bool>((ref) => false);
 
@@ -883,6 +929,56 @@ final latestPartGuideProvider = FutureProvider<Map<String, dynamic>?>((ref) {
   }
   return FirebaseService.getLatestPartGuideForRelay(part: part);
 });
+
+final activeHarmonyPracticeMissionProvider =
+    StreamProvider<Map<String, dynamic>?>((ref) {
+      final profile = ref.watch(profileProvider).valueOrNull;
+      final part = profile?.partLeaderFor ?? profile?.part ?? '';
+      if (part.isEmpty) return Stream.value(null);
+      if (ref.watch(localPreviewModeProvider)) {
+        return Stream.value({
+          'id': 'preview-practice-mission',
+          'churchId': 'preview-church',
+          'part': part,
+          'title': '후렴 첫 호흡을 MR에 맞춰 녹음',
+          'prompt': 'MR을 들으며 1번 이상 녹음하고, 마음에 드는 테이크를 파트장에게 보내보세요.',
+          'xpReward': 35,
+          'targetPractices': 1,
+          'tutorialSteps': const [
+            'MR 재생과 녹음 시작하기',
+            '오늘 1회 연습 완료 확인하기',
+            '파트장에게 피드백 요청하기',
+          ],
+          'active': true,
+        });
+      }
+      return FirebaseService.watchActiveHarmonyPracticeMission(part: part);
+    });
+
+final harmonyPracticeProgressProvider = StreamProvider<Map<String, dynamic>>((
+  ref,
+) {
+  if (ref.watch(localPreviewModeProvider)) {
+    return Stream.value(ref.watch(previewHarmonyPracticeProgressProvider));
+  }
+  return FirebaseService.watchHarmonyPracticeProgress();
+});
+
+final myHarmonyPracticeSubmissionsProvider =
+    StreamProvider<List<Map<String, dynamic>>>((ref) {
+      final profile = ref.watch(profileProvider).valueOrNull;
+      final part = profile?.partLeaderFor ?? profile?.part ?? '';
+      if (part.isEmpty) return Stream.value(const []);
+      if (ref.watch(localPreviewModeProvider)) {
+        final submissions = ref.watch(
+          previewHarmonyPracticeSubmissionsProvider,
+        );
+        return Stream.value(
+          submissions.where((item) => item['part'] == part).toList(),
+        );
+      }
+      return FirebaseService.watchMyHarmonyPracticeSubmissions(part: part);
+    });
 
 final postProvider = StreamProvider.family<Map<String, dynamic>?, String>((
   ref,

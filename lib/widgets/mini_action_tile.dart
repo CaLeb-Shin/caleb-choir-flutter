@@ -9,6 +9,7 @@ class MiniActionTile extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final int? badgeCount;
+  final String? statusLabel;
 
   /// 새 콘텐츠 알림 (숫자 대신 'N' 라벨)
   final bool hasNew;
@@ -23,6 +24,7 @@ class MiniActionTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.badgeCount,
+    this.statusLabel,
     this.hasNew = false,
     this.tone = 'primary',
   });
@@ -121,6 +123,24 @@ class MiniActionTile extends StatelessWidget {
               ),
             ),
           ),
+          if (statusLabel != null) ...[
+            const SizedBox(height: 2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.secondarySoft,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                statusLabel!,
+                style: AppText.body(
+                  8,
+                  weight: FontWeight.w800,
+                  color: AppColors.secondary,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

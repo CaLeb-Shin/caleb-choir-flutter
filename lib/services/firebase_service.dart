@@ -735,6 +735,199 @@ class FirebaseService {
   }
 
   // ============ Harmony Chat ============
+  static int harmonyXpForLevel(int level) {
+    final safeLevel = level.clamp(1, 100).toInt();
+    if (safeLevel <= 1) return 0;
+    return (safeLevel - 1) * (safeLevel - 1) * 70;
+  }
+
+  static int harmonyLevelForXp(int xp) {
+    final safeXp = xp < 0 ? 0 : xp;
+    var level = 1;
+    while (level < 100 && safeXp >= harmonyXpForLevel(level + 1)) {
+      level += 1;
+    }
+    return level;
+  }
+
+  static String _todayKey() {
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  static Stream<Map<String, dynamic>> watchHarmonyPracticeProgress() {
+    final userId = uid;
+    if (userId == null) {
+      return Stream.value({
+        'id': '',
+        'userId': '',
+        'xp': 0,
+        'level': 1,
+        'practiceCount': 0,
+        'completedTutorialSteps': <String, dynamic>{},
+      });
+    }
+    return _db
+        .collection('harmony_practice_progress')
+        .doc(userId)
+        .snapshots()
+        .map((doc) {
+          final data = doc.data() ?? <String, dynamic>{};
+          final xp = (data['xp'] as num?)?.toInt() ?? 0;
+          final level = harmonyLevelForXp(xp);
+          return {
+            'id': doc.id,
+            ...data,
+            'userId': userId,
+            'xp': xp,
+            'level': level,
+            'nextLevelXp': harmonyXpForLevel((level + 1).clamp(1, 100).toInt()),
+            'practiceCount': (data['practiceCount'] as num?)?.toInt() ?? 0,
+            'completedTutorialSteps':
+                data['completedTutorialSteps'] ?? <String, dynamic>{},
+            'createdAt': _timestampIso(data['createdAt']),
+            'updatedAt': _timestampIso(data['updatedAt']),
+          };
+        });
+  }
+
+  static Stream<Map<String, dynamic>?> watchActiveHarmonyPracticeMission({
+    required String part,
+  }) {
+    if (part.trim().isEmpty) return Stream.value(null);
+    return _db
+        .collection('harmony_practice_missions')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .where('active', isEqualTo: true)
+        .limit(40)
+        .snapshots()
+        .map((snapshot) {
+          final missions =
+              snapshot.docs.map((doc) => {'id': doc.id, ...doc.data()}).where((
+                mission,
+              ) {
+                final missionPart = mission['part']?.toString() ?? 'all';
+                return missionPart == 'all' || missionPart == part;
+              }).toList()..sort((a, b) {
+                final byUpdated = _timestampFieldDesc('updatedAt', a, b);
+                return byUpdated == 0 ? _createdAtDesc(a, b) : byUpdated;
+              });
+          if (missions.isEmpty) return null;
+          final mission = missions.first;
+          return {
+            ...mission,
+            'xpReward': (mission['xpReward'] as num?)?.toInt() ?? 25,
+            'targetPractices':
+                (mission['targetPractices'] as num?)?.toInt() ?? 1,
+            'createdAt': _timestampIso(mission['createdAt']),
+            'updatedAt': _timestampIso(mission['updatedAt']),
+          };
+        });
+  }
+
+  static Stream<List<Map<String, dynamic>>> watchMyHarmonyPracticeSubmissions({
+    required String part,
+  }) {
+    final userId = uid;
+    if (userId == null || part.trim().isEmpty) return Stream.value(const []);
+    return _db
+        .collection('harmony_practice_submissions')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .where('userId', isEqualTo: userId)
+        .limit(40)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final submissions = <Map<String, dynamic>>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            if ((data['part']?.toString() ?? '') != part) continue;
+            final feedbackByData = await _safeUserData(data['feedbackBy']);
+            submissions.add({
+              'id': doc.id,
+              ...data,
+              'feedbackByName':
+                  data['feedbackByName'] ??
+                  feedbackByData?['name'] ??
+                  feedbackByData?['nickname'] ??
+                  '',
+              'createdAt': _timestampIso(data['createdAt']),
+              'updatedAt': _timestampIso(data['updatedAt']),
+              'feedbackAt': _timestampIso(data['feedbackAt']),
+            });
+          }
+          submissions.sort(_createdAtDesc);
+          return submissions;
+        });
+  }
+
+  static Future<String> createHarmonyPracticeSubmission({
+    required String part,
+    required String title,
+    required String audioUrl,
+    required String audioFileName,
+    required String mrAudioUrl,
+    required String mrAudioFileName,
+    required int durationSeconds,
+    String? missionId,
+    String? missionTitle,
+    int xpAwarded = 25,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final churchId = _requireChurchId();
+    final safeXp = xpAwarded.clamp(5, 250).toInt();
+    final userData = await _safeUserData(uid);
+    final todayKey = _todayKey();
+    final submissionRef = _db.collection('harmony_practice_submissions').doc();
+    final progressRef = _db.collection('harmony_practice_progress').doc(uid);
+    final batch = _db.batch();
+
+    batch.set(submissionRef, {
+      'churchId': churchId,
+      'userId': uid,
+      'part': part,
+      'title': title.trim().isEmpty ? '개인연습' : title.trim(),
+      'missionId': missionId?.trim() ?? '',
+      'missionTitle': missionTitle?.trim() ?? '',
+      'audioUrl': audioUrl,
+      'audioFileName': audioFileName,
+      'mrAudioUrl': mrAudioUrl,
+      'mrAudioFileName': mrAudioFileName,
+      'durationSeconds': durationSeconds,
+      'xpAwarded': safeXp,
+      'practiceDate': todayKey,
+      'status': 'pending_feedback',
+      'leaderFeedback': '',
+      ..._authorFields({
+        'userId': uid,
+        'userName': currentUser?.displayName,
+      }, userData),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    batch.set(progressRef, {
+      'churchId': churchId,
+      'userId': uid,
+      'part': part,
+      'xp': FieldValue.increment(safeXp),
+      'practiceCount': FieldValue.increment(1),
+      'lastPracticeDate': todayKey,
+      'practiceDates': FieldValue.arrayUnion([todayKey]),
+      'completedTutorialSteps': {
+        'mrRecording': true,
+        'dailyMission': true,
+        'feedbackRequest': true,
+      },
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await batch.commit();
+    return submissionRef.id;
+  }
+
   static Stream<List<Map<String, dynamic>>> watchHarmonyNotes({
     required String part,
   }) {
@@ -1109,6 +1302,10 @@ class FirebaseService {
           segment['label']?.toString(),
           '${index + 1}소절',
         ]);
+        final segmentLyricsLine =
+            segment['lyricsLine']?.toString().trim() ?? '';
+        final segmentNextLyricsLine =
+            segment['nextLyricsLine']?.toString().trim() ?? '';
         final existingDoc = existingBySegment[segmentId];
         if (existingDoc != null) {
           final existingData = existingDoc.data();
@@ -1137,19 +1334,25 @@ class FirebaseService {
             'sourceEventId': sourceEventId,
             'lyricsText': guide['lyricsText']?.toString() ?? '',
             'lyricsTimeline': lyricTimeline,
-            'lyricsLine': _lyricLineForSegment(
-              lyricTimeline,
-              lyricLines,
-              index,
-              (segment['startSec'] as num?)?.toDouble() ?? 0,
-              (segment['endSec'] as num?)?.toDouble() ?? 0,
-            ),
-            'nextLyricsLine': _nextLyricLineForSegment(
-              lyricTimeline,
-              lyricLines,
-              index,
-              (segment['endSec'] as num?)?.toDouble() ?? 0,
-            ),
+            'lyricsLine': _firstNotEmpty([
+              segmentLyricsLine,
+              _lyricLineForSegment(
+                lyricTimeline,
+                lyricLines,
+                index,
+                (segment['startSec'] as num?)?.toDouble() ?? 0,
+                (segment['endSec'] as num?)?.toDouble() ?? 0,
+              ),
+            ]),
+            'nextLyricsLine': _firstNotEmpty([
+              segmentNextLyricsLine,
+              _nextLyricLineForSegment(
+                lyricTimeline,
+                lyricLines,
+                index,
+                (segment['endSec'] as num?)?.toDouble() ?? 0,
+              ),
+            ]),
             'missionTotalSegments': segments.length,
             'segmentOrder': (segment['order'] as num?)?.toInt() ?? index + 1,
             'segmentStartSec': (segment['startSec'] as num?)?.toDouble() ?? 0,
@@ -1204,19 +1407,25 @@ class FirebaseService {
           sourceEventId: sourceEventId,
           lyricsText: guide['lyricsText']?.toString(),
           lyricsTimeline: lyricTimeline,
-          lyricsLine: _lyricLineForSegment(
-            lyricTimeline,
-            lyricLines,
-            index,
-            (segment['startSec'] as num?)?.toDouble() ?? 0,
-            (segment['endSec'] as num?)?.toDouble() ?? 0,
-          ),
-          nextLyricsLine: _nextLyricLineForSegment(
-            lyricTimeline,
-            lyricLines,
-            index,
-            (segment['endSec'] as num?)?.toDouble() ?? 0,
-          ),
+          lyricsLine: _firstNotEmpty([
+            segmentLyricsLine,
+            _lyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              index,
+              (segment['startSec'] as num?)?.toDouble() ?? 0,
+              (segment['endSec'] as num?)?.toDouble() ?? 0,
+            ),
+          ]),
+          nextLyricsLine: _firstNotEmpty([
+            segmentNextLyricsLine,
+            _nextLyricLineForSegment(
+              lyricTimeline,
+              lyricLines,
+              index,
+              (segment['endSec'] as num?)?.toDouble() ?? 0,
+            ),
+          ]),
           currentAssigneeId: assignee?['id']?.toString(),
           currentAssigneeName: assignee?['name']?.toString(),
           missionGroupId: missionGroupId,

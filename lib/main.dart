@@ -7,6 +7,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'firebase_options.dart';
+import 'config/feature_flags.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'providers/app_providers.dart';
@@ -17,6 +18,7 @@ import 'screens/approval/rejected_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/attendance/attendance_screen.dart';
 import 'screens/community/community_screen.dart';
+import 'screens/harmony_chat/harmony_chat_development_screen.dart';
 import 'screens/harmony_chat/harmony_chat_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
@@ -229,7 +231,9 @@ class _MainShellState extends ConsumerState<MainShell> {
       MaterialPageRoute(
         builder: (_) => const _PreviewSectionScreen(
           title: '하모니챗',
-          child: HarmonyChatScreen(),
+          child: FeatureFlags.harmonyChatEnabled
+              ? HarmonyChatScreen()
+              : HarmonyChatDevelopmentScreen(),
         ),
       ),
     );

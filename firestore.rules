@@ -73,6 +73,23 @@ service cloud.firestore {
     function canReadHarmonyContent(cid, part) {
       return isChurchAdminOf(cid) || canUseHarmonyPart(cid, part);
     }
+    function canReadHarmonyPractice(cid, part) {
+      return isChurchAdminOf(cid) ||
+        (part == 'all' && canReadChurchContent(cid)) ||
+        canUseHarmonyPart(cid, part);
+    }
+    function canManageHarmonyPractice(cid, part) {
+      return isChurchAdminOf(cid) ||
+        (
+          part != 'all' &&
+          sameChurch(cid) &&
+          myRole() == 'part_leader' &&
+          (
+            myData().get('part', '') == part ||
+            myData().get('partLeaderFor', '') == part
+          )
+        );
+    }
     function canCreateHarmonyRelayClip(cid, relayId) {
       return relayId != null
         && exists(/databases/$(database)/documents/harmony_relays/$(relayId))
@@ -267,6 +284,67 @@ service cloud.firestore {
           request.auth.uid == resource.data.userId ||
           isChurchAdminOf(resource.data.churchId)
         );
+    }
+
+    match /harmony_practice_missions/{docId} {
+      allow read: if resource.data.keys().hasAll(['churchId', 'part'])
+        && canReadHarmonyPractice(resource.data.churchId, resource.data.part);
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll(['churchId', 'part', 'title'])
+        && canManageHarmonyPractice(request.resource.data.churchId, request.resource.data.part);
+      allow update, delete: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId', 'part'])
+        && canManageHarmonyPractice(resource.data.churchId, resource.data.part);
+    }
+
+    match /harmony_practice_submissions/{docId} {
+      allow read: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId', 'userId', 'part'])
+        && (
+          request.auth.uid == resource.data.userId ||
+          canReadHarmonyContent(resource.data.churchId, resource.data.part)
+        );
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll(['churchId', 'userId', 'part', 'audioUrl'])
+        && request.auth.uid == request.resource.data.userId
+        && canUseHarmonyPart(request.resource.data.churchId, request.resource.data.part);
+      allow update: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId', 'part'])
+        && canManageHarmonyPractice(resource.data.churchId, resource.data.part)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly([
+            'status',
+            'leaderFeedback',
+            'feedbackBy',
+            'feedbackByName',
+            'feedbackAt',
+            'updatedAt'
+          ]);
+      allow delete: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId', 'userId'])
+        && (
+          request.auth.uid == resource.data.userId ||
+          isChurchAdminOf(resource.data.churchId)
+        );
+    }
+
+    match /harmony_practice_progress/{docId} {
+      allow read: if isSignedIn()
+        && (
+          request.auth.uid == docId ||
+          (
+            resource.data.keys().hasAll(['churchId'])
+            && isChurchAdminOf(resource.data.churchId)
+          )
+        );
+      allow create, update: if isSignedIn()
+        && request.auth.uid == docId
+        && request.resource.data.keys().hasAll(['churchId', 'userId'])
+        && request.resource.data.userId == request.auth.uid
+        && sameChurch(request.resource.data.churchId);
+      allow delete: if isSignedIn()
+        && resource.data.keys().hasAll(['churchId'])
+        && isChurchAdminOf(resource.data.churchId);
     }
 
     match /harmony_relays/{docId} {

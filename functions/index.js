@@ -566,6 +566,8 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
       const rawSegment = segments[index] || {};
       const segmentId = rawSegment.id || `seg-${String(index + 1).padStart(2, "0")}`;
       const segmentLabel = rawSegment.label || `${index + 1}소절`;
+      const segmentLyricsLine = String(rawSegment.lyricsLine || "").trim();
+      const segmentNextLyricsLine = String(rawSegment.nextLyricsLine || "").trim();
       const existingDoc = existingBySegment[segmentId];
       const existingRelay = existingDoc ? existingDoc.data() || {} : {};
       const existingAssigneeId = String(existingRelay.currentAssigneeId || "").trim();
@@ -594,14 +596,14 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
         sourceEventId,
         lyricsText: partLyricsText,
         lyricsTimeline: partLyricsTimeline,
-        lyricsLine: lyricLineForSegment(
+        lyricsLine: segmentLyricsLine || lyricLineForSegment(
           partLyricsTimeline,
           partLyricLines,
           index,
           Number(rawSegment.startSec || 0),
           Number(rawSegment.endSec || 0),
         ),
-        nextLyricsLine: nextLyricLineForSegment(
+        nextLyricsLine: segmentNextLyricsLine || nextLyricLineForSegment(
           partLyricsTimeline,
           partLyricLines,
           index,
@@ -673,14 +675,14 @@ exports.createHarmonyRelaysForSheetMusic = onCall(async (request) => {
         sourceEventId,
         lyricsText: partLyricsText,
         lyricsTimeline: partLyricsTimeline,
-        lyricsLine: lyricLineForSegment(
+        lyricsLine: segmentLyricsLine || lyricLineForSegment(
           partLyricsTimeline,
           partLyricLines,
           index,
           Number(rawSegment.startSec || 0),
           Number(rawSegment.endSec || 0),
         ),
-        nextLyricsLine: nextLyricLineForSegment(
+        nextLyricsLine: segmentNextLyricsLine || nextLyricLineForSegment(
           partLyricsTimeline,
           partLyricLines,
           index,

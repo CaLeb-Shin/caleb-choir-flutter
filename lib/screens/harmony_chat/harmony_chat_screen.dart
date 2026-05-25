@@ -37,6 +37,11 @@ class HarmonyChatScreen extends ConsumerWidget {
     final notesAsync = ref.watch(harmonyNotesProvider);
     final relaysAsync = ref.watch(harmonyRelaysProvider);
     final guideAsync = ref.watch(latestPartGuideProvider);
+    final missionAsync = ref.watch(activeHarmonyPracticeMissionProvider);
+    final practiceProgressAsync = ref.watch(harmonyPracticeProgressProvider);
+    final practiceSubmissionsAsync = ref.watch(
+      myHarmonyPracticeSubmissionsProvider,
+    );
     final part = profile?.partLeaderFor ?? profile?.part ?? '';
     final partLabel = User.partLabels[part] ?? '내 파트';
 
@@ -47,7 +52,19 @@ class HarmonyChatScreen extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Expanded(child: Text('하모니챗', style: AppText.headline(28))),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('하모니챗', style: AppText.headline(28)),
+                    const SizedBox(height: 8),
+                    _HarmonyLevelPill(
+                      profile: profile,
+                      progressAsync: practiceProgressAsync,
+                    ),
+                  ],
+                ),
+              ),
               FilledButton.icon(
                 onPressed: part.isEmpty
                     ? null
@@ -58,6 +75,17 @@ class HarmonyChatScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 18),
+          _PersonalPracticeSection(
+            part: part,
+            partLabel: partLabel,
+            profile: profile,
+            guideAsync: guideAsync,
+            missionAsync: missionAsync,
+            progressAsync: practiceProgressAsync,
+            submissionsAsync: practiceSubmissionsAsync,
+            ref: ref,
+          ),
+          const SizedBox(height: 16),
           _RelaySection(
             part: part,
             partLabel: partLabel,
@@ -133,6 +161,1053 @@ class HarmonyChatScreen extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => _HarmonyNoteSheet(part: part, ref: ref),
+    );
+  }
+}
+
+class _HarmonyLevelPill extends StatelessWidget {
+  const _HarmonyLevelPill({required this.profile, required this.progressAsync});
+
+  final User? profile;
+  final AsyncValue<Map<String, dynamic>> progressAsync;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = progressAsync.valueOrNull ?? const <String, dynamic>{};
+    final xp = (progress['xp'] as num?)?.toInt() ?? 0;
+    final level =
+        (progress['level'] as num?)?.toInt() ??
+        FirebaseService.harmonyLevelForXp(xp);
+    final name = _firstText([
+      profile?.nickname,
+      profile?.name,
+      FirebaseService.currentUser?.displayName,
+      '나',
+    ]);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.primarySoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.42)),
+      ),
+      child: Text(
+        '$name · Lv.$level',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: AppText.body(
+          12,
+          weight: FontWeight.w900,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+}
+
+class _PersonalPracticeSection extends StatelessWidget {
+  const _PersonalPracticeSection({
+    required this.part,
+    required this.partLabel,
+    required this.profile,
+    required this.guideAsync,
+    required this.missionAsync,
+    required this.progressAsync,
+    required this.submissionsAsync,
+    required this.ref,
+  });
+
+  final String part;
+  final String partLabel;
+  final User? profile;
+  final AsyncValue<Map<String, dynamic>?> guideAsync;
+  final AsyncValue<Map<String, dynamic>?> missionAsync;
+  final AsyncValue<Map<String, dynamic>> progressAsync;
+  final AsyncValue<List<Map<String, dynamic>>> submissionsAsync;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final guide = guideAsync.valueOrNull;
+    final mission = missionAsync.valueOrNull;
+    final progress = progressAsync.valueOrNull ?? const <String, dynamic>{};
+    final submissions = submissionsAsync.valueOrNull ?? const [];
+    final mrAudioUrl = guide?['mrAudioUrl']?.toString().trim() ?? '';
+    final hasMr = mrAudioUrl.isNotEmpty;
+    final xp = (progress['xp'] as num?)?.toInt() ?? 0;
+    final level =
+        (progress['level'] as num?)?.toInt() ??
+        FirebaseService.harmonyLevelForXp(xp);
+    final currentLevelXp = FirebaseService.harmonyXpForLevel(level);
+    final nextLevelXp = FirebaseService.harmonyXpForLevel(
+      (level + 1).clamp(1, 100).toInt(),
+    );
+    final levelRatio = level >= 100
+        ? 1.0
+        : ((xp - currentLevelXp) / math.max(1, nextLevelXp - currentLevelXp))
+              .clamp(0.0, 1.0);
+    final missionTitle = _firstText([
+      mission?['title']?.toString(),
+      guide?['songTitle']?.toString(),
+      '오늘 개인연습',
+    ]);
+    final missionPrompt = _firstText([
+      mission?['prompt']?.toString(),
+      guide?['guide']?.toString(),
+      'MR을 틀고 한 번 녹음해보세요. 끝나면 파트장에게 피드백을 보낼 수 있어요.',
+    ]);
+    final xpReward = (mission?['xpReward'] as num?)?.toInt() ?? 25;
+    final todayDone = submissions.any(_submissionIsToday);
+    final reviewedCount = submissions
+        .where((item) => (item['leaderFeedback']?.toString() ?? '').isNotEmpty)
+        .length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.45)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.05),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.secondarySoft,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: AppColors.secondary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '개인연습',
+                      style: AppText.body(18, weight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      part.isEmpty
+                          ? '파트가 지정되면 미션을 시작할 수 있어요.'
+                          : '$partLabel · 오늘 ${todayDone ? '완료' : '대기'}',
+                      style: AppText.body(12, color: AppColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              _TurnPill(
+                label: todayDone ? '완료' : '+$xpReward XP',
+                active: true,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        missionTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.body(
+                          17,
+                          weight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Lv.$level',
+                      style: AppText.body(
+                        12,
+                        weight: FontWeight.w900,
+                        color: AppColors.secondaryContainer,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  missionPrompt,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(
+                    12,
+                    color: Colors.white.withValues(alpha: 0.74),
+                    height: 1.38,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    minHeight: 7,
+                    value: levelRatio,
+                    backgroundColor: Colors.white.withValues(alpha: 0.16),
+                    color: AppColors.secondaryContainer,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _PracticeMetricChip(
+                icon: Icons.local_fire_department_rounded,
+                label:
+                    '누적 ${(progress['practiceCount'] as num?)?.toInt() ?? 0}회',
+              ),
+              _PracticeMetricChip(icon: Icons.stars_rounded, label: '$xp XP'),
+              _PracticeMetricChip(
+                icon: Icons.rate_review_rounded,
+                label: '피드백 $reviewedCount개',
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _PracticeTutorialChecklist(
+            progress: progress,
+            submissions: submissions,
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: part.isEmpty || !hasMr
+                  ? null
+                  : () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => _PersonalPracticeSheet(
+                        part: part,
+                        partLabel: partLabel,
+                        guide: guide ?? const {},
+                        mission: mission ?? const {},
+                        ref: ref,
+                      ),
+                    ),
+              icon: const Icon(Icons.mic_rounded),
+              label: Text(hasMr ? 'MR 개인연습 시작' : 'MR 준비 필요'),
+            ),
+          ),
+          if (submissions.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            ...submissions
+                .take(2)
+                .map(
+                  (item) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _PracticeSubmissionCard(submission: item),
+                  ),
+                ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  bool _submissionIsToday(Map<String, dynamic> submission) {
+    final date = submission['practiceDate']?.toString();
+    if (date != null && date.isNotEmpty) return date == _todayKeyLocal();
+    final created = DateTime.tryParse(
+      submission['createdAt']?.toString() ?? '',
+    );
+    if (created == null) return false;
+    final now = DateTime.now();
+    return created.year == now.year &&
+        created.month == now.month &&
+        created.day == now.day;
+  }
+}
+
+class _PracticeMetricChip extends StatelessWidget {
+  const _PracticeMetricChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLow,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: AppColors.primary),
+          const SizedBox(width: 5),
+          Text(label, style: AppText.body(11, weight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+}
+
+class _PracticeTutorialChecklist extends StatelessWidget {
+  const _PracticeTutorialChecklist({
+    required this.progress,
+    required this.submissions,
+  });
+
+  final Map<String, dynamic> progress;
+  final List<Map<String, dynamic>> submissions;
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = progress['completedTutorialSteps'];
+    final steps = raw is Map ? raw : const <String, dynamic>{};
+    final hasFeedback = submissions.any(
+      (item) => (item['leaderFeedback']?.toString() ?? '').trim().isNotEmpty,
+    );
+    final items = [
+      ('mrRecording', 'MR 녹음', steps['mrRecording'] == true),
+      ('dailyMission', '오늘 미션', steps['dailyMission'] == true),
+      ('feedbackRequest', '피드백 요청', steps['feedbackRequest'] == true),
+      ('leaderFeedback', '코멘트 확인', hasFeedback),
+    ];
+    return Wrap(
+      spacing: 7,
+      runSpacing: 7,
+      children: items.map((item) {
+        final done = item.$3;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+          decoration: BoxDecoration(
+            color: done ? const Color(0xFFEAF7EE) : AppColors.card,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: done
+                  ? AppColors.success.withValues(alpha: 0.35)
+                  : AppColors.border.withValues(alpha: 0.45),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                done
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked,
+                size: 14,
+                color: done ? AppColors.success : AppColors.muted,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                item.$2,
+                style: AppText.body(
+                  11,
+                  weight: FontWeight.w900,
+                  color: done ? AppColors.success : AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _PracticeSubmissionCard extends StatelessWidget {
+  const _PracticeSubmissionCard({required this.submission});
+
+  final Map<String, dynamic> submission;
+
+  @override
+  Widget build(BuildContext context) {
+    final feedback = submission['leaderFeedback']?.toString().trim() ?? '';
+    final status = feedback.isNotEmpty ? '피드백 도착' : '피드백 대기';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: feedback.isNotEmpty ? AppColors.secondarySoft : AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.38)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            feedback.isNotEmpty
+                ? Icons.mark_chat_read_rounded
+                : Icons.hourglass_top_rounded,
+            color: feedback.isNotEmpty ? AppColors.secondary : AppColors.muted,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(status, style: AppText.body(12, weight: FontWeight.w900)),
+                const SizedBox(height: 3),
+                Text(
+                  feedback.isNotEmpty
+                      ? feedback
+                      : '${submission['missionTitle'] ?? '개인연습'} · ${_relativeTime(submission['createdAt'])}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(12, color: AppColors.muted, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PersonalPracticeSheet extends StatefulWidget {
+  const _PersonalPracticeSheet({
+    required this.part,
+    required this.partLabel,
+    required this.guide,
+    required this.mission,
+    required this.ref,
+  });
+
+  final String part;
+  final String partLabel;
+  final Map<String, dynamic> guide;
+  final Map<String, dynamic> mission;
+  final WidgetRef ref;
+
+  @override
+  State<_PersonalPracticeSheet> createState() => _PersonalPracticeSheetState();
+}
+
+class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
+    with SingleTickerProviderStateMixin {
+  final _recorder = AudioRecorder();
+  final _mrPlayer = AudioPlayer();
+  final List<int> _recordedBytes = [];
+  StreamSubscription<Uint8List>? _recordingSub;
+  Timer? _timer;
+  late final AnimationController _burstController;
+  Uint8List? _audioBytes;
+  bool _streamRecording = false;
+  bool _isRecording = false;
+  bool _isSubmitting = false;
+  bool _completed = false;
+  int _recordSeconds = 0;
+  double _uploadProgress = 0;
+  String _contentType = 'audio/webm';
+  String _fileName = '';
+
+  static const _sampleRate = 44100;
+  static const _channels = 1;
+
+  String get _mrAudioUrl => widget.guide['mrAudioUrl']?.toString().trim() ?? '';
+  String get _mrAudioFileName =>
+      widget.guide['mrAudioFileName']?.toString().trim() ?? '';
+  String get _missionId => widget.mission['id']?.toString() ?? '';
+  String get _missionTitle => _firstText([
+    widget.mission['title']?.toString(),
+    widget.guide['songTitle']?.toString(),
+    '개인연습',
+  ]);
+  String get _practiceTitle =>
+      '${_firstText([widget.guide['songTitle']?.toString(), widget.guide['title']?.toString(), '하모니챗'])} 개인연습';
+  int get _xpReward => (widget.mission['xpReward'] as num?)?.toInt() ?? 25;
+
+  @override
+  void initState() {
+    super.initState();
+    _burstController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _recordingSub?.cancel();
+    _burstController.dispose();
+    unawaited(_recorder.dispose());
+    unawaited(_mrPlayer.dispose());
+    relay_backing_audio.stopRelayBackingAudio();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final canSubmit = _audioBytes != null && !_isRecording && !_isSubmitting;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+        ),
+        decoration: const BoxDecoration(
+          color: AppColors.bg,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '개인연습',
+                        style: AppText.body(20, weight: FontWeight.w900),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _isSubmitting
+                          ? null
+                          : () => Navigator.pop(context),
+                      icon: const _InlineCloseIcon(size: 22),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$_missionTitle · ${widget.partLabel}',
+                  style: AppText.body(13, color: AppColors.muted),
+                ),
+                const SizedBox(height: 14),
+                Stack(
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: _completed
+                            ? AppColors.secondarySoft
+                            : AppColors.primarySoft,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color:
+                              (_completed
+                                      ? AppColors.secondary
+                                      : AppColors.border)
+                                  .withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Icon(
+                            _completed
+                                ? Icons.celebration_rounded
+                                : _isRecording
+                                ? Icons.graphic_eq_rounded
+                                : Icons.mic_rounded,
+                            size: 42,
+                            color: _completed
+                                ? AppColors.secondary
+                                : AppColors.primary,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            _completed
+                                ? '오늘 1회 연습 완료!'
+                                : _isRecording
+                                ? 'MR에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
+                                : 'MR을 틀고 내 목소리를 녹음합니다',
+                            textAlign: TextAlign.center,
+                            style: AppText.body(18, weight: FontWeight.w900),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            _completed
+                                ? '+$_xpReward XP가 준비됐어요. 파트장에게 보내면 기록됩니다.'
+                                : '녹음이 끝나면 연습 완료 연출이 뜨고 피드백을 요청할 수 있어요.',
+                            textAlign: TextAlign.center,
+                            style: AppText.body(
+                              12,
+                              color: AppColors.muted,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_completed)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: _PracticeCompletionBurst(
+                            animation: _burstController,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: AppColors.border.withValues(alpha: 0.38),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '오늘 미션',
+                        style: AppText.body(12, weight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        _firstText([
+                          widget.mission['prompt']?.toString(),
+                          widget.guide['guide']?.toString(),
+                          'MR을 들으며 한 번 이상 녹음해보세요.',
+                        ]),
+                        style: AppText.body(
+                          13,
+                          color: AppColors.onSurfaceVariant,
+                          height: 1.38,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _PracticeMetricChip(
+                            icon: Icons.headphones_rounded,
+                            label: _mrAudioFileName.isEmpty
+                                ? 'MR 준비됨'
+                                : _mrAudioFileName,
+                          ),
+                          _PracticeMetricChip(
+                            icon: Icons.stars_rounded,
+                            label: '+$_xpReward XP',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (_isSubmitting) ...[
+                  const SizedBox(height: 14),
+                  _UploadProgressPanel(progress: _uploadProgress),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: _isSubmitting
+                            ? null
+                            : _isRecording
+                            ? _stopRecording
+                            : _startRecording,
+                        icon: Icon(
+                          _isRecording
+                              ? Icons.stop_rounded
+                              : Icons.fiber_manual_record_rounded,
+                        ),
+                        label: Text(_isRecording ? '녹음 끝내기' : '녹음하기'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: canSubmit ? _requestFeedback : null,
+                        icon: const Icon(Icons.rate_review_rounded),
+                        label: const Text('파트장에게 피드백 받기'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      final hasPermission = await _ensureMicrophonePermission(_recorder);
+      if (!hasPermission) {
+        if (widget.ref.read(localPreviewModeProvider)) {
+          _completeWithBytes(_previewPracticeToneBytes(5), 5, 'audio/wav');
+          _showMessage('미리보기에서는 테스트 녹음으로 완료 처리했어요.');
+          return;
+        }
+        _showMessage('마이크 권한이 필요합니다.');
+        return;
+      }
+
+      await _recordingSub?.cancel();
+      _recordedBytes.clear();
+      _streamRecording = false;
+      _contentType = 'audio/webm';
+      _fileName = 'practice_${DateTime.now().millisecondsSinceEpoch}.webm';
+
+      if (_mrAudioUrl.isNotEmpty) {
+        try {
+          if (!kIsWeb ||
+              !relay_backing_audio.startRelayBackingAudio(
+                _mrAudioUrl,
+                Duration.zero,
+              )) {
+            await _mrPlayer.stop();
+            await _mrPlayer.setReleaseMode(ReleaseMode.stop);
+            unawaited(_mrPlayer.play(UrlSource(_mrAudioUrl)));
+          }
+        } catch (_) {
+          _showMessage('MR 재생은 실패했지만 녹음은 시작합니다.');
+        }
+      }
+
+      if (kIsWeb) {
+        final stream = await _recorder.startStream(
+          RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: _sampleRate,
+            numChannels: _channels,
+            echoCancel: true,
+            noiseSuppress: true,
+            autoGain: true,
+          ),
+        );
+        _streamRecording = true;
+        _contentType = 'audio/wav';
+        _fileName = 'practice_${DateTime.now().millisecondsSinceEpoch}.wav';
+        _recordingSub = stream.listen(_recordedBytes.addAll);
+      } else {
+        await _recorder.start(
+          RecordConfig(
+            encoder: AudioEncoder.opus,
+            bitRate: 128000,
+            sampleRate: _sampleRate,
+            numChannels: _channels,
+            echoCancel: true,
+            noiseSuppress: true,
+            autoGain: true,
+          ),
+          path: '',
+        );
+      }
+
+      _timer?.cancel();
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() => _recordSeconds += 1);
+      });
+      setState(() {
+        _isRecording = true;
+        _completed = false;
+        _recordSeconds = 0;
+        _audioBytes = null;
+      });
+    } catch (_) {
+      unawaited(_forgetMicrophonePermissionGranted());
+      await _mrPlayer.stop();
+      relay_backing_audio.stopRelayBackingAudio();
+      if (widget.ref.read(localPreviewModeProvider)) {
+        _completeWithBytes(_previewPracticeToneBytes(5), 5, 'audio/wav');
+        _showMessage('미리보기에서는 테스트 녹음으로 완료 처리했어요.');
+        return;
+      }
+      _showMessage('녹음을 시작할 수 없습니다. 마이크 권한을 확인해주세요.');
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_isRecording) return;
+    try {
+      await _mrPlayer.stop();
+      relay_backing_audio.stopRelayBackingAudio();
+      _timer?.cancel();
+      _timer = null;
+      final stoppedPath = await _recorder.stop();
+      final recordedPath = _streamRecording ? null : stoppedPath;
+      await _recordingSub?.cancel();
+      _recordingSub = null;
+      Uint8List recorded;
+      if (recordedPath != null && recordedPath.isNotEmpty) {
+        recorded = await _bytesFromRecordedPath(recordedPath);
+      } else {
+        final pcmBytes = Uint8List.fromList(_recordedBytes);
+        recorded = pcmBytes.isEmpty
+            ? Uint8List(0)
+            : _wavFromPcmBytes(
+                pcmBytes,
+                sampleRate: _sampleRate,
+                channels: _channels,
+              );
+      }
+      if (recorded.isEmpty) {
+        if (widget.ref.read(localPreviewModeProvider)) {
+          _completeWithBytes(_previewPracticeToneBytes(5), 5, 'audio/wav');
+          _showMessage('미리보기에서는 테스트 녹음으로 완료 처리했어요.');
+          return;
+        }
+        setState(() => _isRecording = false);
+        _showMessage('녹음된 소리가 없습니다. 다시 시도해주세요.');
+        return;
+      }
+      _completeWithBytes(recorded, math.max(1, _recordSeconds), _contentType);
+    } catch (_) {
+      setState(() => _isRecording = false);
+      await _mrPlayer.stop();
+      relay_backing_audio.stopRelayBackingAudio();
+      _showMessage('녹음을 마무리하지 못했습니다. 다시 시도해주세요.');
+    }
+  }
+
+  void _completeWithBytes(Uint8List bytes, int durationSeconds, String type) {
+    setState(() {
+      _audioBytes = bytes;
+      _contentType = type;
+      _fileName = type == 'audio/wav'
+          ? 'practice_${DateTime.now().millisecondsSinceEpoch}.wav'
+          : 'practice_${DateTime.now().millisecondsSinceEpoch}.webm';
+      _recordSeconds = durationSeconds;
+      _isRecording = false;
+      _completed = true;
+    });
+    _burstController
+      ..reset()
+      ..forward();
+  }
+
+  Future<void> _requestFeedback() async {
+    final bytes = _audioBytes;
+    if (bytes == null || bytes.isEmpty) {
+      _showMessage('먼저 녹음을 완료해주세요.');
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+      _uploadProgress = 0;
+    });
+    try {
+      if (widget.ref.read(localPreviewModeProvider)) {
+        final now = DateTime.now();
+        final submission = {
+          'id': 'preview-practice-${now.millisecondsSinceEpoch}',
+          'churchId': 'preview-church',
+          'userId': FirebaseService.uid ?? 'preview-user',
+          'userName': FirebaseService.currentUser?.displayName ?? '미리보기 단원',
+          'part': widget.part,
+          'title': _practiceTitle,
+          'missionId': _missionId,
+          'missionTitle': _missionTitle,
+          'audioUrl':
+              'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+          'audioFileName': _fileName,
+          'mrAudioUrl': _mrAudioUrl,
+          'mrAudioFileName': _mrAudioFileName,
+          'durationSeconds': _recordSeconds,
+          'xpAwarded': _xpReward,
+          'practiceDate': _todayKeyLocal(),
+          'status': 'pending_feedback',
+          'leaderFeedback': '',
+          'createdAt': now.toIso8601String(),
+        };
+        widget.ref
+            .read(previewHarmonyPracticeSubmissionsProvider.notifier)
+            .update((items) => [submission, ...items]);
+        widget.ref.read(previewHarmonyPracticeProgressProvider.notifier).update(
+          (progress) {
+            final xp = ((progress['xp'] as num?)?.toInt() ?? 0) + _xpReward;
+            final steps = Map<String, dynamic>.from(
+              (progress['completedTutorialSteps'] as Map?) ?? const {},
+            );
+            steps['mrRecording'] = true;
+            steps['dailyMission'] = true;
+            steps['feedbackRequest'] = true;
+            return {
+              ...progress,
+              'xp': xp,
+              'level': FirebaseService.harmonyLevelForXp(xp),
+              'practiceCount':
+                  ((progress['practiceCount'] as num?)?.toInt() ?? 0) + 1,
+              'lastPracticeDate': _todayKeyLocal(),
+              'completedTutorialSteps': steps,
+            };
+          },
+        );
+      } else {
+        final audioUrl = await FirebaseService.uploadHarmonyAudio(
+          bytes,
+          fileName: _fileName,
+          contentType: _contentType,
+          onProgress: (value) {
+            if (mounted) setState(() => _uploadProgress = value);
+          },
+        );
+        await FirebaseService.createHarmonyPracticeSubmission(
+          part: widget.part,
+          title: _practiceTitle,
+          missionId: _missionId,
+          missionTitle: _missionTitle,
+          audioUrl: audioUrl,
+          audioFileName: _fileName,
+          mrAudioUrl: _mrAudioUrl,
+          mrAudioFileName: _mrAudioFileName,
+          durationSeconds: _recordSeconds,
+          xpAwarded: _xpReward,
+        );
+      }
+      widget.ref.invalidate(harmonyPracticeProgressProvider);
+      widget.ref.invalidate(myHarmonyPracticeSubmissionsProvider);
+      if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.pop(context);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('파트장에게 개인연습 녹음을 보냈어요.')),
+        );
+      }
+    } catch (error) {
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+          _uploadProgress = 0;
+        });
+      }
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+}
+
+class _PracticeCompletionBurst extends StatelessWidget {
+  const _PracticeCompletionBurst({required this.animation});
+
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    const colors = [
+      AppColors.secondary,
+      AppColors.primary,
+      AppColors.success,
+      Color(0xFFFFD166),
+    ];
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final t = Curves.easeOut.transform(animation.value);
+        return Stack(
+          children: List.generate(18, (index) {
+            final angle = (math.pi * 2 / 18) * index;
+            final distance = 18 + t * (42 + (index % 5) * 8);
+            final x = math.cos(angle) * distance;
+            final y = math.sin(angle) * distance - t * 18;
+            return Align(
+              alignment: Alignment.center,
+              child: Transform.translate(
+                offset: Offset(x, y),
+                child: Opacity(
+                  opacity: (1 - t).clamp(0.0, 1.0),
+                  child: Container(
+                    width: 6 + (index % 3) * 2,
+                    height: 6 + (index % 3) * 2,
+                    decoration: BoxDecoration(
+                      color: colors[index % colors.length],
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
+    );
+  }
+}
+
+class _UploadProgressPanel extends StatelessWidget {
+  const _UploadProgressPanel({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (progress * 100).round().clamp(0, 100);
+    return Container(
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text('업로드 중', style: AppText.body(12, weight: FontWeight.w900)),
+              const Spacer(),
+              Text(
+                '$percent%',
+                style: AppText.body(12, color: AppColors.muted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 7,
+              value: progress.clamp(0, 1).toDouble(),
+              color: AppColors.primary,
+              backgroundColor: AppColors.border.withValues(alpha: 0.35),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -7604,6 +8679,38 @@ Future<Uint8List> _bytesFromRecordedPath(String path) async {
   final response = await http.get(uri);
   if (response.statusCode >= 400) return Uint8List(0);
   return response.bodyBytes;
+}
+
+String _todayKeyLocal() {
+  final now = DateTime.now();
+  return '${now.year.toString().padLeft(4, '0')}-'
+      '${now.month.toString().padLeft(2, '0')}-'
+      '${now.day.toString().padLeft(2, '0')}';
+}
+
+Uint8List _previewPracticeToneBytes(int durationSeconds) {
+  const sampleRate = 44100;
+  const channels = 1;
+  final frameCount = sampleRate * durationSeconds;
+  final pcmBytes = Uint8List(frameCount * channels * 2);
+  final data = ByteData.sublistView(pcmBytes);
+  final fadeSamples = math.min((sampleRate * 0.05).round(), frameCount ~/ 2);
+  const melody = [329.63, 392.0, 440.0, 493.88, 523.25];
+  for (var frame = 0; frame < frameCount; frame += 1) {
+    final seconds = frame / sampleRate;
+    final note = melody[((seconds / 0.7).floor()) % melody.length];
+    final fadeIn = fadeSamples == 0 ? 1.0 : frame / fadeSamples;
+    final fadeOut = fadeSamples == 0
+        ? 1.0
+        : (frameCount - frame - 1) / fadeSamples;
+    final envelope = math.min(1.0, math.min(fadeIn, fadeOut)).clamp(0.0, 1.0);
+    final sample =
+        (math.sin(2 * math.pi * note * seconds) * 0.22 +
+            math.sin(2 * math.pi * note * 2 * seconds) * 0.05) *
+        envelope;
+    data.setInt16((frame * 2), (sample * 32767).round(), Endian.little);
+  }
+  return _wavFromPcmBytes(pcmBytes, sampleRate: sampleRate, channels: channels);
 }
 
 String _relativeTime(dynamic value) {
