@@ -111,6 +111,7 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                         padding: const EdgeInsets.all(16),
                         itemCount: filtered.length,
                         itemBuilder: (_, i) => _PollCard(
+                          key: ValueKey(filtered[i]['id']),
                           poll: filtered[i],
                           profile: profile,
                           isSelected: selectedPollId == filtered[i]['id'],
@@ -195,6 +196,7 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('오류: $e')));
       }
+      rethrow;
     }
   }
 
@@ -306,15 +308,16 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
   }
 }
 
-class _PollCard extends ConsumerWidget {
+class _PollCard extends ConsumerStatefulWidget {
   final Map<String, dynamic> poll;
   final User? profile;
   final bool isSelected;
   final VoidCallback onTap;
-  final void Function(String) onVote;
+  final Future<void> Function(String) onVote;
   final VoidCallback onClose;
 
   const _PollCard({
+    super.key,
     required this.poll,
     required this.profile,
     required this.isSelected,
@@ -324,7 +327,18 @@ class _PollCard extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_PollCard> createState() => _PollCardState();
+}
+
+class _PollCardState extends ConsumerState<_PollCard> {
+  String? _draftChoice;
+  String? _pendingChoice;
+  String? _optimisticChoice;
+
+  @override
+  Widget build(BuildContext context) {
+    final poll = widget.poll;
+    final profile = widget.profile;
     final isOpen = poll['isOpen'] == true;
     final scopePart = poll['scopePart'] as String?;
     final scopeLabel = scopePart != null
@@ -332,10 +346,22 @@ class _PollCard extends ConsumerWidget {
         : '전체';
     final votesAsync = ref.watch(pollVotesProvider(poll['id']));
     final votes = votesAsync.valueOrNull ?? [];
-    final attend = votes.where((v) => v['choice'] == 'attend').length;
-    final absent = votes.where((v) => v['choice'] == 'absent').length;
+    var attend = votes.where((v) => v['choice'] == 'attend').length;
+    var absent = votes.where((v) => v['choice'] == 'absent').length;
     final myVote = votes.where((v) => v['userId'] == profile?.id).firstOrNull;
     final myChoice = myVote?['choice'] as String?;
+    final effectiveChoice = _optimisticChoice ?? myChoice;
+    final selectedChoice = _draftChoice ?? effectiveChoice;
+    final hasDraftChange =
+        _draftChoice != null && _draftChoice != effectiveChoice;
+    if (_optimisticChoice != null && _optimisticChoice != myChoice) {
+      if (myChoice == 'attend') attend--;
+      if (myChoice == 'absent') absent--;
+      if (_optimisticChoice == 'attend') attend++;
+      if (_optimisticChoice == 'absent') absent++;
+      attend = attend < 0 ? 0 : attend;
+      absent = absent < 0 ? 0 : absent;
+    }
 
     final canClose =
         isOpen &&
@@ -347,7 +373,7 @@ class _PollCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
-        onTap: onTap,
+        onTap: widget.onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
           padding: const EdgeInsets.all(18),
@@ -415,26 +441,24 @@ class _PollCard extends ConsumerWidget {
                     ),
                     decoration: BoxDecoration(
                       border: Border.all(
-                        color: myChoice == 'attend'
+                        color: selectedChoice == 'attend'
                             ? AppColors.success
-                            : myChoice == 'absent'
+                            : selectedChoice == 'absent'
                             ? AppColors.error
                             : AppColors.muted,
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      '내 투표: ${myChoice == 'attend'
-                          ? '참석'
-                          : myChoice == 'absent'
-                          ? '불참'
-                          : '미투표'}',
+                      hasDraftChange
+                          ? '선택: ${_choiceLabel(selectedChoice)}'
+                          : '내 투표: ${selectedChoice == null ? '미투표' : _choiceLabel(selectedChoice)}',
                       style: AppText.body(
                         11,
                         weight: FontWeight.w700,
-                        color: myChoice == 'attend'
+                        color: selectedChoice == 'attend'
                             ? AppColors.success
-                            : myChoice == 'absent'
+                            : selectedChoice == 'absent'
                             ? AppColors.error
                             : AppColors.muted,
                       ),
@@ -442,21 +466,75 @@ class _PollCard extends ConsumerWidget {
                   ),
                 ],
               ),
-              if (isSelected) ...[
+              if (widget.isSelected) ...[
                 const SizedBox(height: 16),
                 if (isOpen)
                   Row(
                     children: [
-                      Expanded(child: _voteButton('참석', 'attend', myChoice)),
+                      Expanded(
+                        child: _voteButton(
+                          '참석',
+                          'attend',
+                          selectedChoice,
+                          effectiveChoice,
+                        ),
+                      ),
                       const SizedBox(width: 10),
-                      Expanded(child: _voteButton('불참', 'absent', myChoice)),
+                      Expanded(
+                        child: _voteButton(
+                          '불참',
+                          'absent',
+                          selectedChoice,
+                          effectiveChoice,
+                        ),
+                      ),
                     ],
+                  ),
+                if (isOpen)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: hasDraftChange && _pendingChoice == null
+                            ? () => _submitVote(_draftChoice!)
+                            : null,
+                        icon: _pendingChoice != null
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.how_to_vote_rounded),
+                        label: Text(
+                          _pendingChoice != null
+                              ? '투표 중...'
+                              : hasDraftChange
+                              ? '투표하기'
+                              : effectiveChoice == null
+                              ? '투표하기'
+                              : '투표 완료',
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryContainer,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: AppColors.surfaceLow,
+                          disabledForegroundColor: AppColors.muted,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 if (isOpen)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      '마감 전까지 변경 가능',
+                      hasDraftChange ? '투표하기를 누르면 확정됩니다' : '마감 전까지 변경 가능',
                       textAlign: TextAlign.center,
                       style: AppText.body(11, color: AppColors.muted),
                     ),
@@ -468,7 +546,7 @@ class _PollCard extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
                     child: OutlinedButton(
-                      onPressed: onClose,
+                      onPressed: widget.onClose,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.error,
                       ),
@@ -506,11 +584,18 @@ class _PollCard extends ConsumerWidget {
     );
   }
 
-  Widget _voteButton(String label, String choice, String? currentChoice) {
-    final isSelected = currentChoice == choice;
+  Widget _voteButton(
+    String label,
+    String choice,
+    String? selectedChoice,
+    String? effectiveChoice,
+  ) {
+    final isSelected = selectedChoice == choice;
     final color = choice == 'attend' ? AppColors.success : AppColors.error;
     return ElevatedButton(
-      onPressed: () => onVote(choice),
+      onPressed: _pendingChoice == null
+          ? () => _selectChoice(choice, effectiveChoice)
+          : null,
       style: ElevatedButton.styleFrom(
         backgroundColor: isSelected ? color : AppColors.card,
         foregroundColor: isSelected ? Colors.white : color,
@@ -527,7 +612,41 @@ class _PollCard extends ConsumerWidget {
     );
   }
 
+  void _selectChoice(String choice, String? effectiveChoice) {
+    if (_pendingChoice != null) return;
+    setState(() {
+      _draftChoice = choice == effectiveChoice ? null : choice;
+    });
+  }
+
+  Future<void> _submitVote(String choice) async {
+    if (_pendingChoice != null) return;
+    setState(() {
+      _pendingChoice = choice;
+      _optimisticChoice = choice;
+    });
+    try {
+      await widget.onVote(choice);
+      if (!mounted) return;
+      setState(() {
+        _pendingChoice = null;
+        _draftChoice = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _pendingChoice = null;
+        _optimisticChoice = null;
+      });
+    }
+  }
+
+  String _choiceLabel(String? choice) {
+    return choice == 'attend' ? '참석' : '불참';
+  }
+
   Widget _voterList(List<Map<String, dynamic>> votes) {
+    final profile = widget.profile;
     final filtered = profile?.isPartLeader == true && profile?.isAdmin != true
         ? votes.where((v) => v['userPart'] == profile?.partLeaderFor).toList()
         : votes;

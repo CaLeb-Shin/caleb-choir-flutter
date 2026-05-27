@@ -1013,6 +1013,7 @@ class _InlinePollCard extends ConsumerStatefulWidget {
 }
 
 class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
+  String? _draftChoice;
   String? _pendingChoice;
   String? _optimisticChoice;
 
@@ -1027,6 +1028,9 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
         .firstOrNull;
     final myChoice = myVote?['choice']?.toString();
     final effectiveChoice = _optimisticChoice ?? myChoice;
+    final selectedChoice = _draftChoice ?? effectiveChoice;
+    final hasDraftChange =
+        _draftChoice != null && _draftChoice != effectiveChoice;
     var attend = votes.where((vote) => vote['choice'] == 'attend').length;
     var absent = votes.where((vote) => vote['choice'] == 'absent').length;
     if (_optimisticChoice != null && _optimisticChoice != myChoice) {
@@ -1098,13 +1102,17 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                   ),
                 ),
                 const Spacer(),
-                if (effectiveChoice != null)
+                if (selectedChoice != null)
                   Text(
-                    effectiveChoice == 'attend' ? '내 투표: 참석' : '내 투표: 불참',
+                    hasDraftChange
+                        ? '선택: ${_choiceLabel(selectedChoice)}'
+                        : '내 투표: ${_choiceLabel(selectedChoice)}',
                     style: AppText.body(
                       12,
                       weight: FontWeight.w900,
-                      color: AppColors.primary,
+                      color: hasDraftChange
+                          ? AppColors.secondary
+                          : AppColors.primary,
                     ),
                   ),
               ],
@@ -1124,7 +1132,9 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                     label: '참석',
                     count: attend,
                     choice: 'attend',
-                    selected: effectiveChoice == 'attend',
+                    selected: selectedChoice == 'attend',
+                    confirmed: effectiveChoice == 'attend',
+                    effectiveChoice: effectiveChoice,
                     color: AppColors.success,
                     names: attendNames,
                   ),
@@ -1135,7 +1145,9 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
                     label: '불참',
                     count: absent,
                     choice: 'absent',
-                    selected: effectiveChoice == 'absent',
+                    selected: selectedChoice == 'absent',
+                    confirmed: effectiveChoice == 'absent',
+                    effectiveChoice: effectiveChoice,
                     color: AppColors.error,
                     names: absentNames,
                   ),
@@ -1143,8 +1155,45 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
               ],
             ),
             const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: hasDraftChange && _pendingChoice == null
+                    ? () => _handleVote(_draftChoice!)
+                    : null,
+                icon: _pendingChoice != null
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.how_to_vote_rounded),
+                label: Text(
+                  _pendingChoice != null
+                      ? '투표 중...'
+                      : hasDraftChange
+                      ? '투표하기'
+                      : effectiveChoice == null
+                      ? '투표하기'
+                      : '투표 완료',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryContainer,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: AppColors.surfaceLow,
+                  disabledForegroundColor: AppColors.muted,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             Text(
-              effectiveChoice == null
+              hasDraftChange
+                  ? '선택 후 투표하기를 누르면 확정됩니다'
+                  : effectiveChoice == null
                   ? '$voted명 투표 · $notVoted명 미투표 · 내 투표: 아직 미투표'
                   : '$voted명 투표 · $notVoted명 미투표',
               style: AppText.body(11, color: AppColors.muted),
@@ -1225,6 +1274,8 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
     required int count,
     required String choice,
     required bool selected,
+    required bool confirmed,
+    required String? effectiveChoice,
     required Color color,
     required List<String> names,
   }) {
@@ -1245,7 +1296,8 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
         ? Colors.white.withValues(alpha: 0.18)
         : color.withValues(alpha: 0.1);
     final iconColor = selected ? Colors.white : color;
-    final metaText = selected ? '$count명 · 명단 보기' : '$count명';
+    final canShowList = selected && confirmed && _draftChoice == null;
+    final metaText = canShowList ? '$count명 · 명단 보기' : '$count명';
 
     return Semantics(
       button: true,
@@ -1256,9 +1308,9 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
         child: InkWell(
           onTap: disabled
               ? null
-              : selected
+              : canShowList
               ? () => _showVoteListSheet(label, names, color)
-              : () => _handleVote(choice),
+              : () => _selectChoice(choice, effectiveChoice),
           borderRadius: BorderRadius.circular(9),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
@@ -1359,6 +1411,13 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
         ),
       ),
     );
+  }
+
+  void _selectChoice(String choice, String? effectiveChoice) {
+    if (_pendingChoice != null) return;
+    setState(() {
+      _draftChoice = choice == effectiveChoice ? null : choice;
+    });
   }
 
   void _showVoteListSheet(String label, List<String> names, Color color) {
@@ -1495,7 +1554,12 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
     });
     try {
       await widget.onVote(pollId, choice);
-      if (mounted) setState(() => _pendingChoice = null);
+      if (mounted) {
+        setState(() {
+          _pendingChoice = null;
+          _draftChoice = null;
+        });
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -1503,6 +1567,10 @@ class _InlinePollCardState extends ConsumerState<_InlinePollCard> {
         _optimisticChoice = null;
       });
     }
+  }
+
+  String _choiceLabel(String choice) {
+    return choice == 'attend' ? '참석' : '불참';
   }
 }
 
