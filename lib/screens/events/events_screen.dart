@@ -39,55 +39,56 @@ class EventsScreen extends ConsumerWidget {
       error: (error, stackTrace) => const Center(child: Text('일정을 불러올 수 없습니다')),
       data: (eventsList) {
         final items = [...eventsList]..sort(_compareByScheduleTime);
-        return ListView(
+        return ListView.builder(
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 104),
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text('일정', style: AppText.headline(28))),
-                if (canManage) ...[
-                  IconButton(
-                    onPressed: () => _showAddEventDialog(context, ref),
-                    icon: const Icon(
-                      Icons.add_circle_rounded,
-                      color: AppColors.secondary,
+          itemCount: items.isEmpty ? 3 : items.length + 2,
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return Row(
+                children: [
+                  Expanded(child: Text('일정', style: AppText.headline(28))),
+                  if (canManage) ...[
+                    IconButton(
+                      onPressed: () => _showAddEventDialog(context, ref),
+                      icon: const Icon(
+                        Icons.add_circle_rounded,
+                        color: AppColors.secondary,
+                      ),
+                      tooltip: '일정 등록',
                     ),
-                    tooltip: '일정 등록',
+                    const SizedBox(width: 2),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondarySoft,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '${items.length}개',
+                      style: AppText.body(
+                        12,
+                        weight: FontWeight.w800,
+                        color: AppColors.secondary,
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 2),
                 ],
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.secondarySoft,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '${items.length}개',
-                    style: AppText.body(
-                      12,
-                      weight: FontWeight.w800,
-                      color: AppColors.secondary,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            if (items.isEmpty)
-              const _EmptyScheduleState()
-            else
-              for (final event in items)
-                _ScheduleTile(
-                  event: event,
-                  canManage: canManage,
-                  relayPartOptions: relayPartOptions,
-                  ref: ref,
-                ),
-          ],
+              );
+            }
+            if (index == 1) return const SizedBox(height: 14);
+            if (items.isEmpty) return const _EmptyScheduleState();
+            final event = items[index - 2];
+            return _ScheduleTile(
+              event: event,
+              canManage: canManage,
+              relayPartOptions: relayPartOptions,
+              ref: ref,
+            );
+          },
         );
       },
     );

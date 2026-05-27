@@ -17,66 +17,76 @@ class SheetMusicScreen extends ConsumerWidget {
     final sheetMusicAsync = ref.watch(sheetMusicProvider);
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text('악보&음원', style: AppText.headline(28))),
-              if (isAdmin)
-                IconButton(
-                  onPressed: () => _showAddDialog(context, ref),
-                  icon: const Icon(
-                    Icons.add_circle_rounded,
-                    color: AppColors.secondary,
-                  ),
-                  tooltip: '악보&음원 추가',
-                ),
-            ],
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate.fixed([
+              Row(
+                children: [
+                  Expanded(child: Text('악보&음원', style: AppText.headline(28))),
+                  if (isAdmin)
+                    IconButton(
+                      onPressed: () => _showAddDialog(context, ref),
+                      icon: const Icon(
+                        Icons.add_circle_rounded,
+                        color: AppColors.secondary,
+                      ),
+                      tooltip: '악보&음원 추가',
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '악보를 보면서 파트 음원을 함께 연습하세요',
+                style: AppText.body(14, color: AppColors.muted),
+              ),
+              const SizedBox(height: 24),
+            ]),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '악보를 보면서 파트 음원을 함께 연습하세요',
-            style: AppText.body(14, color: AppColors.muted),
-          ),
-          const SizedBox(height: 24),
-
-          sheetMusicAsync.when(
-            loading: () => const Center(
+        ),
+        sheetMusicAsync.when(
+          loading: () => const SliverToBoxAdapter(
+            child: Center(
               child: Padding(
                 padding: EdgeInsets.all(60),
                 child: CircularProgressIndicator(),
               ),
             ),
-            error: (error, stackTrace) =>
-                const Center(child: Text('악보를 불러올 수 없습니다')),
-            data: (sheets) {
-              if (sheets.isEmpty) {
-                return const _EmptySheetMusicPanel();
-              }
-              final groups = _groupSheetMusic(sheets);
-              return Column(
-                children: groups
-                    .map<Widget>(
-                      (group) => _SheetMusicCard(
-                        group: group,
-                        isAdmin: isAdmin,
-                        onDelete: () async {
-                          for (final sheet in group.items) {
-                            await FirebaseService.deleteSheetMusic(sheet['id']);
-                          }
-                          ref.invalidate(sheetMusicProvider);
-                        },
-                      ),
-                    )
-                    .toList(),
-              );
-            },
           ),
-        ],
-      ),
+          error: (error, stackTrace) => const SliverToBoxAdapter(
+            child: Center(child: Text('악보를 불러올 수 없습니다')),
+          ),
+          data: (sheets) {
+            if (sheets.isEmpty) {
+              return const SliverPadding(
+                padding: EdgeInsets.fromLTRB(20, 0, 20, 40),
+                sliver: SliverToBoxAdapter(child: _EmptySheetMusicPanel()),
+              );
+            }
+            final groups = _groupSheetMusic(sheets);
+            return SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final group = groups[index];
+                  return _SheetMusicCard(
+                    group: group,
+                    isAdmin: isAdmin,
+                    onDelete: () async {
+                      for (final sheet in group.items) {
+                        await FirebaseService.deleteSheetMusic(sheet['id']);
+                      }
+                      ref.invalidate(sheetMusicProvider);
+                    },
+                  );
+                }, childCount: groups.length),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 

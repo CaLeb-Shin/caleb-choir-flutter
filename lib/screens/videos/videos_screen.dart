@@ -25,72 +25,85 @@ class VideosScreen extends ConsumerWidget {
     final videosAsync = ref.watch(videosProvider);
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text('영상', style: AppText.headline(28))),
-              if (isAdmin)
-                IconButton(
-                  onPressed: () => _showAddDialog(context, ref),
-                  icon: const Icon(
-                    Icons.add_circle_rounded,
-                    color: AppColors.secondary,
-                  ),
-                  tooltip: '영상 추가',
-                ),
-            ],
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate.fixed([
+              Row(
+                children: [
+                  Expanded(child: Text('영상', style: AppText.headline(28))),
+                  if (isAdmin)
+                    IconButton(
+                      onPressed: () => _showAddDialog(context, ref),
+                      icon: const Icon(
+                        Icons.add_circle_rounded,
+                        color: AppColors.secondary,
+                      ),
+                      tooltip: '영상 추가',
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '찬양 영상을 감상하고 함께 연습하세요',
+                style: AppText.body(14, color: AppColors.muted),
+              ),
+              const SizedBox(height: 24),
+            ]),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '찬양 영상을 감상하고 함께 연습하세요',
-            style: AppText.body(14, color: AppColors.muted),
-          ),
-          const SizedBox(height: 24),
-
-          videosAsync.when(
-            loading: () => const Center(
+        ),
+        videosAsync.when(
+          loading: () => const SliverToBoxAdapter(
+            child: Center(
               child: Padding(
                 padding: EdgeInsets.all(60),
                 child: CircularProgressIndicator(),
               ),
             ),
-            error: (error, stackTrace) =>
-                const Center(child: Text('영상을 불러올 수 없습니다')),
-            data: (videos) {
-              if (videos.isEmpty) {
-                return Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 60),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: AppColors.border.withValues(alpha: 0.3),
+          ),
+          error: (error, stackTrace) => const SliverToBoxAdapter(
+            child: Center(child: Text('영상을 불러올 수 없습니다')),
+          ),
+          data: (videos) {
+            if (videos.isEmpty) {
+              return SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                sliver: SliverToBoxAdapter(
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 60),
+                    decoration: BoxDecoration(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.border.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.play_circle_rounded,
+                          size: 40,
+                          color: AppColors.subtle,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '등록된 영상이 없습니다',
+                          style: AppText.body(16, weight: FontWeight.w600),
+                        ),
+                      ],
                     ),
                   ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.play_circle_rounded,
-                        size: 40,
-                        color: AppColors.subtle,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '등록된 영상이 없습니다',
-                        style: AppText.body(16, weight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              return Column(
-                children: List.generate(videos.length, (i) {
-                  final video = videos[i];
+                ),
+              );
+            }
+            return SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final video = videos[index];
                   final thumb =
                       video['thumbnailUrl'] ??
                       _getThumbnail(video['youtubeUrl'] ?? '');
@@ -178,12 +191,12 @@ class VideosScreen extends ConsumerWidget {
                       ),
                     ),
                   );
-                }),
-              );
-            },
-          ),
-        ],
-      ),
+                }, childCount: videos.length),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 

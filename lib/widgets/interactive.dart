@@ -21,7 +21,7 @@ class Tappable extends StatefulWidget {
   State<Tappable> createState() => _TappableState();
 }
 
-class _TappableState extends State<Tappable> with SingleTickerProviderStateMixin {
+class _TappableState extends State<Tappable> {
   bool _hovering = false;
   bool _pressing = false;
 
@@ -34,9 +34,14 @@ class _TappableState extends State<Tappable> with SingleTickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      cursor: widget.onTap != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor: widget.onTap != null
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() { _hovering = false; _pressing = false; }),
+      onExit: (_) => setState(() {
+        _hovering = false;
+        _pressing = false;
+      }),
       child: GestureDetector(
         onTapDown: (_) => setState(() => _pressing = true),
         onTapUp: (_) => setState(() => _pressing = false),
@@ -46,16 +51,7 @@ class _TappableState extends State<Tappable> with SingleTickerProviderStateMixin
           scale: _scale,
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            decoration: BoxDecoration(
-              borderRadius: widget.borderRadius ?? BorderRadius.circular(14),
-              boxShadow: _hovering && widget.onTap != null
-                  ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 16, offset: const Offset(0, 4))]
-                  : [],
-            ),
-            child: widget.child,
-          ),
+          child: widget.child,
         ),
       ),
     );
@@ -87,7 +83,9 @@ class _HoverButtonState extends State<HoverButton> {
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      cursor: widget.onTap != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor: widget.onTap != null
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => _hovering = true),
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
@@ -95,7 +93,9 @@ class _HoverButtonState extends State<HoverButton> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
-            color: _hovering ? (widget.hoverColor ?? Colors.black.withValues(alpha: 0.03)) : Colors.transparent,
+            color: _hovering
+                ? (widget.hoverColor ?? Colors.black.withValues(alpha: 0.03))
+                : Colors.transparent,
             borderRadius: widget.borderRadius,
           ),
           child: widget.child,

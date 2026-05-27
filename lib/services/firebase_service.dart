@@ -12,6 +12,7 @@ class FirebaseService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static final fb.FirebaseAuth _auth = fb.FirebaseAuth.instance;
   static final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  static final _userDataFutures = <String, Future<Map<String, dynamic>?>>{};
 
   /// 자동 관리자 이메일 화이트리스트
   static const adminEmails = {'sinbun001@gmail.com'};
@@ -39,6 +40,7 @@ class FirebaseService {
 
   static Future<void> signOut() async {
     _currentChurchIdCache = null;
+    _userDataFutures.clear();
     await _auth.signOut();
 
     // 카카오 로그아웃 시도 (카카오로 로그인한 경우)
@@ -256,12 +258,15 @@ class FirebaseService {
   static Future<Map<String, dynamic>?> _safeUserData(dynamic userId) async {
     final id = userId?.toString();
     if (id == null || id.isEmpty) return null;
-    try {
-      final doc = await _db.collection('users').doc(id).get();
-      return doc.data();
-    } catch (_) {
-      return null;
-    }
+    return _userDataFutures.putIfAbsent(id, () async {
+      try {
+        final doc = await _db.collection('users').doc(id).get();
+        return doc.data();
+      } catch (_) {
+        _userDataFutures.remove(id);
+        return null;
+      }
+    });
   }
 
   static Map<String, dynamic> _authorFields(
@@ -330,20 +335,25 @@ class FirebaseService {
     return _legacyReactionType(data, userId);
   }
 
-  static Future<Map<String, dynamic>> _postWithAuthorAndReaction(
+  static Future<Map<String, dynamic>> _postListSnapshot(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final data = doc.data();
-    final userDataFuture = _safeUserData(data['userId']);
-    final myReactionFuture = _myReactionForPost(doc.id, data);
-    final userData = await userDataFuture;
-    final myReaction = await myReactionFuture;
+    final hasStoredAuthorName =
+        (data['userName']?.toString().trim().isNotEmpty ?? false) ||
+        (data['authorName']?.toString().trim().isNotEmpty ?? false) ||
+        data['createdByAdmin'] == true ||
+        data['userId'] == 'admin';
+    final userData = hasStoredAuthorName
+        ? null
+        : await _safeUserData(data['userId']);
+    final userId = uid;
     return {
       'id': doc.id,
       ...data,
       ..._authorFields(data, userData),
       'reactionCounts': _reactionCountsFrom(data),
-      'myReaction': myReaction,
+      'myReaction': userId == null ? null : _legacyReactionType(data, userId),
       'createdAt': _timestampIso(data['createdAt']),
     };
   }
@@ -469,21 +479,28 @@ class FirebaseService {
         .where('userId', isEqualTo: uid)
         .get();
 
-    final records = <Map<String, dynamic>>[];
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      final sessionDoc = await _db
-          .collection('attendance_sessions')
-          .doc(data['sessionId'])
-          .get();
-      records.add({
-        'id': doc.id,
-        'sessionTitle': sessionDoc.data()?['title'] ?? '',
-        'checkedInAt':
-            (data['checkedInAt'] as Timestamp?)?.toDate().toIso8601String() ??
-            '',
-      });
-    }
+    final sessionFutures =
+        <String, Future<DocumentSnapshot<Map<String, dynamic>>>>{};
+    final records = await Future.wait(
+      snapshot.docs.map((doc) async {
+        final data = doc.data();
+        final sessionId = data['sessionId']?.toString() ?? '';
+        final sessionDoc = sessionId.isEmpty
+            ? null
+            : await sessionFutures.putIfAbsent(
+                sessionId,
+                () =>
+                    _db.collection('attendance_sessions').doc(sessionId).get(),
+              );
+        return {
+          'id': doc.id,
+          'sessionTitle': sessionDoc?.data()?['title'] ?? '',
+          'checkedInAt':
+              (data['checkedInAt'] as Timestamp?)?.toDate().toIso8601String() ??
+              '',
+        };
+      }),
+    );
     records.sort((a, b) => _timestampFieldDesc('checkedInAt', a, b));
     return records;
   }
@@ -618,7 +635,7 @@ class FirebaseService {
         .orderBy('createdAt', descending: true)
         .limit(50)
         .get();
-    return Future.wait(snapshot.docs.map(_postWithAuthorAndReaction));
+    return Future.wait(snapshot.docs.map(_postListSnapshot));
   }
 
   static Stream<List<Map<String, dynamic>>> watchPosts() {
@@ -629,7 +646,7 @@ class FirebaseService {
         .limit(50)
         .snapshots()
         .asyncMap((snapshot) async {
-          return Future.wait(snapshot.docs.map(_postWithAuthorAndReaction));
+          return Future.wait(snapshot.docs.map(_postListSnapshot));
         });
   }
 
@@ -2415,9 +2432,14 @@ class FirebaseService {
     int? videoTrimStartSec,
     int? videoTrimEndSec,
   }) async {
+    final author = _authorFields({
+      'userId': uid,
+      'userName': currentUser?.displayName,
+    }, await _safeUserData(uid));
     final postData = <String, dynamic>{
       'churchId': _requireChurchId(),
       'userId': uid,
+      ...author,
       'title': title,
       'content': content,
       'imageUrl': imageUrl,
@@ -2915,21 +2937,21 @@ class FirebaseService {
         .where('churchId', isEqualTo: _requireChurchId())
         .where('pollId', isEqualTo: pollId)
         .get();
-    final votes = <Map<String, dynamic>>[];
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      final userData = (data['userName'] == null || data['userPart'] == null)
-          ? await _safeUserData(data['userId'])
-          : null;
-      final author = _authorFields(data, userData);
-      votes.add({
-        'id': doc.id,
-        ...data,
-        'userName': author['userName'] ?? '',
-        'userPart': author['userPart'] ?? '',
-      });
-    }
-    return votes;
+    return Future.wait(
+      snapshot.docs.map((doc) async {
+        final data = doc.data();
+        final userData = (data['userName'] == null || data['userPart'] == null)
+            ? await _safeUserData(data['userId'])
+            : null;
+        final author = _authorFields(data, userData);
+        return {
+          'id': doc.id,
+          ...data,
+          'userName': author['userName'] ?? '',
+          'userPart': author['userPart'] ?? '',
+        };
+      }),
+    );
   }
 
   // ============ Seating Charts (배치판) ============
@@ -2995,18 +3017,23 @@ class FirebaseService {
         .where('churchId', isEqualTo: _requireChurchId())
         .where('chartId', isEqualTo: chartId)
         .get();
-    final assignments = <Map<String, dynamic>>[];
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      final userDoc = await _db.collection('users').doc(data['userId']).get();
-      assignments.add({
-        'id': doc.id,
-        ...data,
-        'userName': userDoc.data()?['name'] ?? '',
-        'userGeneration': userDoc.data()?['generation'] ?? '',
-      });
-    }
-    return assignments;
+    return Future.wait(
+      snapshot.docs.map((doc) async {
+        final data = doc.data();
+        final hasUserFields =
+            data['userName'] != null && data['userGeneration'] != null;
+        final userData = hasUserFields
+            ? null
+            : await _safeUserData(data['userId']);
+        return {
+          'id': doc.id,
+          ...data,
+          'userName': data['userName'] ?? userData?['name'] ?? '',
+          'userGeneration':
+              data['userGeneration'] ?? userData?['generation'] ?? '',
+        };
+      }),
+    );
   }
 
   static Future<void> assignSeat({
@@ -3037,6 +3064,7 @@ class FirebaseService {
     for (final doc in existingCell.docs) {
       await doc.reference.delete();
     }
+    final userData = await _safeUserData(userId);
     await _db.collection('seat_assignments').add({
       'churchId': churchId,
       'chartId': chartId,
@@ -3044,6 +3072,8 @@ class FirebaseService {
       'row': row,
       'col': col,
       'userId': userId,
+      'userName': userData?['name'] ?? '',
+      'userGeneration': userData?['generation'] ?? '',
       'assignedBy': uid,
       'createdAt': FieldValue.serverTimestamp(),
     });

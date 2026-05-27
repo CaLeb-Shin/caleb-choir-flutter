@@ -286,11 +286,13 @@ class HomeScreen extends ConsumerWidget {
                       color: AppColors.border.withValues(alpha: 0.3),
                     ),
                   ),
-                  child: _buildActionGrid(
-                    context,
-                    ref,
-                    isAdmin: profile.isAdmin,
-                    canViewMembers: profile.hasManagePermission,
+                  child: Consumer(
+                    builder: (context, actionRef, _) => _buildActionGrid(
+                      context,
+                      actionRef,
+                      isAdmin: profile.isAdmin,
+                      canViewMembers: profile.hasManagePermission,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),

@@ -42,9 +42,9 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
   @override
   Widget build(BuildContext context) {
     final chartsAsync = ref.watch(seatingChartsProvider);
-    ref.watch(pollsProvider);
     final profile = ref.watch(profileProvider).valueOrNull;
     final isAdmin = ref.watch(effectiveIsAdminProvider);
+    if (isAdmin) ref.watch(pollsProvider);
 
     if (_selectedChartId != null) {
       return _chartDetail(context, profile, isAdmin);
@@ -107,12 +107,12 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
     final assignmentsAsync = ref.watch(
       seatAssignmentsProvider(_selectedChartId!),
     );
-    ref.watch(seatingPresetsProvider);
     final membersAsync = ref.watch(membersProvider);
     final pollVotesAsync = sourcePollId == null
         ? const AsyncValue<List<Map<String, dynamic>>>.data([])
         : ref.watch(pollVotesProvider(sourcePollId));
     final canEdit = isAdmin || (profile?.isPartLeader ?? false);
+    if (canEdit) ref.watch(seatingPresetsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -175,9 +175,14 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
             });
           }
           final assignmentCounts = {
-            for (final part in _seatingPartOrder)
-              part: assignments.where((a) => a['part'] == part).length,
+            for (final part in _seatingPartOrder) part: 0,
           };
+          for (final assignment in assignments) {
+            final part = assignment['part']?.toString();
+            if (part != null && assignmentCounts.containsKey(part)) {
+              assignmentCounts[part] = assignmentCounts[part]! + 1;
+            }
+          }
 
           final panelPart = _editing ? _visiblePart : null;
           final panelCanEdit =
@@ -355,6 +360,10 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
     bool spotlightMySeat = false,
   }) {
     final count = assignments.length;
+    final assignmentByCell = {
+      for (final assignment in assignments)
+        '${assignment['row']}:${assignment['col']}': assignment,
+    };
     const gap = 6.0;
     const boardPadding = 8.0;
     final baseWidth = columnWidth ?? _seatingCols * 76.0 + 18;
@@ -416,9 +425,7 @@ class _SeatingScreenState extends ConsumerState<SeatingScreen> {
                             part: part,
                             row: r,
                             col: c,
-                            assignment: assignments
-                                .where((a) => a['row'] == r && a['col'] == c)
-                                .firstOrNull,
+                            assignment: assignmentByCell['$r:$c'],
                             profile: profile,
                             canEdit: canEdit,
                             candidates: candidates,
