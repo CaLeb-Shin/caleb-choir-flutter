@@ -31,12 +31,15 @@ import 'widgets/caleb_logo_loader.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   KakaoSdk.init(nativeAppKey: '7dac8af45e9ebf4c81284e72bb1b7ebb');
+  // warmCachedProfile only reads SharedPreferences, so start it in parallel with
+  // Firebase init rather than serializing it onto the first-frame critical path.
+  final cachedProfileWarm = FirebaseService.warmCachedProfile();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
-  await FirebaseService.warmCachedProfile();
+  await cachedProfileWarm;
   runApp(const ProviderScope(child: CalebChoirApp()));
 
   unawaited(_initializeNotifications());
@@ -178,6 +181,9 @@ class _MainShellState extends ConsumerState<MainShell> {
     CommunityScreen(),
     ProfileScreen(),
   ];
+  // Tabs are built lazily on first visit, then kept alive in the IndexedStack so
+  // switching back is instant and each tab's scroll position survives.
+  final _loadedTabs = <int>{};
   bool _openedPreviewSection = false;
 
   static const _titles = ['홈', '악보&음원', '영상', '출석&투표', '소통', '마이'];
@@ -193,6 +199,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   @override
   Widget build(BuildContext context) {
     final index = ref.watch(tabIndexProvider);
+    _loadedTabs.add(index);
 
     return Scaffold(
       appBar: index == 0
@@ -214,7 +221,15 @@ class _MainShellState extends ConsumerState<MainShell> {
                 textStyle: AppText.headline(20),
               ),
             ),
-      body: SafeArea(child: _screens[index]),
+      body: SafeArea(
+        child: IndexedStack(
+          index: index,
+          children: [
+            for (var i = 0; i < _screens.length; i++)
+              _loadedTabs.contains(i) ? _screens[i] : const SizedBox.shrink(),
+          ],
+        ),
+      ),
       bottomNavigationBar: AppBottomNavBar(
         currentIndex: index,
         popToRootOnTap: false,

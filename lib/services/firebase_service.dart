@@ -692,12 +692,13 @@ class FirebaseService {
   }
 
   // ============ Videos ============
-  static Future<List<Map<String, dynamic>>> getVideos() async {
-    final snapshot = await _db
+  static Future<List<Map<String, dynamic>>> getVideos({int? limit}) async {
+    Query<Map<String, dynamic>> query = _db
         .collection('videos')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
-        .get();
+        .orderBy('createdAt', descending: true);
+    if (limit != null) query = query.limit(limit);
+    final snapshot = await query.get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 
@@ -2780,12 +2781,13 @@ class FirebaseService {
   }
 
   // ============ Sheet Music ============
-  static Future<List<Map<String, dynamic>>> getSheetMusic() async {
-    final snapshot = await _db
+  static Future<List<Map<String, dynamic>>> getSheetMusic({int? limit}) async {
+    Query<Map<String, dynamic>> query = _db
         .collection('sheet_music')
         .where('churchId', isEqualTo: _requireChurchId())
-        .orderBy('createdAt', descending: true)
-        .get();
+        .orderBy('createdAt', descending: true);
+    if (limit != null) query = query.limit(limit);
+    final snapshot = await query.get();
     return snapshot.docs.map((d) => {'id': d.id, ...d.data()}).toList();
   }
 

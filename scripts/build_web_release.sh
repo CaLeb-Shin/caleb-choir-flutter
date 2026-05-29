@@ -7,7 +7,10 @@ if [[ ! -x "$FLUTTER_BIN" ]]; then
 fi
 
 ENABLE_HARMONY_CHAT="${ENABLE_HARMONY_CHAT:-true}"
-"$FLUTTER_BIN" build web --release --no-tree-shake-icons --dart-define=ENABLE_HARMONY_CHAT="$ENABLE_HARMONY_CHAT"
+# --no-web-resources-cdn keeps CanvasKit served from our own origin
+# (build/web/canvaskit, cached immutable by vercel.json) instead of
+# gstatic.com, removing a third-party round-trip on first load.
+"$FLUTTER_BIN" build web --release --no-web-resources-cdn --no-tree-shake-icons --dart-define=ENABLE_HARMONY_CHAT="$ENABLE_HARMONY_CHAT"
 
 export ICON_ASSET_VERSION="${ICON_ASSET_VERSION:-icons-20260521}"
 MAIN_JS="build/web/main.dart.js"

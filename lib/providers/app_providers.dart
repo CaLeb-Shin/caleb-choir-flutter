@@ -1187,7 +1187,9 @@ final recentSheetMusicProvider = FutureProvider<List<Map<String, dynamic>>>((
   ref,
 ) async {
   if (ref.watch(localPreviewModeProvider)) return _previewSheetMusic;
-  final all = await FirebaseService.getSheetMusic();
+  // Home only needs the last 7 days; cap the fetch so it never downloads the
+  // entire sheet_music history just to filter it client-side.
+  final all = await FirebaseService.getSheetMusic(limit: 50);
   final weekAgo = DateTime.now().subtract(const Duration(days: 7));
   return all.where((s) {
     final created = s['createdAt'];
@@ -1207,7 +1209,8 @@ final recentVideosProvider = FutureProvider<List<Map<String, dynamic>>>((
   ref,
 ) async {
   if (ref.watch(localPreviewModeProvider)) return _previewVideos;
-  final all = await FirebaseService.getVideos();
+  // Home only needs the last 7 days; cap the fetch (see recentSheetMusicProvider).
+  final all = await FirebaseService.getVideos(limit: 50);
   final weekAgo = DateTime.now().subtract(const Duration(days: 7));
   return all.where((v) {
     final created = v['createdAt'];

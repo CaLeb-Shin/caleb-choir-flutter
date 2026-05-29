@@ -24,21 +24,11 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Only the profile gate is watched at the top level. Every data-driven
+    // section below is its own Consumer, so a tick from any live Firestore
+    // stream (events, polls, …) rebuilds just that section instead of this
+    // whole tree mid-scroll.
     final profileAsync = ref.watch(profileProvider);
-    final announcementsAsync = ref.watch(announcementsProvider);
-    final eventsAsync = ref.watch(eventsProvider);
-    final currentChurch = ref.watch(currentChurchProvider).valueOrNull;
-    final recentSheets = ref.watch(recentSheetMusicProvider).valueOrNull ?? [];
-    final recentVids = ref.watch(recentVideosProvider).valueOrNull ?? [];
-    final polls = ref.watch(pollsProvider).valueOrNull ?? [];
-    final seatingCharts = ref.watch(seatingChartsProvider).valueOrNull ?? [];
-    final currentSeatingChart = _currentSeatingChart(seatingCharts);
-    final currentSeatAssignments = currentSeatingChart == null
-        ? const <Map<String, dynamic>>[]
-        : ref
-                  .watch(seatAssignmentsProvider(currentSeatingChart['id']))
-                  .valueOrNull ??
-              const <Map<String, dynamic>>[];
 
     return profileAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -46,29 +36,8 @@ class HomeScreen extends ConsumerWidget {
           const Center(child: Text('프로필을 불러올 수 없습니다')),
       data: (profile) {
         if (profile == null) return const SizedBox.shrink();
-        final announcements = announcementsAsync.valueOrNull ?? [];
-        final mySeat = _mySeat(currentSeatAssignments, profile.id);
         final now = DateTime.now();
         final weekday = ['월', '화', '수', '목', '금', '토', '일'][now.weekday - 1];
-        final totalUploads = recentSheets.length + recentVids.length;
-
-        // Pick upcoming schedule entries from Firestore. Admin writes these to
-        // the events collection with date/location/option flags.
-        final allEvents = eventsAsync.valueOrNull ?? [];
-        final today = DateTime(now.year, now.month, now.day);
-        final upcomingEvents =
-            allEvents.where((e) {
-              final parsed = _eventDateTime(e);
-              if (parsed == null) return false;
-              final eventDay = DateTime(parsed.year, parsed.month, parsed.day);
-              return !eventDay.isBefore(today);
-            }).toList()..sort(
-              (a, b) => _eventDateTime(a)!.compareTo(_eventDateTime(b)!),
-            );
-        final weeklySchedules = _weeklyScheduleItems(
-          upcomingEvents: upcomingEvents,
-          polls: polls,
-        );
 
         return RefreshIndicator(
           onRefresh: () async {
@@ -85,11 +54,13 @@ class HomeScreen extends ConsumerWidget {
               ref.invalidate(harmonyNotesProvider);
               ref.invalidate(harmonyRelaysProvider);
             }
+            final charts =
+                ref.read(seatingChartsProvider).valueOrNull ??
+                const <Map<String, dynamic>>[];
+            final currentChart = _currentSeatingChart(charts);
             ref.invalidate(seatingChartsProvider);
-            if (currentSeatingChart != null) {
-              ref.invalidate(
-                seatAssignmentsProvider(currentSeatingChart['id']),
-              );
+            if (currentChart != null) {
+              ref.invalidate(seatAssignmentsProvider(currentChart['id']));
             }
           },
           child: SingleChildScrollView(
@@ -135,145 +106,25 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 18),
 
-                // ── Welcome
-                Row(
-                  children: [
-                    Text('환영합니다', style: AppText.label()),
-                    if (currentChurch != null) ...[
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primarySoft,
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            currentChurch.displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppText.body(
-                              11,
-                              weight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${profile.name ?? "멤버"}님, 오늘도 함께 찬양해요',
-                  style: AppText.headline(20, weight: FontWeight.w700),
-                ),
-                const SizedBox(height: 16),
-                if (mySeat != null && currentSeatingChart != null) ...[
-                  _MySeatHomeCard(
-                    chart: currentSeatingChart,
-                    seat: mySeat,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SeatingScreen(
-                          initialChartId: currentSeatingChart['id']?.toString(),
-                          initialChart: currentSeatingChart,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                // ── Upcoming Rehearsal / Active Session
-                Tappable(
-                  onTap: () {},
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFF00234B).withValues(alpha: 0.9),
-                          const Color(0xFF064F7A).withValues(alpha: 0.72),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.14),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(
-                            0xFF00234B,
-                          ).withValues(alpha: 0.16),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: weeklySchedules.isNotEmpty
-                        ? _WeeklyScheduleCard(
-                            schedules: weeklySchedules,
-                            onAttendance: (item) =>
-                                _openAttendanceForSchedule(context, item),
-                            onSeat: (item) => _openSeatForSchedule(
-                              context,
-                              _seatingChartForSchedule(seatingCharts, item) ??
-                                  currentSeatingChart,
-                            ),
-                            onDetails: () => _openSection(
-                              context,
-                              '일정',
-                              const EventsScreen(),
-                            ),
-                          )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  '다음 일정',
-                                  style: AppText.body(
-                                    10,
-                                    weight: FontWeight.w700,
-                                    color: Colors.white70,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              Text(
-                                '예정된 연습이 없습니다',
-                                style: AppText.headline(
-                                  20,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                '관리자가 일정을 등록하면 여기에 표시됩니다',
-                                style: AppText.body(13, color: Colors.white54),
-                              ),
-                            ],
-                          ),
-                  ),
+                // ── Welcome (watches currentChurch only)
+                Consumer(
+                  builder: (context, ref, _) => _welcome(context, ref, profile),
                 ),
                 const SizedBox(height: 16),
 
+                // ── My seat (watches seating charts + my assignment)
+                Consumer(
+                  builder: (context, ref, _) =>
+                      _mySeatSection(context, ref, profile),
+                ),
+
+                // ── Upcoming schedule (watches events + polls streams)
+                Consumer(
+                  builder: (context, ref, _) => _scheduleSection(context, ref),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Quick actions (grid isolates its own watches)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     vertical: 6,
@@ -297,195 +148,403 @@ class HomeScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 10),
 
-                // ── This Week's Uploads
-                if (totalUploads > 0) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text('이번 주 업로드', style: AppText.headline(18)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.secondarySoft,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '$totalUploads개',
-                          style: AppText.body(
-                            11,
-                            weight: FontWeight.w700,
-                            color: AppColors.secondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 90,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      clipBehavior: Clip.none,
-                      children: [
-                        ...recentSheets.map(
-                          (s) => _UploadChip(
-                            icon: Icons.description_rounded,
-                            title: s['songTitle'] ?? s['title'] ?? '',
-                            sub: '악보&음원',
-                            color: AppColors.primary,
-                            onTap: () => _openSection(
-                              context,
-                              '악보&음원',
-                              const SheetMusicScreen(),
-                              navIndex: 1,
-                            ),
-                          ),
-                        ),
-                        ...recentVids.map(
-                          (v) => _UploadChip(
-                            icon: Icons.play_circle_rounded,
-                            title: v['title'] ?? '',
-                            sub: '영상',
-                            color: AppColors.secondary,
-                            onTap: () => _openSection(
-                              context,
-                              '영상',
-                              const VideosScreen(),
-                              navIndex: 0,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                ],
-
-                // ── Announcements Feed (Timeline)
-                Row(
-                  children: [
-                    Expanded(child: Text('최근 소식', style: AppText.headline(18))),
-                    Icon(
-                      Icons.notifications_rounded,
-                      size: 20,
-                      color: AppColors.secondary,
-                    ),
-                  ],
+                // ── This week's uploads (watches recent sheets + videos)
+                Consumer(
+                  builder: (context, ref, _) => _uploadsSection(context, ref),
                 ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLow,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: announcements.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 20),
-                            child: Text(
-                              '새로운 소식이 없습니다',
-                              style: AppText.body(14, color: AppColors.muted),
-                            ),
-                          ),
-                        )
-                      : Column(
-                          children: [
-                            ...announcements.take(5).map((ann) {
-                              final isRecent = _isRecent(ann['createdAt']);
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 16),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Column(
-                                      children: [
-                                        Container(
-                                          width: 8,
-                                          height: 8,
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: isRecent
-                                                ? AppColors.secondaryContainer
-                                                : AppColors.subtle,
-                                          ),
-                                        ),
-                                        Container(
-                                          width: 1,
-                                          height: 40,
-                                          color: AppColors.border.withValues(
-                                            alpha: 0.3,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            _timeAgo(ann['createdAt']),
-                                            style: AppText.body(
-                                              10,
-                                              weight: FontWeight.w700,
-                                              color: AppColors.muted,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            ann['title'] ?? '',
-                                            style: AppText.body(
-                                              14,
-                                              weight: FontWeight.w700,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          if (ann['content'] != null) ...[
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              ann['content'] ?? '',
-                                              style: AppText.body(
-                                                12,
-                                                color:
-                                                    AppColors.onSurfaceVariant,
-                                                height: 1.4,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                            Tappable(
-                              onTap: () =>
-                                  ref.read(tabIndexProvider.notifier).state = 4,
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Center(
-                                  child: Text('전체 보기', style: AppText.label()),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+
+                // ── Announcements feed (watches announcements)
+                Consumer(
+                  builder: (context, ref, _) => _announcements(context, ref),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _welcome(BuildContext context, WidgetRef ref, User profile) {
+    final currentChurch = ref.watch(currentChurchProvider).valueOrNull;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('환영합니다', style: AppText.label()),
+            if (currentChurch != null) ...[
+              const SizedBox(width: 8),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primarySoft,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    currentChurch.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.body(
+                      11,
+                      weight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${profile.name ?? "멤버"}님, 오늘도 함께 찬양해요',
+          style: AppText.headline(20, weight: FontWeight.w700),
+        ),
+      ],
+    );
+  }
+
+  Widget _mySeatSection(BuildContext context, WidgetRef ref, User profile) {
+    final seatingCharts =
+        ref.watch(seatingChartsProvider).valueOrNull ??
+        const <Map<String, dynamic>>[];
+    final currentSeatingChart = _currentSeatingChart(seatingCharts);
+    if (currentSeatingChart == null) return const SizedBox.shrink();
+    final assignments =
+        ref
+            .watch(seatAssignmentsProvider(currentSeatingChart['id']))
+            .valueOrNull ??
+        const <Map<String, dynamic>>[];
+    final mySeat = _mySeat(assignments, profile.id);
+    if (mySeat == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: _MySeatHomeCard(
+        chart: currentSeatingChart,
+        seat: mySeat,
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SeatingScreen(
+              initialChartId: currentSeatingChart['id']?.toString(),
+              initialChart: currentSeatingChart,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _scheduleSection(BuildContext context, WidgetRef ref) {
+    final allEvents =
+        ref.watch(eventsProvider).valueOrNull ??
+        const <Map<String, dynamic>>[];
+    final polls =
+        ref.watch(pollsProvider).valueOrNull ?? const <Map<String, dynamic>>[];
+    final seatingCharts =
+        ref.watch(seatingChartsProvider).valueOrNull ??
+        const <Map<String, dynamic>>[];
+    final currentSeatingChart = _currentSeatingChart(seatingCharts);
+
+    // Pick upcoming schedule entries from Firestore. Admin writes these to the
+    // events collection with date/location/option flags.
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final upcomingEvents =
+        allEvents.where((e) {
+          final parsed = _eventDateTime(e);
+          if (parsed == null) return false;
+          final eventDay = DateTime(parsed.year, parsed.month, parsed.day);
+          return !eventDay.isBefore(today);
+        }).toList()..sort(
+          (a, b) => _eventDateTime(a)!.compareTo(_eventDateTime(b)!),
+        );
+    final weeklySchedules = _weeklyScheduleItems(
+      upcomingEvents: upcomingEvents,
+      polls: polls,
+    );
+
+    return Tappable(
+      onTap: () {},
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFF00234B).withValues(alpha: 0.9),
+              const Color(0xFF064F7A).withValues(alpha: 0.72),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF00234B).withValues(alpha: 0.16),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: weeklySchedules.isNotEmpty
+            ? _WeeklyScheduleCard(
+                schedules: weeklySchedules,
+                onAttendance: (item) =>
+                    _openAttendanceForSchedule(context, item),
+                onSeat: (item) => _openSeatForSchedule(
+                  context,
+                  _seatingChartForSchedule(seatingCharts, item) ??
+                      currentSeatingChart,
+                ),
+                onDetails: () =>
+                    _openSection(context, '일정', const EventsScreen()),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '다음 일정',
+                      style: AppText.body(
+                        10,
+                        weight: FontWeight.w700,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    '예정된 연습이 없습니다',
+                    style: AppText.headline(20, color: Colors.white),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '관리자가 일정을 등록하면 여기에 표시됩니다',
+                    style: AppText.body(13, color: Colors.white54),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _uploadsSection(BuildContext context, WidgetRef ref) {
+    final recentSheets =
+        ref.watch(recentSheetMusicProvider).valueOrNull ??
+        const <Map<String, dynamic>>[];
+    final recentVids =
+        ref.watch(recentVideosProvider).valueOrNull ??
+        const <Map<String, dynamic>>[];
+    final totalUploads = recentSheets.length + recentVids.length;
+    if (totalUploads == 0) return const SizedBox.shrink();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('이번 주 업로드', style: AppText.headline(18)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.secondarySoft,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '$totalUploads개',
+                style: AppText.body(
+                  11,
+                  weight: FontWeight.w700,
+                  color: AppColors.secondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 90,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            children: [
+              ...recentSheets.map(
+                (s) => _UploadChip(
+                  icon: Icons.description_rounded,
+                  title: s['songTitle'] ?? s['title'] ?? '',
+                  sub: '악보&음원',
+                  color: AppColors.primary,
+                  onTap: () => _openSection(
+                    context,
+                    '악보&음원',
+                    const SheetMusicScreen(),
+                    navIndex: 1,
+                  ),
+                ),
+              ),
+              ...recentVids.map(
+                (v) => _UploadChip(
+                  icon: Icons.play_circle_rounded,
+                  title: v['title'] ?? '',
+                  sub: '영상',
+                  color: AppColors.secondary,
+                  onTap: () => _openSection(
+                    context,
+                    '영상',
+                    const VideosScreen(),
+                    navIndex: 0,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 28),
+      ],
+    );
+  }
+
+  Widget _announcements(BuildContext context, WidgetRef ref) {
+    final announcements =
+        ref.watch(announcementsProvider).valueOrNull ??
+        const <Map<String, dynamic>>[];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('최근 소식', style: AppText.headline(18))),
+            Icon(
+              Icons.notifications_rounded,
+              size: 20,
+              color: AppColors.secondary,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLow,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: announcements.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Text(
+                      '새로운 소식이 없습니다',
+                      style: AppText.body(14, color: AppColors.muted),
+                    ),
+                  ),
+                )
+              : Column(
+                  children: [
+                    ...announcements.take(5).map((ann) {
+                      final isRecent = _isRecent(ann['createdAt']);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Column(
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isRecent
+                                        ? AppColors.secondaryContainer
+                                        : AppColors.subtle,
+                                  ),
+                                ),
+                                Container(
+                                  width: 1,
+                                  height: 40,
+                                  color: AppColors.border.withValues(
+                                    alpha: 0.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _timeAgo(ann['createdAt']),
+                                    style: AppText.body(
+                                      10,
+                                      weight: FontWeight.w700,
+                                      color: AppColors.muted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    ann['title'] ?? '',
+                                    style: AppText.body(
+                                      14,
+                                      weight: FontWeight.w700,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (ann['content'] != null) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      ann['content'] ?? '',
+                                      style: AppText.body(
+                                        12,
+                                        color: AppColors.onSurfaceVariant,
+                                        height: 1.4,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    Tappable(
+                      onTap: () =>
+                          ref.read(tabIndexProvider.notifier).state = 4,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Center(
+                          child: Text('전체 보기', style: AppText.label()),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ],
     );
   }
 

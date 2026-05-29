@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 // ─── Color System (HTML 디자인 레퍼런스 기반) ───
 class AppColors {
@@ -59,8 +58,25 @@ class AppText {
     'sans-serif',
   ];
 
-  static TextStyle _inter(TextStyle style) {
-    return style.copyWith(fontFamilyFallback: _fallbackFonts);
+  // Inter is bundled as an app asset (see pubspec `fonts:`) instead of being
+  // fetched at runtime, so text paints on the first frame with no network
+  // round-trip or font swap. Korean falls through to the system fonts below.
+  static const fontFamily = 'Inter';
+
+  static TextStyle _inter(
+    double size, {
+    required FontWeight weight,
+    Color? color,
+    double? height,
+  }) {
+    return TextStyle(
+      fontFamily: fontFamily,
+      fontFamilyFallback: _fallbackFonts,
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      height: height,
+    );
   }
 
   /// Inter — 헤드라인, 제목
@@ -69,13 +85,7 @@ class AppText {
     FontWeight weight = FontWeight.w700,
     Color? color,
   }) {
-    return _inter(
-      GoogleFonts.inter(
-        fontSize: size,
-        fontWeight: weight,
-        color: color ?? AppColors.ink,
-      ),
-    );
+    return _inter(size, weight: weight, color: color ?? AppColors.ink);
   }
 
   /// Inter — body text
@@ -86,23 +96,19 @@ class AppText {
     double? height,
   }) {
     return _inter(
-      GoogleFonts.inter(
-        fontSize: size,
-        fontWeight: weight,
-        color: color ?? AppColors.ink,
-        height: height,
-      ),
+      size,
+      weight: weight,
+      color: color ?? AppColors.ink,
+      height: height,
     );
   }
 
   /// 라벨 — 대문자 트래킹
   static TextStyle label({Color? color}) {
     return _inter(
-      GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: color ?? AppColors.secondary,
-      ),
+      11,
+      weight: FontWeight.w700,
+      color: color ?? AppColors.secondary,
     );
   }
 }
@@ -110,16 +116,17 @@ class AppText {
 // ─── Theme ───
 class AppTheme {
   static ThemeData get light {
-    final textTheme = GoogleFonts.interTextTheme().apply(
+    final textTheme = Typography.material2021().black.apply(
+      fontFamily: AppText.fontFamily,
+      fontFamilyFallback: AppText._fallbackFonts,
       bodyColor: AppColors.ink,
       displayColor: AppColors.ink,
-      fontFamilyFallback: AppText._fallbackFonts,
     );
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      fontFamily: GoogleFonts.inter().fontFamily,
+      fontFamily: AppText.fontFamily,
       fontFamilyFallback: AppText._fallbackFonts,
       textTheme: textTheme,
       colorScheme: ColorScheme.fromSeed(
