@@ -1,3 +1,7 @@
+// Mobile relies on the OS-level mic permission flow, so the web "already
+// granted?" probe simply reports unknown and callers fall back to the recorder.
+Future<bool> microphonePermissionGranted() async => false;
+
 bool primeRelayBackingAudio(String url, Duration position) => false;
 
 bool startRelayBackingAudio(String url, Duration position) => false;

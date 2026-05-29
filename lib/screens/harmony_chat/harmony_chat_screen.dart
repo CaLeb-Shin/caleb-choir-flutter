@@ -1028,7 +1028,7 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
       });
       unawaited(HapticFeedback.mediumImpact());
     } catch (_) {
-      unawaited(_forgetMicrophonePermissionGranted());
+      unawaited(_forgetMicrophonePermissionIfRevoked());
       await _mrPlayer.stop();
       relay_backing_audio.stopRelayBackingAudio();
       if (widget.ref.read(localPreviewModeProvider)) {
@@ -2208,10 +2208,34 @@ class _RelayProgressMapState extends State<_RelayProgressMap> {
     return _nodeKeys.putIfAbsent(relayId, GlobalKey.new);
   }
 
+  // One-line "where are we" summary shown next to the progress bar so the
+  // whole relay status reads at a glance instead of scanning every node.
+  String _nextTurnLabel() {
+    if (widget.relays.isEmpty) return '아직 소절이 없어요';
+    Map<String, dynamic>? nextRelay;
+    for (final relay in widget.relays) {
+      if (!_relayCompleted(relay)) {
+        nextRelay = relay;
+        break;
+      }
+    }
+    if (nextRelay == null) return '완주했어요 🎉';
+    final assigneeId = nextRelay['currentAssigneeId']?.toString() ?? '';
+    if (assigneeId.isNotEmpty && assigneeId == FirebaseService.uid) {
+      return '내 차례예요';
+    }
+    final assigneeName = _cleanDisplayText(
+      nextRelay['currentAssigneeName']?.toString() ?? '',
+    );
+    if (assigneeName.isNotEmpty) return '다음 차례 · $assigneeName';
+    return '다음 차례 대기 중';
+  }
+
   @override
   Widget build(BuildContext context) {
     final completed = widget.relays.where(_relayCompleted).length;
     final playbackClips = _relayClipSequenceForRelays(widget.relays);
+    final nextTurnLabel = _nextTurnLabel();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(13),
@@ -2268,6 +2292,13 @@ class _RelayProgressMapState extends State<_RelayProgressMap> {
               ),
             ],
           ),
+          const SizedBox(height: 12),
+          _HarmonyProgressBar(
+            completed: completed,
+            total: widget.relays.length,
+            statusLabel: nextTurnLabel,
+            dark: true,
+          ),
           const SizedBox(height: 10),
           const _HarmonyLegend(dark: true),
           const SizedBox(height: 10),
@@ -2303,6 +2334,105 @@ class _RelayProgressMapState extends State<_RelayProgressMap> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _HarmonyProgressBar extends StatelessWidget {
+  const _HarmonyProgressBar({
+    required this.completed,
+    required this.total,
+    required this.statusLabel,
+    required this.dark,
+  });
+
+  final int completed;
+  final int total;
+  final String statusLabel;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final safeTotal = total < 0 ? 0 : total;
+    final fraction = safeTotal == 0
+        ? 0.0
+        : (completed / safeTotal).clamp(0.0, 1.0).toDouble();
+    final isDone = safeTotal > 0 && completed >= safeTotal;
+    final trackColor = dark
+        ? Colors.white.withValues(alpha: 0.16)
+        : AppColors.border.withValues(alpha: 0.30);
+    final fillColor = isDone
+        ? AppColors.success
+        : dark
+        ? AppColors.secondaryContainer
+        : AppColors.primary;
+    final countColor = dark ? Colors.white : AppColors.ink;
+    final subColor = dark ? Colors.white.withValues(alpha: 0.74) : AppColors.muted;
+    final statusColor = isDone
+        ? (dark ? AppColors.secondaryContainer : AppColors.success)
+        : countColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              '$completed',
+              style: AppText.body(20, weight: FontWeight.w900, color: countColor),
+            ),
+            Text(
+              ' / $safeTotal 소절',
+              style: AppText.body(12, weight: FontWeight.w700, color: subColor),
+            ),
+            const Spacer(),
+            Flexible(
+              child: Text(
+                statusLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: AppText.body(
+                  12.5,
+                  weight: FontWeight.w900,
+                  color: statusColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: Stack(
+            children: [
+              Container(height: 10, color: trackColor),
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(
+                  begin: 0,
+                  end: fraction <= 0 ? 0.001 : fraction,
+                ),
+                duration: const Duration(milliseconds: 420),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, child) {
+                  return FractionallySizedBox(
+                    widthFactor: value.clamp(0.001, 1.0),
+                    child: child,
+                  );
+                },
+                child: Container(
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: fillColor,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2817,6 +2947,17 @@ class _DecodedAudioData {
   final String mimeType;
 }
 
+/// Resolves a relay clip URL to the audioplayers [Source] used to play it,
+/// decoding inline `data:` payloads to bytes. Lets callers preload via
+/// `setSource` before the playback cue so layered voices start on time.
+Source _relayAudioSource(String audioUrl) {
+  final decoded = _decodeDataAudioUrl(audioUrl);
+  if (decoded != null) {
+    return BytesSource(decoded.bytes, mimeType: decoded.mimeType);
+  }
+  return UrlSource(audioUrl);
+}
+
 Future<void> _playRelayAudioSource(
   AudioPlayer player,
   String audioUrl, {
@@ -2868,6 +3009,14 @@ Future<bool> _ensureMicrophonePermission(AudioRecorder recorder) async {
     return true;
   }
 
+  // On web, ask the browser silently whether the mic is already granted. If it
+  // is, skip every recorder permission call so we never surface a prompt the
+  // user already answered for this site.
+  if (kIsWeb && await relay_backing_audio.microphonePermissionGranted()) {
+    await _rememberMicrophonePermissionGranted();
+    return true;
+  }
+
   final alreadyGranted = await recorder.hasPermission(request: false);
   if (alreadyGranted) {
     await _rememberMicrophonePermissionGranted();
@@ -2889,6 +3038,17 @@ Future<void> _forgetMicrophonePermissionGranted() async {
   _microphonePermissionGrantedInSession = false;
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove(_microphonePermissionGrantedKey);
+}
+
+/// Recording can fail for reasons unrelated to permission (MR playback, encoder,
+/// transient device hiccup). Only drop the cached grant when the browser
+/// actually reports the mic is no longer granted, so a one-off error doesn't
+/// force a fresh permission prompt on the next take.
+Future<void> _forgetMicrophonePermissionIfRevoked() async {
+  if (kIsWeb && await relay_backing_audio.microphonePermissionGranted()) {
+    return;
+  }
+  await _forgetMicrophonePermissionGranted();
 }
 
 bool _canTestRecordRelayForTest(WidgetRef ref, String part) {
@@ -3656,13 +3816,29 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
       setState(() => _isLoading = true);
     }
     try {
+      // Preload (buffer) the voice clip BEFORE we wait for its cue, so the moment
+      // the MR clock reaches this segment we can start it instantly with
+      // resume() instead of paying network/decode latency after the cue — that
+      // lag is what made layered voices trail the backing track.
+      var preloaded = false;
+      try {
+        await _player.stop();
+        await _player.setSource(_relayAudioSource(url));
+        preloaded = true;
+      } catch (_) {
+        preloaded = false;
+      }
       await _ensureSequenceBacking(clips, index, runId);
       await _waitForClipStart(clips[index], runId);
       if (!mounted || runId != _playbackRunId) return;
       setState(() => _playingIndex = index);
       widget.onActiveRelayChanged?.call(_relayIdForClip(clips[index]));
-      await _player.stop();
-      await _playRelayAudioSource(_player, url);
+      if (preloaded) {
+        await _player.resume();
+      } else {
+        await _player.stop();
+        await _playRelayAudioSource(_player, url);
+      }
       if (mounted) setState(() => _isLoading = false);
     } catch (_) {
       if (index + 1 < clips.length) {
@@ -5830,7 +6006,22 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     try {
       await _guidePlayer.stop();
       _segmentStopTimer?.cancel();
-      await _playRelayAudioSource(_guidePlayer, audioUrl, position: position);
+      // Buffer the clip first, then resume(), so the karaoke voice starts the
+      // instant we begin timing the lyric instead of trailing it by the
+      // network/decode delay. Falls back to a direct play if preloading fails.
+      var started = false;
+      if (position <= Duration.zero) {
+        try {
+          await _guidePlayer.setSource(_relayAudioSource(audioUrl));
+          await _guidePlayer.resume();
+          started = true;
+        } catch (_) {
+          started = false;
+        }
+      }
+      if (!started) {
+        await _playRelayAudioSource(_guidePlayer, audioUrl, position: position);
+      }
       _startPlaybackTimer(
         lyricBaseSeconds: lyricBaseSeconds ?? position.inMilliseconds / 1000,
         lyricDurationSeconds: stopAfter > Duration.zero
@@ -5973,7 +6164,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
       });
       unawaited(HapticFeedback.mediumImpact());
     } catch (_) {
-      unawaited(_forgetMicrophonePermissionGranted());
+      unawaited(_forgetMicrophonePermissionIfRevoked());
       unawaited(_backingPlayer.stop());
       relay_backing_audio.stopRelayBackingAudio();
       _primedBackingUrl = null;
@@ -8562,7 +8753,7 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
         _audioName = null;
       });
     } catch (_) {
-      unawaited(_forgetMicrophonePermissionGranted());
+      unawaited(_forgetMicrophonePermissionIfRevoked());
       _showMessage('녹음을 시작할 수 없습니다. 브라우저의 마이크 권한을 확인해주세요.');
     }
   }

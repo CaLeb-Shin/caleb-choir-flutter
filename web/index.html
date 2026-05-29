@@ -462,6 +462,28 @@
     })();
   </script>
 
+  <!-- Microphone permission probe — lets the app silently check whether the mic
+       is already granted (via the Permissions API) so it never re-asks once the
+       user has allowed it for this site. -->
+  <script>
+    window.CCNoteMic = (function () {
+      return {
+        // Resolves to 'granted' | 'prompt' | 'denied' | 'unknown' without ever
+        // opening the mic, so checking permission can't trigger a prompt.
+        state: function () {
+          try {
+            if (navigator.permissions && navigator.permissions.query) {
+              return navigator.permissions.query({ name: 'microphone' })
+                .then(function (status) { return status.state || 'unknown'; })
+                .catch(function () { return 'unknown'; });
+            }
+          } catch (_) {}
+          return Promise.resolve('unknown');
+        }
+      };
+    })();
+  </script>
+
   <!-- Daum/Kakao 우편번호 서비스 — 기본 주소검색은 별도 앱 키 없이 사용합니다. -->
   <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
   <script>

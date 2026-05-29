@@ -1,5 +1,19 @@
 import 'dart:js_interop';
 
+@JS('CCNoteMic.state')
+external JSPromise<JSString> _microphonePermissionState();
+
+/// `true` when the browser already granted mic access for this origin, checked
+/// silently via the Permissions API so we never trigger a prompt just to look.
+Future<bool> microphonePermissionGranted() async {
+  try {
+    final state = (await _microphonePermissionState().toDart).toDart;
+    return state == 'granted';
+  } catch (_) {
+    return false;
+  }
+}
+
 @JS('CCNoteRelayAudio.prime')
 external JSBoolean _primeRelayBackingAudio(JSString url, JSNumber startSeconds);
 
