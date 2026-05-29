@@ -52,6 +52,150 @@
   <title>C.C Note ( Church Choir Note )</title>
   <link rel="manifest" href="manifest.json">
 
+  <style>
+    html,
+    body {
+      background: #fff;
+    }
+
+    #cc-note-bootstrap-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: grid;
+      place-items: center;
+      background: #fff;
+      opacity: 1;
+      transition: opacity 220ms ease;
+    }
+
+    #cc-note-bootstrap-loader.cc-note-loader-hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .cc-logo-loader {
+      position: relative;
+      width: clamp(76px, 22vmin, 116px);
+      aspect-ratio: 1;
+    }
+
+    .cc-logo-piece,
+    .cc-logo-loader::after {
+      position: absolute;
+      inset: 0;
+      background-image: url("assets/assets/images/caleb_logo_mark_black.png");
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: contain;
+    }
+
+    .cc-logo-loader::after {
+      content: "";
+      opacity: 0;
+      animation: cc-full-logo-lock 1800ms ease-out infinite both;
+    }
+
+    .cc-logo-piece {
+      opacity: 0.14;
+      animation: cc-logo-assemble 1800ms cubic-bezier(0.18, 0.89, 0.32, 1.18)
+        infinite both;
+      clip-path: inset(var(--clip));
+      transform: translate(var(--x), var(--y)) scale(var(--scale));
+      will-change: opacity, transform;
+    }
+
+    .cc-logo-piece:nth-child(1) {
+      --clip: 0 46% 57% 0;
+      --x: -56%;
+      --y: -42%;
+      --scale: 0.86;
+    }
+
+    .cc-logo-piece:nth-child(2) {
+      --clip: 0 0 51% 43%;
+      --x: 58%;
+      --y: -34%;
+      --scale: 0.88;
+    }
+
+    .cc-logo-piece:nth-child(3) {
+      --clip: 27% 24% 27% 25%;
+      --x: 0;
+      --y: -62%;
+      --scale: 0.82;
+    }
+
+    .cc-logo-piece:nth-child(4) {
+      --clip: 45% 46% 0 0;
+      --x: -48%;
+      --y: 50%;
+      --scale: 0.9;
+    }
+
+    .cc-logo-piece:nth-child(5) {
+      --clip: 43% 0 0 46%;
+      --x: 50%;
+      --y: 46%;
+      --scale: 0.9;
+    }
+
+    @keyframes cc-logo-assemble {
+      0% {
+        opacity: 0.14;
+        transform: translate(var(--x), var(--y)) scale(var(--scale));
+      }
+      18% {
+        opacity: 1;
+      }
+      36% {
+        opacity: 1;
+        transform: translate(1.4%, -1%) scale(1.018);
+      }
+      44%,
+      100% {
+        opacity: 1;
+        transform: translate(0, 0) scale(1);
+      }
+    }
+
+    @keyframes cc-full-logo-lock {
+      0%,
+      38% {
+        opacity: 0;
+        transform: scale(1);
+      }
+      44% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      62% {
+        opacity: 1;
+        transform: scale(1.018);
+      }
+      80%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #cc-note-bootstrap-loader {
+        transition: none;
+      }
+
+      .cc-logo-piece {
+        display: none;
+      }
+
+      .cc-logo-loader::after {
+        opacity: 1;
+        animation: none;
+      }
+    }
+  </style>
+
   <!-- Kakao JavaScript SDK (v2) — Web 로그인용 -->
   <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js"
           integrity="sha384-TiCUE00h649CAMonG018J2ujOgDKW/kVWlChEuu4jK2vxfAAD0eZxzCKakxg55G4"
@@ -435,6 +579,15 @@
   </script>
 </head>
 <body>
+  <div id="cc-note-bootstrap-loader" aria-hidden="true">
+    <div class="cc-logo-loader">
+      <div class="cc-logo-piece"></div>
+      <div class="cc-logo-piece"></div>
+      <div class="cc-logo-piece"></div>
+      <div class="cc-logo-piece"></div>
+      <div class="cc-logo-piece"></div>
+    </div>
+  </div>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader
@@ -443,6 +596,22 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    (function () {
+      function removeBootstrapLoader() {
+        var loader = document.getElementById('cc-note-bootstrap-loader');
+        if (!loader) return;
+        loader.classList.add('cc-note-loader-hidden');
+        window.setTimeout(function () {
+          if (loader.parentNode) loader.parentNode.removeChild(loader);
+        }, 260);
+      }
+
+      window.addEventListener('flutter-first-frame', removeBootstrapLoader, {
+        once: true
+      });
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

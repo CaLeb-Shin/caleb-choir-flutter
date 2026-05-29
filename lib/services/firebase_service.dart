@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,6 +7,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart' as kakao;
+import 'package:shared_preferences/shared_preferences.dart';
 
 typedef UploadProgress = void Function(double progress);
 
@@ -13,6 +16,9 @@ class FirebaseService {
   static final fb.FirebaseAuth _auth = fb.FirebaseAuth.instance;
   static final FirebaseFunctions _functions = FirebaseFunctions.instance;
   static final _userDataFutures = <String, Future<Map<String, dynamic>?>>{};
+  static final _userDataCache = <String, Map<String, dynamic>?>{};
+  static const _cachedProfileKey = 'cc_note_cached_profile_v1';
+  static Map<String, dynamic>? _cachedProfileMemory;
 
   /// 자동 관리자 이메일 화이트리스트
   static const adminEmails = {'sinbun001@gmail.com'};
@@ -38,9 +44,28 @@ class FirebaseService {
   static String? get uid => _auth.currentUser?.uid;
   static Stream<fb.User?> get authStateChanges => _auth.authStateChanges();
 
+  static Stream<fb.User?> authStateChangesWithCurrentUser() async* {
+    final current = _auth.currentUser;
+    if (current != null) {
+      yield current;
+    }
+    var skippedInitialCurrentUser = false;
+    await for (final user in _auth.authStateChanges()) {
+      if (!skippedInitialCurrentUser &&
+          current != null &&
+          user?.uid == current.uid) {
+        skippedInitialCurrentUser = true;
+        continue;
+      }
+      yield user;
+    }
+  }
+
   static Future<void> signOut() async {
     _currentChurchIdCache = null;
     _userDataFutures.clear();
+    _userDataCache.clear();
+    await clearCachedProfile();
     await _auth.signOut();
 
     // 카카오 로그아웃 시도 (카카오로 로그인한 경우)
@@ -54,7 +79,62 @@ class FirebaseService {
     if (uid == null) return null;
     final doc = await _db.collection('users').doc(uid).get();
     if (!doc.exists) return null;
-    return {'id': uid, ...doc.data()!};
+    final profile = {'id': uid, ...doc.data()!};
+    unawaited(cacheProfile(profile));
+    return profile;
+  }
+
+  static Future<void> warmCachedProfile() async {
+    _cachedProfileMemory = await _readCachedProfile();
+  }
+
+  static Map<String, dynamic>? cachedProfileSnapshot() {
+    final cached = _cachedProfileMemory;
+    if (cached == null) return null;
+    final activeUid = uid;
+    if (activeUid != null && cached['id']?.toString() != activeUid) {
+      return null;
+    }
+    return cached;
+  }
+
+  static Future<Map<String, dynamic>?> getCachedProfile() async {
+    final memory = cachedProfileSnapshot();
+    if (memory != null) return memory;
+    _cachedProfileMemory = await _readCachedProfile();
+    return cachedProfileSnapshot();
+  }
+
+  static Future<Map<String, dynamic>?> _readCachedProfile() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = prefs.getString(_cachedProfileKey);
+      if (encoded == null || encoded.isEmpty) return null;
+      final decoded = jsonDecode(encoded);
+      if (decoded is! Map<String, dynamic>) return null;
+      return decoded;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> cacheProfile(Map<String, dynamic> profile) async {
+    try {
+      _cachedProfileMemory = _jsonSafeMap(profile);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _cachedProfileKey,
+        jsonEncode(_cachedProfileMemory),
+      );
+    } catch (_) {}
+  }
+
+  static Future<void> clearCachedProfile() async {
+    try {
+      _cachedProfileMemory = null;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_cachedProfileKey);
+    } catch (_) {}
   }
 
   static Future<void> createProfile(Map<String, dynamic> data) async {
@@ -187,11 +267,24 @@ class FirebaseService {
   }
 
   /// 현재 유저의 프로필 실시간 스트림 (승인 상태 변화 감지용)
-  static Stream<Map<String, dynamic>?> watchMyProfile() {
-    if (uid == null) return const Stream.empty();
-    return _db.collection('users').doc(uid).snapshots().map((doc) {
-      if (!doc.exists) return null;
-      return {'id': doc.id, ...doc.data()!};
+  static Stream<Map<String, dynamic>?> watchMyProfile({
+    bool emitCached = false,
+  }) async* {
+    if (uid == null) return;
+    if (emitCached) {
+      final cached = cachedProfileSnapshot() ?? await getCachedProfile();
+      if (cached != null && cached['id']?.toString() == uid) {
+        yield cached;
+      }
+    }
+    yield* _db.collection('users').doc(uid).snapshots().map((doc) {
+      if (!doc.exists) {
+        unawaited(clearCachedProfile());
+        return null;
+      }
+      final profile = {'id': doc.id, ...doc.data()!};
+      unawaited(cacheProfile(profile));
+      return profile;
     });
   }
 
@@ -255,18 +348,51 @@ class FirebaseService {
     return DateTime.fromMillisecondsSinceEpoch(millis).toIso8601String();
   }
 
+  static Map<String, dynamic> _jsonSafeMap(Map<String, dynamic> value) {
+    return {
+      for (final entry in value.entries) entry.key: _jsonSafeValue(entry.value),
+    };
+  }
+
+  static dynamic _jsonSafeValue(dynamic value) {
+    if (value == null || value is String || value is num || value is bool) {
+      return value;
+    }
+    if (value is Timestamp) return value.toDate().toIso8601String();
+    if (value is DateTime) return value.toIso8601String();
+    if (value is Map) {
+      return {
+        for (final entry in value.entries)
+          entry.key.toString(): _jsonSafeValue(entry.value),
+      };
+    }
+    if (value is Iterable) {
+      return value.map(_jsonSafeValue).toList(growable: false);
+    }
+    return value.toString();
+  }
+
   static Future<Map<String, dynamic>?> _safeUserData(dynamic userId) async {
     final id = userId?.toString();
     if (id == null || id.isEmpty) return null;
+    if (_userDataCache.containsKey(id)) return _userDataCache[id];
     return _userDataFutures.putIfAbsent(id, () async {
       try {
         final doc = await _db.collection('users').doc(id).get();
-        return doc.data();
+        final data = doc.data();
+        _userDataCache[id] = data;
+        return data;
       } catch (_) {
         _userDataFutures.remove(id);
         return null;
       }
     });
+  }
+
+  static Map<String, dynamic>? _cachedUserData(dynamic userId) {
+    final id = userId?.toString();
+    if (id == null || id.isEmpty) return null;
+    return _userDataCache[id];
   }
 
   static Map<String, dynamic> _authorFields(
@@ -335,18 +461,18 @@ class FirebaseService {
     return _legacyReactionType(data, userId);
   }
 
-  static Future<Map<String, dynamic>> _postListSnapshot(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc,
-  ) async {
-    final data = doc.data();
-    final hasStoredAuthorName =
-        (data['userName']?.toString().trim().isNotEmpty ?? false) ||
+  static bool _postHasStoredAuthorFields(Map<String, dynamic> data) {
+    return (data['userName']?.toString().trim().isNotEmpty ?? false) ||
         (data['authorName']?.toString().trim().isNotEmpty ?? false) ||
         data['createdByAdmin'] == true ||
         data['userId'] == 'admin';
-    final userData = hasStoredAuthorName
-        ? null
-        : await _safeUserData(data['userId']);
+  }
+
+  static Map<String, dynamic> _postListSnapshotWithUserData(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+    Map<String, dynamic>? userData,
+  ) {
+    final data = doc.data();
     final userId = uid;
     return {
       'id': doc.id,
@@ -356,6 +482,38 @@ class FirebaseService {
       'myReaction': userId == null ? null : _legacyReactionType(data, userId),
       'createdAt': _timestampIso(data['createdAt']),
     };
+  }
+
+  static bool _postNeedsAuthorLookup(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final id = data['userId']?.toString();
+    return !_postHasStoredAuthorFields(data) &&
+        id != null &&
+        id.isNotEmpty &&
+        !_userDataCache.containsKey(id);
+  }
+
+  static Map<String, dynamic> _postListSnapshotFast(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    final userData = _postHasStoredAuthorFields(data)
+        ? null
+        : _cachedUserData(data['userId']);
+    return _postListSnapshotWithUserData(doc, userData);
+  }
+
+  static Future<Map<String, dynamic>> _postListSnapshot(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final data = doc.data();
+    final hasStoredAuthorName = _postHasStoredAuthorFields(data);
+    final userData = hasStoredAuthorName
+        ? null
+        : await _safeUserData(data['userId']);
+    return _postListSnapshotWithUserData(doc, userData);
   }
 
   static Future<Map<String, dynamic>> _postSnapshotWithAuthorAndReaction(
@@ -644,9 +802,12 @@ class FirebaseService {
         .where('churchId', isEqualTo: _requireChurchId())
         .orderBy('createdAt', descending: true)
         .limit(50)
-        .snapshots()
-        .asyncMap((snapshot) async {
-          return Future.wait(snapshot.docs.map(_postListSnapshot));
+        .snapshots(includeMetadataChanges: true)
+        .asyncExpand((snapshot) async* {
+          yield snapshot.docs.map(_postListSnapshotFast).toList();
+          if (snapshot.docs.any(_postNeedsAuthorLookup)) {
+            yield await Future.wait(snapshot.docs.map(_postListSnapshot));
+          }
         });
   }
 

@@ -721,7 +721,7 @@ final effectiveHasManagePermissionProvider = Provider<bool>((ref) {
 
 // ─── Auth ───
 final authStateProvider = StreamProvider<fb.User?>((ref) {
-  return FirebaseService.authStateChanges;
+  return FirebaseService.authStateChangesWithCurrentUser();
 });
 
 // ─── User Profile ───
@@ -732,6 +732,15 @@ final profileProvider = FutureProvider<User?>((ref) async {
   final authState = ref.watch(authStateProvider);
   final fbUser = authState.valueOrNull;
   if (fbUser == null) return null;
+  final liveProfile = ref.watch(myProfileStreamProvider).valueOrNull;
+  if (liveProfile != null) return liveProfile;
+  final cachedProfile =
+      FirebaseService.cachedProfileSnapshot() ??
+      await FirebaseService.getCachedProfile();
+  if (cachedProfile != null && cachedProfile['id']?.toString() == fbUser.uid) {
+    FirebaseService.setCurrentChurchId(cachedProfile['churchId'] as String?);
+    return User.fromMap(cachedProfile);
+  }
   // 관리자 이메일이면 자동 admin 권한 부여
   await FirebaseService.ensurePlatformAdminRole();
   final data = await FirebaseService.getProfile();
@@ -756,7 +765,7 @@ final myProfileStreamProvider = StreamProvider<User?>((ref) {
   }
   // 로그인 시 한 번 platform admin 자동 부트스트랩 실행
   FirebaseService.ensurePlatformAdminRole();
-  return FirebaseService.watchMyProfile().map((data) {
+  return FirebaseService.watchMyProfile(emitCached: true).map((data) {
     if (data == null) {
       FirebaseService.setCurrentChurchId(null);
       return null;

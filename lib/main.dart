@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'firebase_options.dart';
 import 'config/feature_flags.dart';
+import 'services/firebase_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'providers/app_providers.dart';
@@ -24,11 +26,17 @@ import 'screens/sheet_music/sheet_music_screen.dart';
 import 'screens/videos/videos_screen.dart';
 import 'widgets/app_bottom_nav_bar.dart';
 import 'widgets/app_logo_title.dart';
+import 'widgets/caleb_logo_loader.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   KakaoSdk.init(nativeAppKey: '7dac8af45e9ebf4c81284e72bb1b7ebb');
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+  await FirebaseService.warmCachedProfile();
   runApp(const ProviderScope(child: CalebChoirApp()));
 
   unawaited(_initializeNotifications());
@@ -111,9 +119,7 @@ class CalebChoirApp extends ConsumerWidget {
           : onboardingPreviewMode
           ? const OnboardingScreen()
           : authState.when(
-              loading: () => const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              ),
+              loading: () => const AppLoadingScreen(),
               error: (error, stackTrace) => const LoginScreen(),
               data: (user) {
                 if (user == null) {
@@ -122,9 +128,7 @@ class CalebChoirApp extends ConsumerWidget {
                 // 승인 상태 실시간 스트림 (관리자 승인 시 자동 전환)
                 final myProfileStream = ref.watch(myProfileStreamProvider);
                 return myProfileStream.when(
-                  loading: () => const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  ),
+                  loading: () => const AppLoadingScreen(),
                   error: (error, stackTrace) => const OnboardingScreen(),
                   data: (profile) {
                     // 1) Firestore users 문서가 아직 없음 → 최초 가입 경로
