@@ -7,6 +7,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
@@ -617,6 +618,8 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
     with SingleTickerProviderStateMixin {
   final _recorder = AudioRecorder();
   final _mrPlayer = AudioPlayer();
+  final _takePlayer = AudioPlayer();
+  StreamSubscription<void>? _takeCompleteSub;
   final List<int> _recordedBytes = [];
   StreamSubscription<Uint8List>? _recordingSub;
   Timer? _timer;
@@ -626,6 +629,8 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
   bool _isRecording = false;
   bool _isSubmitting = false;
   bool _completed = false;
+  bool _isPlayingTake = false;
+  int? _countdown;
   int _recordSeconds = 0;
   double _uploadProgress = 0;
   String _contentType = 'audio/webm';
@@ -654,15 +659,20 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
+    _takeCompleteSub = _takePlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isPlayingTake = false);
+    });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
     _recordingSub?.cancel();
+    _takeCompleteSub?.cancel();
     _burstController.dispose();
     unawaited(_recorder.dispose());
     unawaited(_mrPlayer.dispose());
+    unawaited(_takePlayer.dispose());
     relay_backing_audio.stopRelayBackingAudio();
     super.dispose();
   }
@@ -731,20 +741,31 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
                       ),
                       child: Column(
                         children: [
-                          Icon(
-                            _completed
-                                ? Icons.celebration_rounded
-                                : _isRecording
-                                ? Icons.graphic_eq_rounded
-                                : Icons.mic_rounded,
-                            size: 42,
-                            color: _completed
-                                ? AppColors.secondary
-                                : AppColors.primary,
-                          ),
+                          if (_countdown != null)
+                            Text(
+                              '$_countdown',
+                              style: AppText.headline(
+                                46,
+                                color: AppColors.primary,
+                              ),
+                            )
+                          else
+                            Icon(
+                              _completed
+                                  ? Icons.celebration_rounded
+                                  : _isRecording
+                                  ? Icons.graphic_eq_rounded
+                                  : Icons.mic_rounded,
+                              size: 42,
+                              color: _completed
+                                  ? AppColors.secondary
+                                  : AppColors.primary,
+                            ),
                           const SizedBox(height: 10),
                           Text(
-                            _completed
+                            _countdown != null
+                                ? '잠시 후 시작합니다'
+                                : _completed
                                 ? '오늘 1회 연습 완료!'
                                 : _isRecording
                                 ? 'MR에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
@@ -833,11 +854,28 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
                   _UploadProgressPanel(progress: _uploadProgress),
                 ],
                 const SizedBox(height: 16),
+                if (_audioBytes != null &&
+                    !_isRecording &&
+                    _countdown == null) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _isSubmitting ? null : _toggleTakePlayback,
+                      icon: Icon(
+                        _isPlayingTake
+                            ? Icons.stop_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                      label: Text(_isPlayingTake ? '재생 멈추기' : '내 녹음 다시 듣기'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 Row(
                   children: [
                     Expanded(
                       child: FilledButton.tonalIcon(
-                        onPressed: _isSubmitting
+                        onPressed: _isSubmitting || _countdown != null
                             ? null
                             : _isRecording
                             ? _stopRecording
@@ -868,7 +906,42 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
     );
   }
 
+  Future<void> _runCountdown() async {
+    try {
+      for (final value in const [3, 2, 1]) {
+        if (!mounted) return;
+        setState(() => _countdown = value);
+        unawaited(HapticFeedback.lightImpact());
+        await Future<void>.delayed(const Duration(milliseconds: 760));
+      }
+    } finally {
+      if (mounted) setState(() => _countdown = null);
+    }
+  }
+
+  Future<void> _toggleTakePlayback() async {
+    final bytes = _audioBytes;
+    if (bytes == null || bytes.isEmpty) return;
+    if (_isPlayingTake) {
+      await _takePlayer.stop();
+      if (mounted) setState(() => _isPlayingTake = false);
+      return;
+    }
+    try {
+      unawaited(HapticFeedback.selectionClick());
+      await _mrPlayer.stop();
+      relay_backing_audio.stopRelayBackingAudio();
+      await _takePlayer.stop();
+      await _takePlayer.play(BytesSource(bytes, mimeType: _contentType));
+      if (mounted) setState(() => _isPlayingTake = true);
+    } catch (_) {
+      if (mounted) setState(() => _isPlayingTake = false);
+      _showMessage('녹음 재생에 실패했어요.');
+    }
+  }
+
   Future<void> _startRecording() async {
+    if (_isRecording || _countdown != null) return;
     try {
       final hasPermission = await _ensureMicrophonePermission(_recorder);
       if (!hasPermission) {
@@ -880,6 +953,16 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
         _showMessage('마이크 권한이 필요합니다.');
         return;
       }
+
+      if (_isPlayingTake) {
+        await _takePlayer.stop();
+        if (mounted) setState(() => _isPlayingTake = false);
+      }
+
+      // Give the singer a 3·2·1 lead-in (same feel as the relay studio) before
+      // the MR and recorder start together.
+      await _runCountdown();
+      if (!mounted) return;
 
       await _recordingSub?.cancel();
       _recordedBytes.clear();
@@ -910,8 +993,8 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
             sampleRate: _sampleRate,
             numChannels: _channels,
             echoCancel: true,
-            noiseSuppress: true,
-            autoGain: true,
+            noiseSuppress: false,
+            autoGain: false,
           ),
         );
         _streamRecording = true;
@@ -926,8 +1009,8 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
             sampleRate: _sampleRate,
             numChannels: _channels,
             echoCancel: true,
-            noiseSuppress: true,
-            autoGain: true,
+            noiseSuppress: false,
+            autoGain: false,
           ),
           path: '',
         );
@@ -943,6 +1026,7 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
         _recordSeconds = 0;
         _audioBytes = null;
       });
+      unawaited(HapticFeedback.mediumImpact());
     } catch (_) {
       unawaited(_forgetMicrophonePermissionGranted());
       await _mrPlayer.stop();
@@ -1013,6 +1097,7 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
     _burstController
       ..reset()
       ..forward();
+    unawaited(HapticFeedback.mediumImpact());
   }
 
   Future<void> _requestFeedback() async {
@@ -3688,22 +3773,44 @@ class _RelaySequencePlayButtonState extends State<_RelaySequencePlayButton> {
   }
 
   Future<void> _waitForClipStart(Map<String, dynamic> clip, int runId) async {
-    if (_activeBackingUrl.isEmpty || !_sequenceStopwatch.isRunning) return;
+    if (_activeBackingUrl.isEmpty) return;
     final clipStart = _segmentStartForClip(clip);
-    final targetElapsed = clipStart - _sequenceBasePosition;
-    final delay = targetElapsed - _sequenceStopwatch.elapsed;
-    if (delay <= const Duration(milliseconds: 45)) return;
-    _sequenceDelayTimer?.cancel();
-    final completer = Completer<void>();
-    _sequenceDelayCompleter = completer;
-    _sequenceDelayTimer = Timer(delay, () {
-      if (!completer.isCompleted) completer.complete();
-    });
-    await completer.future;
-    if (_sequenceDelayCompleter == completer) {
-      _sequenceDelayCompleter = null;
+    // Poll the MR master clock and release exactly when the backing track
+    // reaches this clip's segment start, so the layered voice lines up with the
+    // MR the same way it did at record time (instead of trusting a timer that
+    // ignores the element's real startup latency).
+    while (mounted && runId == _playbackRunId) {
+      final position = _currentBackingPosition();
+      if (position == null) return;
+      final remaining = clipStart - position;
+      if (remaining <= const Duration(milliseconds: 45)) return;
+      final step = remaining > const Duration(milliseconds: 160)
+          ? const Duration(milliseconds: 90)
+          : remaining;
+      final completer = Completer<void>();
+      _sequenceDelayCompleter = completer;
+      _sequenceDelayTimer?.cancel();
+      _sequenceDelayTimer = Timer(step, () {
+        if (!completer.isCompleted) completer.complete();
+      });
+      await completer.future;
+      if (_sequenceDelayCompleter == completer) {
+        _sequenceDelayCompleter = null;
+      }
     }
-    if (runId != _playbackRunId) return;
+  }
+
+  Duration? _currentBackingPosition() {
+    if (kIsWeb && relay_backing_audio.relayBackingAudioPlaying()) {
+      final seconds = relay_backing_audio.relayBackingAudioSeconds();
+      if (seconds >= 0) {
+        return Duration(milliseconds: (seconds * 1000).round());
+      }
+    }
+    if (_sequenceStopwatch.isRunning) {
+      return _sequenceBasePosition + _sequenceStopwatch.elapsed;
+    }
+    return null;
   }
 
   Duration _segmentStartForClip(Map<String, dynamic> clip) {
@@ -5214,6 +5321,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
                     playingNumber: _playingAttemptNumber,
                     isBusy: isBusy,
                     onSelect: (number) {
+                      unawaited(HapticFeedback.selectionClick());
                       setState(() => _selectedAttemptNumber = number);
                     },
                     onPlay: _toggleAttemptPlayback,
@@ -5307,6 +5415,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         if (!mounted) return;
         setState(() => _countdown = value);
         unawaited(_playCountdownBeep(value));
+        unawaited(HapticFeedback.lightImpact());
         await Future<void>.delayed(_countdownStep);
       }
     } finally {
@@ -5805,8 +5914,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
             sampleRate: _sampleRate,
             numChannels: _channels,
             echoCancel: true,
-            noiseSuppress: true,
-            autoGain: true,
+            noiseSuppress: false,
+            autoGain: false,
           ),
         );
         _streamRecording = true;
@@ -5825,8 +5934,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
               sampleRate: _sampleRate,
               numChannels: _channels,
               echoCancel: true,
-              noiseSuppress: true,
-              autoGain: true,
+              noiseSuppress: false,
+              autoGain: false,
             ),
             path: '',
           );
@@ -5837,8 +5946,8 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
               sampleRate: _sampleRate,
               numChannels: _channels,
               echoCancel: true,
-              noiseSuppress: true,
-              autoGain: true,
+              noiseSuppress: false,
+              autoGain: false,
             ),
           );
           _streamRecording = true;
@@ -5862,6 +5971,7 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
         _isRecording = true;
         _isMrRecording = hasBacking;
       });
+      unawaited(HapticFeedback.mediumImpact());
     } catch (_) {
       unawaited(_forgetMicrophonePermissionGranted());
       unawaited(_backingPlayer.stop());
@@ -6509,7 +6619,16 @@ class _RelayClipSheetState extends State<_RelayClipSheet> {
     }
     _playbackTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
       if (!mounted) return;
-      final elapsed = _playbackStopwatch.elapsedMilliseconds / 1000;
+      var elapsed = _playbackStopwatch.elapsedMilliseconds / 1000;
+      // Prefer the MR element's real clock so the karaoke line tracks the audio
+      // the listener actually hears, not a timer that started before playback.
+      if (kIsWeb && relay_backing_audio.relayBackingAudioPlaying()) {
+        final backingSeconds = relay_backing_audio.relayBackingAudioSeconds();
+        if (backingSeconds >= 0) {
+          final fromBacking = backingSeconds - _playbackLyricBaseSeconds;
+          if (fromBacking >= 0) elapsed = fromBacking;
+        }
+      }
       setState(() {
         _playbackElapsedSeconds = elapsed;
       });
@@ -8005,7 +8124,7 @@ class _RelayClipsSheet extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            _ScorePill(score: score),
+                            if (score > 0) _ScorePill(score: score),
                           ],
                         ),
                         if (note.isNotEmpty) ...[
@@ -8406,8 +8525,8 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
             sampleRate: _recordSampleRate,
             numChannels: _recordChannels,
             echoCancel: true,
-            noiseSuppress: true,
-            autoGain: true,
+            noiseSuppress: false,
+            autoGain: false,
           ),
           path: '',
         );
@@ -8418,8 +8537,8 @@ class _HarmonyNoteSheetState extends State<_HarmonyNoteSheet> {
             sampleRate: _recordSampleRate,
             numChannels: _recordChannels,
             echoCancel: true,
-            noiseSuppress: true,
-            autoGain: true,
+            noiseSuppress: false,
+            autoGain: false,
           ),
         );
         _streamRecording = true;

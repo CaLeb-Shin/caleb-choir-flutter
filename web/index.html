@@ -446,6 +446,17 @@
           audio.defaultMuted = false;
           audio.volume = 1;
           try { audio.removeAttribute('muted'); } catch (_) {}
+        },
+        // Master-clock accessors: the relay studio drives lyric highlighting and
+        // layered clip playback off the MR element's real currentTime so audio,
+        // voices, and lyrics stay locked together instead of drifting on a timer.
+        currentTime: function () {
+          if (!audio) return -1;
+          var t = audio.currentTime;
+          return (typeof t === 'number' && isFinite(t)) ? t : -1;
+        },
+        isPlaying: function () {
+          return !!(audio && !audio.paused && !audio.ended);
         }
       };
     })();
