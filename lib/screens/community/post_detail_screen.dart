@@ -240,8 +240,10 @@ class _PostDetailScreenState extends ConsumerState<PostDetailScreen> {
           final title = (post['title'] as String?) ?? '';
           final content = (post['content'] as String?) ?? '';
           final isMine = post['userId'] == myUid;
-          final visibleCommentCount =
+          final rawVisibleCommentCount =
               commentsAsync.valueOrNull?.length ?? post['commentCount'] ?? 0;
+          final visibleCommentCount =
+              rawVisibleCommentCount < 0 ? 0 : rawVisibleCommentCount;
           final detailCacheWidth =
               (MediaQuery.sizeOf(context).width *
                       MediaQuery.devicePixelRatioOf(context))
@@ -770,6 +772,19 @@ class _ReactionChipState extends State<_ReactionChip>
   }
 }
 
+/// Comment author shown as "이름(닉네임)_파트" — nickname and part are appended
+/// only when present so older comments without them still read cleanly.
+String _commentAuthorLabel(Map<String, dynamic> comment) {
+  final name = (comment['userName'] as String?)?.trim() ?? '';
+  final nickname = (comment['userNickname'] as String?)?.trim() ?? '';
+  final part = (comment['userPart'] as String?)?.trim() ?? '';
+  final partLabel = User.partLabels[part] ?? '';
+  final buffer = StringBuffer(name.isEmpty ? '익명' : name);
+  if (nickname.isNotEmpty) buffer.write('($nickname)');
+  if (partLabel.isNotEmpty) buffer.write('_$partLabel');
+  return buffer.toString();
+}
+
 class _CommentTile extends StatelessWidget {
   final Map<String, dynamic> comment;
   final bool canDelete;
@@ -802,7 +817,7 @@ class _CommentTile extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        comment['userName'] ?? '',
+                        _commentAuthorLabel(comment),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.body(13, weight: FontWeight.w800),

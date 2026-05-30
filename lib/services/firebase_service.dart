@@ -407,6 +407,7 @@ class FirebaseService {
           data['userName'] ??
           data['authorName'] ??
           (createdByAdmin ? '관리자' : ''),
+      'userNickname': userData?['nickname'] ?? data['userNickname'] ?? '',
       'userPart': userData?['part'] ?? data['userPart'] ?? '',
       'userGeneration': userData?['generation'] ?? data['userGeneration'] ?? '',
       'userImageUrl':
@@ -1038,6 +1039,59 @@ class FirebaseService {
           }
           submissions.sort(_createdAtDesc);
           return submissions;
+        });
+  }
+
+  /// Practice takes for a whole part — used by the part leader's review list.
+  /// Read access is enforced by security rules (author + part leader only).
+  static Stream<List<Map<String, dynamic>>> watchPartPracticeSubmissions({
+    required String part,
+  }) {
+    if (part.trim().isEmpty) return Stream.value(const []);
+    return _db
+        .collection('harmony_practice_submissions')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .where('part', isEqualTo: part)
+        .limit(60)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final submissions = <Map<String, dynamic>>[];
+          for (final doc in snapshot.docs) {
+            final data = doc.data();
+            final authorData = await _safeUserData(data['userId']);
+            submissions.add({
+              'id': doc.id,
+              ...data,
+              ..._authorFields(data, authorData),
+              'createdAt': _timestampIso(data['createdAt']),
+              'updatedAt': _timestampIso(data['updatedAt']),
+              'feedbackAt': _timestampIso(data['feedbackAt']),
+            });
+          }
+          submissions.sort(_createdAtDesc);
+          return submissions;
+        });
+  }
+
+  /// Part leader leaves feedback on a member's practice take. The allowed
+  /// fields match the security rule's update whitelist exactly.
+  static Future<void> submitLeaderFeedback({
+    required String submissionId,
+    required String feedback,
+  }) async {
+    if (uid == null) throw Exception('로그인이 필요합니다');
+    final myData = await _safeUserData(uid);
+    await _db
+        .collection('harmony_practice_submissions')
+        .doc(submissionId)
+        .update({
+          'leaderFeedback': feedback.trim(),
+          'feedbackBy': uid,
+          'feedbackByName':
+              myData?['name'] ?? currentUser?.displayName ?? '파트장',
+          'feedbackAt': FieldValue.serverTimestamp(),
+          'status': 'reviewed',
+          'updatedAt': FieldValue.serverTimestamp(),
         });
   }
 
@@ -2727,6 +2781,16 @@ class FirebaseService {
       });
     }
     comments.sort((a, b) => _timestampFieldAsc('createdAt', a, b));
+    // Opening a post self-heals a drifted comment counter: when we fetched the
+    // full subcollection (under the page limit), the list length is the truth.
+    if (snapshot.docs.length < 100) {
+      unawaited(
+        _reconcilePostCommentCount(
+          _db.collection('posts').doc(postId),
+          knownCount: comments.length,
+        ),
+      );
+    }
     return comments;
   }
 
@@ -2734,8 +2798,7 @@ class FirebaseService {
     if (uid == null) return;
     final postRef = _db.collection('posts').doc(postId);
     final commentRef = postRef.collection('comments').doc();
-    final batch = _db.batch();
-    batch.set(commentRef, {
+    await commentRef.set({
       'churchId': _requireChurchId(),
       'postId': postId,
       'userId': uid,
@@ -2746,16 +2809,33 @@ class FirebaseService {
       'content': content,
       'createdAt': FieldValue.serverTimestamp(),
     });
-    batch.update(postRef, {'commentCount': FieldValue.increment(1)});
-    await batch.commit();
+    // Set the counter to the real subcollection size instead of a blind
+    // increment, so a previously-drifted count (e.g. -1) self-corrects.
+    await _reconcilePostCommentCount(postRef);
   }
 
   static Future<void> deleteComment(String postId, String commentId) async {
     final postRef = _db.collection('posts').doc(postId);
-    final batch = _db.batch();
-    batch.delete(postRef.collection('comments').doc(commentId));
-    batch.update(postRef, {'commentCount': FieldValue.increment(-1)});
-    await batch.commit();
+    await postRef.collection('comments').doc(commentId).delete();
+    await _reconcilePostCommentCount(postRef);
+  }
+
+  /// Recomputes a post's `commentCount` from the actual comments subcollection
+  /// using a cheap aggregate count, so the denormalised counter can never drift
+  /// negative or out of sync. Best-effort: failures are swallowed.
+  static Future<void> _reconcilePostCommentCount(
+    DocumentReference<Map<String, dynamic>> postRef, {
+    int? knownCount,
+  }) async {
+    try {
+      final count =
+          knownCount ??
+          (await postRef.collection('comments').count().get()).count ??
+          0;
+      await postRef.update({'commentCount': count < 0 ? 0 : count});
+    } catch (_) {
+      // Reconciliation is best-effort; never block the comment action on it.
+    }
   }
 
   // ============ Announcements ============

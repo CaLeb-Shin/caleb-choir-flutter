@@ -40,10 +40,13 @@ class _PostComposeSheetState extends ConsumerState<PostComposeSheet> {
   Future<void> _pickImage() async {
     try {
       final picker = ImagePicker();
+      // Downscale on pick so the feed loads fast — a community photo never
+      // needs more than ~900px on a phone, and smaller files = quicker first
+      // paint for everyone scrolling the feed.
       final picked = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1200,
-        imageQuality: 72,
+        maxWidth: 900,
+        imageQuality: 68,
       );
       if (picked == null) return;
       final bytes = await picked.readAsBytes();

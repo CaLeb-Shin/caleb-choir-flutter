@@ -43,6 +43,7 @@ class HarmonyChatScreen extends ConsumerWidget {
     final practiceSubmissionsAsync = ref.watch(
       myHarmonyPracticeSubmissionsProvider,
     );
+    final partReviewAsync = ref.watch(partPracticeReviewProvider);
     final part = profile?.partLeaderFor ?? profile?.part ?? '';
     final partLabel = User.partLabels[part] ?? '내 파트';
 
@@ -86,6 +87,14 @@ class HarmonyChatScreen extends ConsumerWidget {
             submissionsAsync: practiceSubmissionsAsync,
             ref: ref,
           ),
+          if (profile?.isPartLeader ?? false) ...[
+            const SizedBox(height: 16),
+            _PartLeaderReviewSection(
+              partLabel: partLabel,
+              reviewAsync: partReviewAsync,
+              ref: ref,
+            ),
+          ],
           const SizedBox(height: 16),
           _RelaySection(
             part: part,
@@ -234,7 +243,10 @@ class _PersonalPracticeSection extends StatelessWidget {
     final progress = progressAsync.valueOrNull ?? const <String, dynamic>{};
     final submissions = submissionsAsync.valueOrNull ?? const [];
     final mrAudioUrl = guide?['mrAudioUrl']?.toString().trim() ?? '';
-    final hasMr = mrAudioUrl.isNotEmpty;
+    final guideAudioUrl = guide?['guideAudioUrl']?.toString().trim() ?? '';
+    // Personal practice now sings along to the admin's per-part guide vocal,
+    // falling back to the MR track only when no guide was attached.
+    final hasBacking = guideAudioUrl.isNotEmpty || mrAudioUrl.isNotEmpty;
     final xp = (progress['xp'] as num?)?.toInt() ?? 0;
     final level =
         (progress['level'] as num?)?.toInt() ??
@@ -406,7 +418,7 @@ class _PersonalPracticeSection extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: part.isEmpty || !hasMr
+              onPressed: part.isEmpty || !hasBacking
                   ? null
                   : () => showModalBottomSheet(
                       context: context,
@@ -421,8 +433,21 @@ class _PersonalPracticeSection extends StatelessWidget {
                       ),
                     ),
               icon: const Icon(Icons.mic_rounded),
-              label: Text(hasMr ? 'MR 개인연습 시작' : 'MR 준비 필요'),
+              label: Text(hasBacking ? '파트 가이드 연습 시작' : '가이드 준비 필요'),
             ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.lock_rounded, size: 13, color: AppColors.muted),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  '연습 녹음은 나와 파트장만 볼 수 있어요.',
+                  style: AppText.body(11, color: AppColors.muted),
+                ),
+              ),
+            ],
           ),
           if (submissions.isNotEmpty) ...[
             const SizedBox(height: 14),
@@ -595,6 +620,331 @@ class _PracticeSubmissionCard extends StatelessWidget {
   }
 }
 
+/// Member name shown to the part leader as "이름(닉네임)_파트".
+String _practiceAuthorLabel(Map<String, dynamic> submission) {
+  final name = (submission['userName'] as String?)?.trim() ?? '';
+  final nickname = (submission['userNickname'] as String?)?.trim() ?? '';
+  final part = (submission['userPart'] as String?)?.trim() ?? '';
+  final partLabel = User.partLabels[part] ?? '';
+  final buffer = StringBuffer(name.isEmpty ? '익명' : name);
+  if (nickname.isNotEmpty) buffer.write('($nickname)');
+  if (partLabel.isNotEmpty) buffer.write('_$partLabel');
+  return buffer.toString();
+}
+
+/// Part-leader-only section that lists the part's practice takes so the leader
+/// can listen and leave feedback. Hidden entirely when there's nothing to show.
+class _PartLeaderReviewSection extends StatelessWidget {
+  const _PartLeaderReviewSection({
+    required this.partLabel,
+    required this.reviewAsync,
+    required this.ref,
+  });
+
+  final String partLabel;
+  final AsyncValue<List<Map<String, dynamic>>> reviewAsync;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final submissions = reviewAsync.valueOrNull ?? const [];
+    final pending = submissions
+        .where((s) => (s['leaderFeedback']?.toString() ?? '').trim().isEmpty)
+        .length;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: const Icon(
+                  Icons.rate_review_rounded,
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '파트원 연습 피드백',
+                      style: AppText.body(18, weight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '$partLabel 파트장 · 받은 연습 ${submissions.length}개',
+                      style: AppText.body(12, color: AppColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              if (pending > 0)
+                _TurnPill(label: '대기 $pending', active: true),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (reviewAsync.isLoading && submissions.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
+          else if (submissions.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.bg,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '아직 도착한 연습 녹음이 없어요. 파트원이 보내면 여기에서 듣고 피드백할 수 있어요.',
+                style: AppText.body(12, color: AppColors.muted, height: 1.4),
+              ),
+            )
+          else
+            ...submissions.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _LeaderReviewCard(submission: item, ref: ref),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LeaderReviewCard extends StatefulWidget {
+  const _LeaderReviewCard({required this.submission, required this.ref});
+
+  final Map<String, dynamic> submission;
+  final WidgetRef ref;
+
+  @override
+  State<_LeaderReviewCard> createState() => _LeaderReviewCardState();
+}
+
+class _LeaderReviewCardState extends State<_LeaderReviewCard> {
+  final AudioPlayer _player = AudioPlayer();
+  StreamSubscription<void>? _completeSub;
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _completeSub = _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _completeSub?.cancel();
+    unawaited(_player.dispose());
+    super.dispose();
+  }
+
+  Future<void> _togglePlay(String url) async {
+    if (url.isEmpty) return;
+    try {
+      if (_playing) {
+        await _player.stop();
+        if (mounted) setState(() => _playing = false);
+        return;
+      }
+      await _player.stop();
+      await _player.play(UrlSource(url));
+      if (mounted) setState(() => _playing = true);
+    } catch (_) {
+      if (mounted) setState(() => _playing = false);
+    }
+  }
+
+  Future<void> _openFeedbackEditor() async {
+    final controller = TextEditingController(
+      text: widget.submission['leaderFeedback']?.toString() ?? '',
+    );
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('피드백 남기기'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _practiceAuthorLabel(widget.submission),
+              style: AppText.body(12, weight: FontWeight.w900),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: controller,
+              maxLines: 4,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: '예) 첫 음 진입이 좋아요. 후렴은 호흡을 한 번 더 채워볼까요?',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('보내기'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true) return;
+    final text = controller.text.trim();
+    if (text.isEmpty) return;
+    try {
+      await FirebaseService.submitLeaderFeedback(
+        submissionId: widget.submission['id']?.toString() ?? '',
+        feedback: text,
+      );
+      widget.ref.invalidate(partPracticeReviewProvider);
+      widget.ref.invalidate(myHarmonyPracticeSubmissionsProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('피드백을 보냈어요.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('피드백 전송에 실패했어요.')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final submission = widget.submission;
+    final audioUrl = submission['audioUrl']?.toString() ?? '';
+    final feedback = submission['leaderFeedback']?.toString().trim() ?? '';
+    final done = feedback.isNotEmpty;
+    final duration = (submission['durationSeconds'] as num?)?.toInt() ?? 0;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: done ? AppColors.secondarySoft : AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.38)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              InkWell(
+                onTap: () => _togglePlay(audioUrl),
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _playing ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _practiceAuthorLabel(submission),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.body(13, weight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${submission['missionTitle'] ?? '개인연습'} · ${_relativeTime(submission['createdAt'])}${duration > 0 ? ' · ${duration ~/ 60}:${(duration % 60).toString().padLeft(2, '0')}' : ''}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.body(11, color: AppColors.muted),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: done
+                      ? AppColors.secondary.withValues(alpha: 0.18)
+                      : AppColors.primarySoft,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  done ? '완료' : '대기',
+                  style: AppText.body(
+                    10,
+                    weight: FontWeight.w900,
+                    color: done ? AppColors.secondary : AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (done) ...[
+            const SizedBox(height: 8),
+            Text(
+              feedback,
+              style: AppText.body(12, color: AppColors.ink, height: 1.35),
+            ),
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _openFeedbackEditor,
+              icon: Icon(
+                done ? Icons.edit_rounded : Icons.rate_review_rounded,
+                size: 18,
+              ),
+              label: Text(done ? '피드백 수정' : '피드백 남기기'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PersonalPracticeSheet extends StatefulWidget {
   const _PersonalPracticeSheet({
     required this.part,
@@ -640,6 +990,18 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
   static const _channels = 1;
 
   String get _mrAudioUrl => widget.guide['mrAudioUrl']?.toString().trim() ?? '';
+  String get _guideAudioUrl =>
+      widget.guide['guideAudioUrl']?.toString().trim() ?? '';
+  String get _guideAudioFileName =>
+      widget.guide['guideAudioFileName']?.toString().trim() ?? '';
+  // Sing along to the part guide vocal when the admin attached one; otherwise
+  // fall back to the MR backing track.
+  String get _backingUrl =>
+      _guideAudioUrl.isNotEmpty ? _guideAudioUrl : _mrAudioUrl;
+  String get _backingLabel => _guideAudioUrl.isNotEmpty ? '파트 가이드' : 'MR';
+  String get _backingFileName => _guideAudioUrl.isNotEmpty
+      ? (_guideAudioFileName.isEmpty ? '파트 가이드' : _guideAudioFileName)
+      : (_mrAudioFileName.isEmpty ? 'MR' : _mrAudioFileName);
   String get _mrAudioFileName =>
       widget.guide['mrAudioFileName']?.toString().trim() ?? '';
   String get _missionId => widget.mission['id']?.toString() ?? '';
@@ -768,8 +1130,8 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
                                 : _completed
                                 ? '오늘 1회 연습 완료!'
                                 : _isRecording
-                                ? 'MR에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
-                                : 'MR을 틀고 내 목소리를 녹음합니다',
+                                ? '$_backingLabel에 맞춰 녹음 중 ${_formatDuration(_recordSeconds)}'
+                                : '$_backingLabel를 들으며 내 목소리를 녹음합니다',
                             textAlign: TextAlign.center,
                             style: AppText.body(18, weight: FontWeight.w900),
                           ),
@@ -821,7 +1183,7 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
                         _firstText([
                           widget.mission['prompt']?.toString(),
                           widget.guide['guide']?.toString(),
-                          'MR을 들으며 한 번 이상 녹음해보세요.',
+                          '$_backingLabel를 들으며 한 번 이상 녹음해보세요.',
                         ]),
                         style: AppText.body(
                           13,
@@ -836,9 +1198,7 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
                         children: [
                           _PracticeMetricChip(
                             icon: Icons.headphones_rounded,
-                            label: _mrAudioFileName.isEmpty
-                                ? 'MR 준비됨'
-                                : _mrAudioFileName,
+                            label: _backingFileName,
                           ),
                           _PracticeMetricChip(
                             icon: Icons.stars_rounded,
@@ -871,6 +1231,39 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
                   ),
                   const SizedBox(height: 10),
                 ],
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondarySoft.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.lock_rounded,
+                        size: 15,
+                        color: AppColors.secondary,
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          '이 녹음은 나와 ${widget.partLabel} 파트장만 들을 수 있어요. 다른 단원에게는 보이지 않아요.',
+                          style: AppText.body(
+                            11.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.secondary,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
@@ -970,19 +1363,20 @@ class _PersonalPracticeSheetState extends State<_PersonalPracticeSheet>
       _contentType = 'audio/webm';
       _fileName = 'practice_${DateTime.now().millisecondsSinceEpoch}.webm';
 
-      if (_mrAudioUrl.isNotEmpty) {
+      final backingUrl = _backingUrl;
+      if (backingUrl.isNotEmpty) {
         try {
           if (!kIsWeb ||
               !relay_backing_audio.startRelayBackingAudio(
-                _mrAudioUrl,
+                backingUrl,
                 Duration.zero,
               )) {
             await _mrPlayer.stop();
             await _mrPlayer.setReleaseMode(ReleaseMode.stop);
-            unawaited(_mrPlayer.play(UrlSource(_mrAudioUrl)));
+            unawaited(_mrPlayer.play(UrlSource(backingUrl)));
           }
         } catch (_) {
-          _showMessage('MR 재생은 실패했지만 녹음은 시작합니다.');
+          _showMessage('$_backingLabel 재생은 실패했지만 녹음은 시작합니다.');
         }
       }
 

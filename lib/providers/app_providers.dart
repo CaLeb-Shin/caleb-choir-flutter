@@ -989,6 +989,25 @@ final myHarmonyPracticeSubmissionsProvider =
       return FirebaseService.watchMyHarmonyPracticeSubmissions(part: part);
     });
 
+// Part leader's review queue: every practice take submitted by their part.
+// Empty for everyone who isn't a part leader.
+final partPracticeReviewProvider =
+    StreamProvider<List<Map<String, dynamic>>>((ref) {
+      final profile = ref.watch(profileProvider).valueOrNull;
+      final isLeader = profile?.isPartLeader ?? false;
+      final part = profile?.partLeaderFor ?? profile?.part ?? '';
+      if (!isLeader || part.isEmpty) return Stream.value(const []);
+      if (ref.watch(localPreviewModeProvider)) {
+        final submissions = ref.watch(
+          previewHarmonyPracticeSubmissionsProvider,
+        );
+        return Stream.value(
+          submissions.where((item) => item['part'] == part).toList(),
+        );
+      }
+      return FirebaseService.watchPartPracticeSubmissions(part: part);
+    });
+
 final postProvider = StreamProvider.family<Map<String, dynamic>?, String>((
   ref,
   postId,

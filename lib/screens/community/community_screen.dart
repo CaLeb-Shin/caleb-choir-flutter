@@ -557,7 +557,8 @@ class _PhotoPostTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final title = (post['title'] as String?) ?? '';
     final content = (post['content'] as String?) ?? '';
-    final commentCount = (post['commentCount'] as int?) ?? 0;
+    final rawCommentCount = (post['commentCount'] as int?) ?? 0;
+    final commentCount = rawCommentCount < 0 ? 0 : rawCommentCount;
 
     return Tappable(
       onTap: onTap,
