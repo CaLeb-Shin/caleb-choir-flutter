@@ -2301,44 +2301,198 @@ class _RelayProgressMapState extends State<_RelayProgressMap> {
           ),
           const SizedBox(height: 10),
           const _HarmonyLegend(dark: true),
-          const SizedBox(height: 10),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              // Keep cards comfortably wide so part labels read at a glance:
-              // 2 columns on phones, 3 on wide tablets. Spacing is folded into
-              // the width so the row always fills edge to edge.
-              const gap = 10.0;
-              final columns = constraints.maxWidth >= 440 ? 3 : 2;
-              final itemWidth =
-                  (constraints.maxWidth - gap * (columns - 1)) / columns;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: widget.relays.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final relay = entry.value;
-                  final relayId = relay['id']?.toString() ?? '';
-                  return SizedBox(
-                    key: relayId.isEmpty ? null : _keyForRelay(relayId),
-                    width: itemWidth,
-                    child: _RelayMapNode(
-                      relay: relay,
-                      order: index + 1,
-                      part: widget.part,
-                      partLabel: widget.partLabel,
-                      missionRelays: widget.relays,
-                      ref: widget.ref,
-                      highlightedRelayId: widget.highlightedRelayId,
-                      playingRelayId: _playingRelayId,
-                    ),
-                  );
-                }).toList(),
-              );
-            },
+          const SizedBox(height: 6),
+          _HarmonyPath(
+            relays: widget.relays,
+            part: widget.part,
+            partLabel: widget.partLabel,
+            ref: widget.ref,
+            highlightedRelayId: widget.highlightedRelayId,
+            playingRelayId: _playingRelayId,
+            nodeKeyBuilder: (relayId) =>
+                relayId.isEmpty ? null : _keyForRelay(relayId),
           ),
         ],
       ),
     );
+  }
+}
+
+/// A winding "journey path" of relay stops: each segment is a tappable node
+/// strung along an S-curve that flows down the card. Travelled legs are drawn
+/// solid, upcoming legs stay faint so the eye is pulled toward the next turn.
+class _HarmonyPath extends StatelessWidget {
+  const _HarmonyPath({
+    required this.relays,
+    required this.part,
+    required this.partLabel,
+    required this.ref,
+    required this.highlightedRelayId,
+    required this.playingRelayId,
+    required this.nodeKeyBuilder,
+  });
+
+  final List<Map<String, dynamic>> relays;
+  final String part;
+  final String partLabel;
+  final WidgetRef ref;
+  final String? highlightedRelayId;
+  final String? playingRelayId;
+  final GlobalKey? Function(String relayId) nodeKeyBuilder;
+
+  // Index of the first not-yet-recorded stop — the node we nudge people toward.
+  int get _nextIndex {
+    for (var i = 0; i < relays.length; i++) {
+      if (!_relayCompleted(relays[i])) return i;
+    }
+    return -1;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (relays.isEmpty) return const SizedBox.shrink();
+    const nodeRadius = 27.0;
+    const vGap = 96.0;
+    const topPad = nodeRadius + 4;
+    const bottomPad = nodeRadius + 30;
+    final nextIndex = _nextIndex;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final centerX = width / 2;
+        // Amplitude of the swing — wide enough to read as a curve, capped so it
+        // never crowds the labels on large screens.
+        final amp = ((width - nodeRadius * 2 - 28) / 2).clamp(0.0, 92.0);
+        final centers = <Offset>[
+          for (var i = 0; i < relays.length; i++)
+            Offset(
+              centerX + amp * math.sin(i * math.pi / 2),
+              topPad + i * vGap,
+            ),
+        ];
+        final totalHeight = topPad + (relays.length - 1) * vGap + bottomPad;
+
+        return SizedBox(
+          width: width,
+          height: totalHeight,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _HarmonyPathPainter(
+                    centers: centers,
+                    completed: [
+                      for (final relay in relays) _relayCompleted(relay),
+                    ],
+                    nodeRadius: nodeRadius,
+                  ),
+                ),
+              ),
+              for (var i = 0; i < relays.length; i++)
+                Positioned(
+                  left: centers[i].dx - 70,
+                  top: centers[i].dy - nodeRadius,
+                  width: 140,
+                  child: Column(
+                    key: nodeKeyBuilder(relays[i]['id']?.toString() ?? ''),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _HarmonyPathNode(
+                        relay: relays[i],
+                        order: i + 1,
+                        part: part,
+                        partLabel: partLabel,
+                        missionRelays: relays,
+                        ref: ref,
+                        radius: nodeRadius,
+                        isHighlighted:
+                            (relays[i]['id']?.toString() ?? '') ==
+                            highlightedRelayId,
+                        isPlaying:
+                            (relays[i]['id']?.toString() ?? '').isNotEmpty &&
+                            (relays[i]['id']?.toString() ?? '') ==
+                                playingRelayId,
+                        isNext: i == nextIndex,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _HarmonyPathPainter extends CustomPainter {
+  _HarmonyPathPainter({
+    required this.centers,
+    required this.completed,
+    required this.nodeRadius,
+  });
+
+  final List<Offset> centers;
+  final List<bool> completed;
+  final double nodeRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (centers.length < 2) return;
+    for (var i = 0; i < centers.length - 1; i++) {
+      final from = centers[i];
+      final to = centers[i + 1];
+      // Smooth vertical S between the two stops.
+      final midY = (from.dy + to.dy) / 2;
+      final path = Path()
+        ..moveTo(from.dx, from.dy + nodeRadius * 0.7)
+        ..cubicTo(
+          from.dx,
+          midY,
+          to.dx,
+          midY,
+          to.dx,
+          to.dy - nodeRadius * 0.7,
+        );
+      // A leg is "travelled" once the stop it leaves has been recorded.
+      final travelled = completed[i];
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = travelled ? 4.5 : 3
+        ..strokeCap = StrokeCap.round
+        ..color = travelled
+            ? AppColors.success.withValues(alpha: 0.9)
+            : Colors.white.withValues(alpha: 0.22);
+      if (travelled) {
+        canvas.drawPath(path, paint);
+      } else {
+        _drawDashed(canvas, path, paint);
+      }
+    }
+  }
+
+  void _drawDashed(Canvas canvas, Path path, Paint paint) {
+    const dash = 7.0;
+    const gap = 6.0;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        final next = distance + dash;
+        canvas.drawPath(
+          metric.extractPath(distance, next.clamp(0.0, metric.length)),
+          paint,
+        );
+        distance = next + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HarmonyPathPainter oldDelegate) {
+    return oldDelegate.centers != centers ||
+        oldDelegate.completed != completed;
   }
 }
 
@@ -2441,16 +2595,20 @@ class _HarmonyProgressBar extends StatelessWidget {
   }
 }
 
-class _RelayMapNode extends StatelessWidget {
-  const _RelayMapNode({
+/// One stop on the winding harmony path: a tappable circle plus a short label.
+/// The next stop to record gently pulses so it invites a tap ("탭하여 녹음").
+class _HarmonyPathNode extends StatefulWidget {
+  const _HarmonyPathNode({
     required this.relay,
     required this.order,
     required this.part,
     required this.partLabel,
     required this.missionRelays,
     required this.ref,
-    required this.highlightedRelayId,
-    required this.playingRelayId,
+    required this.radius,
+    required this.isHighlighted,
+    required this.isPlaying,
+    required this.isNext,
   });
 
   final Map<String, dynamic> relay;
@@ -2459,154 +2617,196 @@ class _RelayMapNode extends StatelessWidget {
   final String partLabel;
   final List<Map<String, dynamic>> missionRelays;
   final WidgetRef ref;
-  final String? highlightedRelayId;
-  final String? playingRelayId;
+  final double radius;
+  final bool isHighlighted;
+  final bool isPlaying;
+  final bool isNext;
+
+  @override
+  State<_HarmonyPathNode> createState() => _HarmonyPathNodeState();
+}
+
+class _HarmonyPathNodeState extends State<_HarmonyPathNode>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final clips = ((relay['clips'] as List?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
+    final relay = widget.relay;
     final completed = _relayCompleted(relay);
     final assigneeId = relay['currentAssigneeId']?.toString() ?? '';
     final assigneeName = relay['currentAssigneeName']?.toString() ?? '';
     final isMyTurn = assigneeId.isNotEmpty && assigneeId == FirebaseService.uid;
-    final canTestRecord = !completed && _canTestRecordRelayForTest(ref, part);
-    final active = completed || isMyTurn || canTestRecord;
+    final isPlaying = widget.isPlaying;
+    // "Open" = waiting at the front of the line, recordable right now.
+    final isOpen = !completed && (widget.isNext || isMyTurn);
+    final clips = ((relay['clips'] as List?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
     final latest = clips.isEmpty ? null : clips.last;
-    final segmentTitle = _segmentDisplayLabel(relay, order - 1);
-    final relayId = relay['id']?.toString() ?? '';
-    final isHighlighted = relayId == highlightedRelayId;
-    final isPlaying = relayId.isNotEmpty && relayId == playingRelayId;
     final singer =
         latest?['userName']?.toString() ??
         relay['completedByName']?.toString() ??
         '';
+    final segmentTitle = _segmentDisplayLabel(relay, widget.order - 1);
     final status = completed
         ? (isPlaying ? '재생 중' : (singer.isEmpty ? '완료' : singer))
         : isMyTurn
-        ? '내 차례'
-        : canTestRecord
-        ? '테스트'
+        ? '내 차례 · 탭하여 녹음'
+        : widget.isNext
+        ? '탭하여 녹음'
         : assigneeName.isEmpty
-        ? '녹음 가능'
+        ? '대기'
         : assigneeName;
 
-    return Material(
-      color: isPlaying
-          ? AppColors.secondaryContainer
-          : isHighlighted
-          ? const Color(0xFFFFF6D8)
-          : completed
-          ? const Color(0xFFEAF5EA)
-          : active
-          ? Colors.white
-          : Colors.white.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(16),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 260),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isPlaying
-                ? Colors.white
-                : isHighlighted
-                ? AppColors.secondary
-                : Colors.transparent,
-            width: isPlaying || isHighlighted ? 2 : 1,
-          ),
-          boxShadow: isPlaying
-              ? [
-                  BoxShadow(
-                    color: AppColors.secondary.withValues(alpha: 0.30),
-                    blurRadius: 18,
-                    offset: const Offset(0, 8),
-                  ),
-                ]
-              : null,
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => _openRelayStudio(
-            context,
-            relay,
-            part,
-            partLabel,
-            ref,
-            missionRelays: missionRelays,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(11, 11, 11, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 15,
-                      backgroundColor: isPlaying
-                          ? AppColors.secondary
-                          : active
-                          ? (completed ? AppColors.success : AppColors.primary)
-                          : Colors.white.withValues(alpha: 0.16),
+    final circleColor = isPlaying
+        ? AppColors.secondary
+        : completed
+        ? AppColors.success
+        : isOpen
+        ? AppColors.primary
+        : Colors.white.withValues(alpha: 0.14);
+    final ringColor = widget.isHighlighted
+        ? AppColors.secondary
+        : isPlaying
+        ? Colors.white
+        : isOpen
+        ? Colors.white.withValues(alpha: 0.9)
+        : Colors.transparent;
+    final labelColor = completed
+        ? AppColors.success
+        : isOpen || isPlaying
+        ? Colors.white
+        : Colors.white.withValues(alpha: 0.78);
+
+    final diameter = widget.radius * 2;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _openRelayStudio(
+        context,
+        relay,
+        widget.part,
+        widget.partLabel,
+        widget.ref,
+        missionRelays: widget.missionRelays,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: diameter + 24,
+            height: diameter + 24,
+            child: Center(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Pulsing halo that pulls the eye to the next stop to record.
+                  if (isOpen)
+                    AnimatedBuilder(
+                      animation: _pulse,
+                      builder: (context, _) {
+                        final t = _pulse.value;
+                        return Container(
+                          width: diameter + 6 + t * 18,
+                          height: diameter + 6 + t * 18,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.primary.withValues(
+                              alpha: (0.28 * (1 - t)).clamp(0.0, 1.0),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  Container(
+                    width: diameter,
+                    height: diameter,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: circleColor,
+                      border: Border.all(
+                        color: ringColor,
+                        width: ringColor == Colors.transparent ? 0 : 2.5,
+                      ),
+                      boxShadow: isOpen || isPlaying || completed
+                          ? [
+                              BoxShadow(
+                                color:
+                                    (isPlaying
+                                            ? AppColors.secondary
+                                            : completed
+                                            ? AppColors.success
+                                            : AppColors.primary)
+                                        .withValues(alpha: 0.35),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Center(
                       child: isPlaying
                           ? const Icon(
                               Icons.volume_up_rounded,
-                              size: 16,
+                              size: 22,
                               color: AppColors.primary,
                             )
                           : completed
-                          ? const _InlineCheckIcon(
-                              size: 17,
+                          ? const _InlineCheckIcon(size: 24, color: Colors.white)
+                          : isOpen
+                          ? const Icon(
+                              Icons.mic_rounded,
+                              size: 22,
                               color: Colors.white,
                             )
                           : Text(
-                              '$order',
+                              '${widget.order}',
                               style: AppText.body(
-                                12,
+                                15,
                                 weight: FontWeight.w900,
-                                color: active
-                                    ? Colors.white
-                                    : AppColors.secondaryContainer,
+                                color: Colors.white.withValues(alpha: 0.85),
                               ),
                             ),
                     ),
-                    const Spacer(),
-                    _SegmentStatusIcon(completed: completed, active: active),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  segmentTitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.body(
-                    13.5,
-                    weight: FontWeight.w900,
-                    color: isPlaying
-                        ? AppColors.primary
-                        : active
-                        ? (completed ? AppColors.success : AppColors.primary)
-                        : Colors.white,
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  status,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.body(
-                    11,
-                    weight: FontWeight.w600,
-                    color: active
-                        ? AppColors.onSurfaceVariant
-                        : Colors.white.withValues(alpha: 0.72),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
+          const SizedBox(height: 2),
+          Text(
+            segmentTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: AppText.body(12.5, weight: FontWeight.w900, color: labelColor),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            status,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: AppText.body(
+              10.5,
+              weight: FontWeight.w700,
+              color: completed
+                  ? AppColors.success.withValues(alpha: 0.9)
+                  : isOpen
+                  ? AppColors.secondaryContainer
+                  : Colors.white.withValues(alpha: 0.6),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -7144,27 +7344,6 @@ class _RelayStudioStateIcon extends StatelessWidget {
   }
 }
 
-class _SegmentStatusIcon extends StatelessWidget {
-  const _SegmentStatusIcon({required this.completed, required this.active});
-
-  final bool completed;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    if (completed) {
-      return const _InlineCheckCircleIcon(size: 16, color: AppColors.success);
-    }
-    if (active) {
-      return const _InlineMicIcon(size: 16, color: AppColors.primary);
-    }
-    return _InlineMoreIcon(
-      size: 16,
-      color: Colors.white.withValues(alpha: 0.62),
-    );
-  }
-}
-
 class _InlineRouteIcon extends StatelessWidget {
   const _InlineRouteIcon({this.size = 18, this.color});
 
@@ -7328,92 +7507,6 @@ class _InlineHarmonyMapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _InlineHarmonyMapPainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
-
-class _InlineCheckCircleIcon extends StatelessWidget {
-  const _InlineCheckCircleIcon({this.size = 18, this.color});
-
-  final double size;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final resolvedColor =
-        color ?? IconTheme.of(context).color ?? AppColors.success;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(painter: _InlineCheckCirclePainter(resolvedColor)),
-    );
-  }
-}
-
-class _InlineCheckCirclePainter extends CustomPainter {
-  const _InlineCheckCirclePainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = size.width * 0.1
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.drawCircle(size.center(Offset.zero), size.width * 0.42, stroke);
-    final path = Path()
-      ..moveTo(size.width * 0.29, size.height * 0.52)
-      ..lineTo(size.width * 0.44, size.height * 0.66)
-      ..lineTo(size.width * 0.72, size.height * 0.35);
-    canvas.drawPath(path, stroke);
-  }
-
-  @override
-  bool shouldRepaint(covariant _InlineCheckCirclePainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
-
-class _InlineMoreIcon extends StatelessWidget {
-  const _InlineMoreIcon({this.size = 18, this.color});
-
-  final double size;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final resolvedColor =
-        color ?? IconTheme.of(context).color ?? AppColors.muted;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(painter: _InlineMorePainter(resolvedColor)),
-    );
-  }
-}
-
-class _InlineMorePainter extends CustomPainter {
-  const _InlineMorePainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final fill = Paint()..color = color;
-    for (final dx in [0.28, 0.5, 0.72]) {
-      canvas.drawCircle(
-        Offset(size.width * dx, size.height * 0.5),
-        size.width * 0.07,
-        fill,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _InlineMorePainter oldDelegate) {
     return oldDelegate.color != color;
   }
 }
