@@ -2304,12 +2304,16 @@ class _RelayProgressMapState extends State<_RelayProgressMap> {
           const SizedBox(height: 10),
           LayoutBuilder(
             builder: (context, constraints) {
-              final itemWidth = constraints.maxWidth >= 420
-                  ? (constraints.maxWidth - 16) / 3
-                  : (constraints.maxWidth - 10) / 2;
+              // Keep cards comfortably wide so part labels read at a glance:
+              // 2 columns on phones, 3 on wide tablets. Spacing is folded into
+              // the width so the row always fills edge to edge.
+              const gap = 10.0;
+              final columns = constraints.maxWidth >= 440 ? 3 : 2;
+              final itemWidth =
+                  (constraints.maxWidth - gap * (columns - 1)) / columns;
               return Wrap(
-                spacing: 8,
-                runSpacing: 8,
+                spacing: gap,
+                runSpacing: gap,
                 children: widget.relays.asMap().entries.map((entry) {
                   final index = entry.key;
                   final relay = entry.value;
@@ -2407,7 +2411,7 @@ class _HarmonyProgressBar extends StatelessWidget {
           borderRadius: BorderRadius.circular(999),
           child: Stack(
             children: [
-              Container(height: 10, color: trackColor),
+              Container(height: 12, color: trackColor),
               TweenAnimationBuilder<double>(
                 tween: Tween<double>(
                   begin: 0,
@@ -2422,7 +2426,7 @@ class _HarmonyProgressBar extends StatelessWidget {
                   );
                 },
                 child: Container(
-                  height: 10,
+                  height: 12,
                   decoration: BoxDecoration(
                     color: fillColor,
                     borderRadius: BorderRadius.circular(999),
@@ -2498,11 +2502,11 @@ class _RelayMapNode extends StatelessWidget {
           : active
           ? Colors.white
           : Colors.white.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(16),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 260),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isPlaying
                 ? Colors.white
@@ -2522,7 +2526,7 @@ class _RelayMapNode extends StatelessWidget {
               : null,
         ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           onTap: () => _openRelayStudio(
             context,
             relay,
@@ -2532,14 +2536,14 @@ class _RelayMapNode extends StatelessWidget {
             missionRelays: missionRelays,
           ),
           child: Padding(
-            padding: const EdgeInsets.all(9),
+            padding: const EdgeInsets.fromLTRB(11, 11, 11, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
                     CircleAvatar(
-                      radius: 13,
+                      radius: 15,
                       backgroundColor: isPlaying
                           ? AppColors.secondary
                           : active
@@ -2548,18 +2552,18 @@ class _RelayMapNode extends StatelessWidget {
                       child: isPlaying
                           ? const Icon(
                               Icons.volume_up_rounded,
-                              size: 14,
+                              size: 16,
                               color: AppColors.primary,
                             )
                           : completed
                           ? const _InlineCheckIcon(
-                              size: 15,
+                              size: 17,
                               color: Colors.white,
                             )
                           : Text(
                               '$order',
                               style: AppText.body(
-                                10,
+                                12,
                                 weight: FontWeight.w900,
                                 color: active
                                     ? Colors.white
@@ -2571,13 +2575,13 @@ class _RelayMapNode extends StatelessWidget {
                     _SegmentStatusIcon(completed: completed, active: active),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
                 Text(
                   segmentTitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.body(
-                    12,
+                    13.5,
                     weight: FontWeight.w900,
                     color: isPlaying
                         ? AppColors.primary
@@ -2586,16 +2590,17 @@ class _RelayMapNode extends StatelessWidget {
                         : Colors.white,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   status,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.body(
-                    10,
+                    11,
+                    weight: FontWeight.w600,
                     color: active
                         ? AppColors.onSurfaceVariant
-                        : Colors.white.withValues(alpha: 0.66),
+                        : Colors.white.withValues(alpha: 0.72),
                   ),
                 ),
               ],
@@ -4205,12 +4210,12 @@ class _HarmonyLegendItem extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 7,
-          height: 7,
+          width: 9,
+          height: 9,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 4),
-        Text(label, style: AppText.body(10, color: textColor)),
+        const SizedBox(width: 5),
+        Text(label, style: AppText.body(11, weight: FontWeight.w700, color: textColor)),
       ],
     );
   }

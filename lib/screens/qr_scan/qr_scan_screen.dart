@@ -21,7 +21,14 @@ class QrScanScreen extends StatefulWidget {
 }
 
 class _QrScanScreenState extends State<QrScanScreen> {
-  final MobileScannerController _controller = MobileScannerController();
+  // Restrict to QR format only and keep the detector running on every frame so
+  // a code is recognised the instant it enters the viewfinder. Scanning all
+  // barcode symbologies (the default) makes the decoder noticeably slower.
+  final MobileScannerController _controller = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode],
+    detectionSpeed: DetectionSpeed.noDuplicates,
+    detectionTimeoutMs: 100,
+  );
   bool _scanned = false;
 
   @override
@@ -49,11 +56,13 @@ class _QrScanScreenState extends State<QrScanScreen> {
             onDetect: (capture) {
               if (_scanned) return;
               final barcode = capture.barcodes.firstOrNull;
-              if (barcode?.rawValue != null) {
-                setState(() => _scanned = true);
-                widget.onScanned(barcode!.rawValue!);
-                Navigator.pop(context);
-              }
+              final value = barcode?.rawValue;
+              if (value == null || value.isEmpty) return;
+              // Flip the guard synchronously before doing anything else so a
+              // second detection frame can never fire the callback twice.
+              _scanned = true;
+              widget.onScanned(value);
+              Navigator.pop(context);
             },
           ),
           // Overlay
