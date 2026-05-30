@@ -912,8 +912,16 @@ class _PostMediaPreview extends StatelessWidget {
         hasPlayableSource: _postVideoUrl(post).isNotEmpty,
       );
     }
-    return _NetworkPhoto(imageUrl: _postImageUrl(post));
+    return _NetworkPhoto(imageUrl: _postFeedImageUrl(post));
   }
+}
+
+// Feed grid prefers the small server-generated thumbnail so photos appear
+// instantly; falls back to the full image when no thumbnail exists yet.
+String _postFeedImageUrl(Map<String, dynamic> post) {
+  final thumb = post['thumbnailUrl'];
+  if (thumb is String && thumb.trim().isNotEmpty) return thumb.trim();
+  return _postImageUrl(post);
 }
 
 String _postImageUrl(Map<String, dynamic> post) {

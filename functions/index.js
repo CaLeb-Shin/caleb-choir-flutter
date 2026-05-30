@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const axios = require("axios");
@@ -1258,4 +1258,133 @@ exports.compressCommunityVideo = onObjectFinalized(
       await Promise.allSettled([fs.unlink(inputPath), fs.unlink(outputPath)]);
     }
   }
+);
+
+// One-time key guarding the thumbnail backfill endpoint.
+const POST_THUMBNAIL_BACKFILL_KEY = "ccnote-thumb-backfill-7f3a9k2x";
+
+/**
+ * Downscales a post's photo into a small JPEG thumbnail so the community feed
+ * can load instantly, and returns its download URL. Reuses the ffmpeg pipeline
+ * already bundled for video. Returns null if no image is available.
+ */
+async function buildPostThumbnail(postId, imageUrl) {
+  if (!imageUrl) return null;
+  const bucket = admin.storage().bucket();
+  const inputPath = path.join(os.tmpdir(), `post_src_${postId}`);
+  const outputPath = path.join(os.tmpdir(), `post_thumb_${postId}.jpg`);
+  const storageOutputPath = `post_thumbnails/${postId}.jpg`;
+  try {
+    const resp = await axios.get(imageUrl, {
+      responseType: "arraybuffer",
+      timeout: 30000,
+    });
+    await fs.writeFile(inputPath, Buffer.from(resp.data));
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .outputOptions([
+          "-vf",
+          "scale='min(480,iw)':-1",
+          "-frames:v",
+          "1",
+          "-q:v",
+          "5",
+        ])
+        .save(outputPath)
+        .on("end", resolve)
+        .on("error", reject);
+    });
+    const token = crypto.randomUUID();
+    await bucket.upload(outputPath, {
+      destination: storageOutputPath,
+      metadata: {
+        contentType: "image/jpeg",
+        metadata: { firebaseStorageDownloadTokens: token },
+      },
+    });
+    const encodedPath = encodeURIComponent(storageOutputPath);
+    return (
+      `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+      `${encodedPath}?alt=media&token=${token}`
+    );
+  } finally {
+    await Promise.allSettled([fs.unlink(inputPath), fs.unlink(outputPath)]);
+  }
+}
+
+/**
+ * On every new community photo post, generate a feed thumbnail and store its
+ * URL on the post as `thumbnailUrl`.
+ */
+exports.generatePostThumbnail = onDocumentCreated(
+  {
+    region: "us-east1",
+    memory: "512MiB",
+    timeoutSeconds: 120,
+    document: "posts/{postId}",
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const data = snap.data() || {};
+    if ((data.mediaType || "photo") !== "photo") return;
+    if (!data.imageUrl || data.thumbnailUrl) return;
+    try {
+      const thumbnailUrl = await buildPostThumbnail(
+        event.params.postId,
+        data.imageUrl,
+      );
+      if (thumbnailUrl) {
+        await snap.ref.update({
+          thumbnailUrl,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      console.error("Post thumbnail failed:", event.params.postId, error);
+    }
+  },
+);
+
+/**
+ * One-time backfill: generate thumbnails for existing photo posts that don't
+ * have one yet. Trigger with ?key=<POST_THUMBNAIL_BACKFILL_KEY>.
+ */
+exports.backfillPostThumbnails = onRequest(
+  { region: "us-east1", memory: "512MiB", timeoutSeconds: 540 },
+  async (req, res) => {
+    if (req.query.key !== POST_THUMBNAIL_BACKFILL_KEY) {
+      res.status(403).send("forbidden");
+      return;
+    }
+    const db = admin.firestore();
+    const snapshot = await db.collection("posts").get();
+    let done = 0;
+    let skipped = 0;
+    let failed = 0;
+    for (const doc of snapshot.docs) {
+      const data = doc.data() || {};
+      if (
+        (data.mediaType || "photo") !== "photo" ||
+        !data.imageUrl ||
+        data.thumbnailUrl
+      ) {
+        skipped++;
+        continue;
+      }
+      try {
+        const url = await buildPostThumbnail(doc.id, data.imageUrl);
+        if (url) {
+          await doc.ref.update({ thumbnailUrl: url });
+          done++;
+        } else {
+          skipped++;
+        }
+      } catch (error) {
+        console.error("Backfill thumbnail failed:", doc.id, error);
+        failed++;
+      }
+    }
+    res.json({ total: snapshot.size, done, skipped, failed });
+  },
 );
