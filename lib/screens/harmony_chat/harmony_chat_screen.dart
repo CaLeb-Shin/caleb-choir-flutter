@@ -410,9 +410,34 @@ class _PersonalPracticeSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _PracticeTutorialChecklist(
-            progress: progress,
-            submissions: submissions,
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+            decoration: BoxDecoration(
+              color: AppColors.primarySoft,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.play_circle_fill_rounded,
+                  size: 20,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '실시간으로 가사 보며 가이드 음원 듣고 따라 부르며 연습해요!',
+                    style: AppText.body(
+                      13,
+                      weight: FontWeight.w800,
+                      color: AppColors.primary,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -501,71 +526,6 @@ class _PracticeMetricChip extends StatelessWidget {
           Text(label, style: AppText.body(11, weight: FontWeight.w900)),
         ],
       ),
-    );
-  }
-}
-
-class _PracticeTutorialChecklist extends StatelessWidget {
-  const _PracticeTutorialChecklist({
-    required this.progress,
-    required this.submissions,
-  });
-
-  final Map<String, dynamic> progress;
-  final List<Map<String, dynamic>> submissions;
-
-  @override
-  Widget build(BuildContext context) {
-    final raw = progress['completedTutorialSteps'];
-    final steps = raw is Map ? raw : const <String, dynamic>{};
-    final hasFeedback = submissions.any(
-      (item) => (item['leaderFeedback']?.toString() ?? '').trim().isNotEmpty,
-    );
-    final items = [
-      ('mrRecording', 'MR 녹음', steps['mrRecording'] == true),
-      ('dailyMission', '오늘 미션', steps['dailyMission'] == true),
-      ('feedbackRequest', '피드백 요청', steps['feedbackRequest'] == true),
-      ('leaderFeedback', '코멘트 확인', hasFeedback),
-    ];
-    return Wrap(
-      spacing: 7,
-      runSpacing: 7,
-      children: items.map((item) {
-        final done = item.$3;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-          decoration: BoxDecoration(
-            color: done ? const Color(0xFFEAF7EE) : AppColors.card,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: done
-                  ? AppColors.success.withValues(alpha: 0.35)
-                  : AppColors.border.withValues(alpha: 0.45),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                done
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked,
-                size: 14,
-                color: done ? AppColors.success : AppColors.muted,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                item.$2,
-                style: AppText.body(
-                  11,
-                  weight: FontWeight.w900,
-                  color: done ? AppColors.success : AppColors.muted,
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 }

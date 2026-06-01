@@ -10,6 +10,7 @@ const { execFile } = require("child_process");
 const { promisify } = require("util");
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
+const sharp = require("sharp");
 
 const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
@@ -1271,45 +1272,31 @@ const POST_THUMBNAIL_BACKFILL_KEY = "ccnote-thumb-backfill-7f3a9k2x";
 async function buildPostThumbnail(postId, imageUrl) {
   if (!imageUrl) return null;
   const bucket = admin.storage().bucket();
-  const inputPath = path.join(os.tmpdir(), `post_src_${postId}`);
-  const outputPath = path.join(os.tmpdir(), `post_thumb_${postId}.jpg`);
   const storageOutputPath = `post_thumbnails/${postId}.jpg`;
-  try {
-    const resp = await axios.get(imageUrl, {
-      responseType: "arraybuffer",
-      timeout: 30000,
-    });
-    await fs.writeFile(inputPath, Buffer.from(resp.data));
-    await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .outputOptions([
-          "-vf",
-          "scale='min(480,iw)':-1",
-          "-frames:v",
-          "1",
-          "-q:v",
-          "5",
-        ])
-        .save(outputPath)
-        .on("end", resolve)
-        .on("error", reject);
-    });
-    const token = crypto.randomUUID();
-    await bucket.upload(outputPath, {
-      destination: storageOutputPath,
-      metadata: {
-        contentType: "image/jpeg",
-        metadata: { firebaseStorageDownloadTokens: token },
-      },
-    });
-    const encodedPath = encodeURIComponent(storageOutputPath);
-    return (
-      `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
-      `${encodedPath}?alt=media&token=${token}`
-    );
-  } finally {
-    await Promise.allSettled([fs.unlink(inputPath), fs.unlink(outputPath)]);
-  }
+  const resp = await axios.get(imageUrl, {
+    responseType: "arraybuffer",
+    timeout: 30000,
+  });
+  // .rotate() with no argument applies the source EXIF orientation and then
+  // strips the tag, so thumbnails are always upright (ffmpeg ignored EXIF and
+  // produced sideways/flipped images).
+  const thumbBuffer = await sharp(Buffer.from(resp.data))
+    .rotate()
+    .resize({ width: 480, withoutEnlargement: true })
+    .jpeg({ quality: 72 })
+    .toBuffer();
+  const token = crypto.randomUUID();
+  await bucket.file(storageOutputPath).save(thumbBuffer, {
+    metadata: {
+      contentType: "image/jpeg",
+      metadata: { firebaseStorageDownloadTokens: token },
+    },
+  });
+  const encodedPath = encodeURIComponent(storageOutputPath);
+  return (
+    `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/` +
+    `${encodedPath}?alt=media&token=${token}`
+  );
 }
 
 /**
@@ -1357,6 +1344,7 @@ exports.backfillPostThumbnails = onRequest(
       res.status(403).send("forbidden");
       return;
     }
+    const force = req.query.force === "1";
     const db = admin.firestore();
     const snapshot = await db.collection("posts").get();
     let done = 0;
@@ -1367,7 +1355,7 @@ exports.backfillPostThumbnails = onRequest(
       if (
         (data.mediaType || "photo") !== "photo" ||
         !data.imageUrl ||
-        data.thumbnailUrl
+        (data.thumbnailUrl && !force)
       ) {
         skipped++;
         continue;
