@@ -504,7 +504,21 @@ class _EmptySheetMusicPanel extends StatelessWidget {
   }
 }
 
-class _SheetMusicCard extends StatelessWidget {
+/// True when the sheet's date is before today, so it can be collapsed in the
+/// list. Accepts "YYYY-MM-DD", "YYYY.MM.DD" or ISO strings.
+bool _isPastSheetDate(dynamic raw) {
+  final value = raw?.toString().trim() ?? '';
+  if (value.isEmpty) return false;
+  final normalized = value.replaceAll('.', '-').replaceAll('/', '-');
+  final parsed = DateTime.tryParse(normalized);
+  if (parsed == null) return false;
+  final now = DateTime.now();
+  final date = DateTime(parsed.year, parsed.month, parsed.day);
+  final today = DateTime(now.year, now.month, now.day);
+  return date.isBefore(today);
+}
+
+class _SheetMusicCard extends StatefulWidget {
   final _SheetMusicGroup group;
   final bool isAdmin;
   final Future<void> Function()? onDelete;
@@ -516,8 +530,35 @@ class _SheetMusicCard extends StatelessWidget {
   });
 
   @override
+  State<_SheetMusicCard> createState() => _SheetMusicCardState();
+}
+
+class _SheetMusicCardState extends State<_SheetMusicCard> {
+  late final bool _isPast;
+  late bool _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _isPast =
+        widget.group.items.isNotEmpty &&
+        _isPastSheetDate(widget.group.items.first['sheetDate']);
+    // Past sheets start collapsed; current and upcoming ones stay open.
+    _expanded = !_isPast;
+  }
+
+  void _toggle() {
+    if (!_isPast) return;
+    setState(() => _expanded = !_expanded);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final group = widget.group;
+    final isAdmin = widget.isAdmin;
+    final onDelete = widget.onDelete;
     final resources = _resourcesForGroup(group);
+    final collapsed = _isPast && !_expanded;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -562,46 +603,75 @@ class _SheetMusicCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _ScoreCoverBadge(),
-                    const SizedBox(width: 13),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            group.dateLabel,
-                            style: AppText.body(
-                              12,
-                              weight: FontWeight.w900,
-                              color: AppColors.secondary,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            group.songTitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppText.body(18, weight: FontWeight.w900),
-                          ),
-                          if (group.composer.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              group.composer,
-                              style: AppText.body(
-                                13,
-                                color: AppColors.onSurfaceVariant,
+                      child: GestureDetector(
+                        onTap: _toggle,
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const _ScoreCoverBadge(),
+                            const SizedBox(width: 13),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    group.dateLabel,
+                                    style: AppText.body(
+                                      12,
+                                      weight: FontWeight.w900,
+                                      color: AppColors.secondary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    group.songTitle,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.body(
+                                      18,
+                                      weight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  if (group.composer.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      group.composer,
+                                      style: AppText.body(
+                                        13,
+                                        color: AppColors.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
+                    if (_isPast)
+                      IconButton(
+                        onPressed: _toggle,
+                        icon: Icon(
+                          _expanded
+                              ? Icons.expand_less_rounded
+                              : Icons.expand_more_rounded,
+                          size: 22,
+                          color: AppColors.onSurfaceVariant,
+                        ),
+                        style: IconButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
                     if (isAdmin)
                       IconButton(
                         onPressed: onDelete == null
                             ? null
                             : () async {
-                                await onDelete!();
+                                await onDelete();
                               },
                         icon: Icon(
                           Icons.delete_outline_rounded,
@@ -615,28 +685,58 @@ class _SheetMusicCard extends StatelessWidget {
                       ),
                   ],
                 ),
-                if (group.conductorComment.isNotEmpty) ...[
-                  const SizedBox(height: 15),
-                  _ConductorCue(comment: group.conductorComment),
-                ],
-                const SizedBox(height: 12),
-                Column(
-                  children: [
-                    for (var i = 0; i < resources.length; i += 1)
-                      _PartResourceRow(
-                        partKey: resources[i].partKey,
-                        partLabel: resources[i].partLabel,
-                        sheetLabel: resources[i].sheetLabel,
-                        hasFile: resources[i].hasSheet,
-                        hasAudio: resources[i].hasAudio,
-                        showDivider: i != resources.length - 1,
-                        onOpenFile: () =>
-                            SheetMusicScreen._openUrl(resources[i].sheetUrl),
-                        onOpenAudio: () =>
-                            SheetMusicScreen._openUrl(resources[i].audioUrl),
+                if (collapsed)
+                  GestureDetector(
+                    onTap: _toggle,
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.download_rounded,
+                            size: 16,
+                            color: AppColors.secondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '총보·파트 음원 ${resources.length}개 · 눌러서 펼쳐 받기',
+                              style: AppText.body(
+                                12.5,
+                                weight: FontWeight.w700,
+                                color: AppColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                  )
+                else ...[
+                  if (group.conductorComment.isNotEmpty) ...[
+                    const SizedBox(height: 15),
+                    _ConductorCue(comment: group.conductorComment),
                   ],
-                ),
+                  const SizedBox(height: 12),
+                  Column(
+                    children: [
+                      for (var i = 0; i < resources.length; i += 1)
+                        _PartResourceRow(
+                          partKey: resources[i].partKey,
+                          partLabel: resources[i].partLabel,
+                          sheetLabel: resources[i].sheetLabel,
+                          hasFile: resources[i].hasSheet,
+                          hasAudio: resources[i].hasAudio,
+                          showDivider: i != resources.length - 1,
+                          onOpenFile: () =>
+                              SheetMusicScreen._openUrl(resources[i].sheetUrl),
+                          onOpenAudio: () =>
+                              SheetMusicScreen._openUrl(resources[i].audioUrl),
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
