@@ -17,8 +17,11 @@ class SheetMusicScreen extends ConsumerWidget {
     final sheetMusicAsync = ref.watch(sheetMusicProvider);
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
 
-    return CustomScrollView(
-      slivers: [
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(sheetMusicProvider),
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           sliver: SliverList(
@@ -86,7 +89,8 @@ class SheetMusicScreen extends ConsumerWidget {
             );
           },
         ),
-      ],
+        ],
+      ),
     );
   }
 

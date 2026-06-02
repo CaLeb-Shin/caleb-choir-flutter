@@ -19,6 +19,7 @@ Caleb Choir Flutter app. The web build is deployed by Vercel from GitHub pushes.
 - Do not commit generated dependency folders such as `functions/node_modules/`, `.dart_tool/`, `build/`, `.firebase/`, or `.vercel/`.
 - Firebase app config is generated in `lib/firebase_options.dart`; update it through FlutterFire CLI when Firebase apps change.
 - Vercel uses `vercel.json` and publishes `build/web`.
+- Caching / data-freshness rules live in `docs/caching-policy.md`. Golden rule: writing to a StreamProvider-backed collection needs no invalidation; writing to a FutureProvider list must `ref.invalidate()` it. Follow it when adding reads/writes.
 
 ## Verification Before Handoff
 

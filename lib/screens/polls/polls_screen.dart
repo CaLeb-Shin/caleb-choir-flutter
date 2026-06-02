@@ -107,7 +107,11 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                           style: AppText.body(14, color: AppColors.muted),
                         ),
                       )
-                    : ListView.builder(
+                    : RefreshIndicator(
+                        onRefresh: () async =>
+                            ref.invalidate(pollVotesProvider),
+                        child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(16),
                         itemCount: filtered.length,
                         itemBuilder: (_, i) => _PollCard(
@@ -125,6 +129,7 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                               _handleVote(filtered[i]['id'], choice),
                           onClose: () => _handleClose(filtered[i]['id']),
                         ),
+                      ),
                       ),
               ),
             ],

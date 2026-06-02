@@ -25,8 +25,11 @@ class VideosScreen extends ConsumerWidget {
     final videosAsync = ref.watch(videosProvider);
     final isAdmin = ref.watch(effectiveHasManagePermissionProvider);
 
-    return CustomScrollView(
-      slivers: [
+    return RefreshIndicator(
+      onRefresh: () async => ref.invalidate(videosProvider),
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
           sliver: SliverList(
@@ -196,7 +199,8 @@ class VideosScreen extends ConsumerWidget {
             );
           },
         ),
-      ],
+        ],
+      ),
     );
   }
 

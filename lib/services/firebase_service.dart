@@ -291,6 +291,17 @@ class FirebaseService {
   static Future<void> updateProfile(Map<String, dynamic> data) async {
     if (uid == null) return;
     await _db.collection('users').doc(uid).update(data);
+    // The in-memory user cache held the pre-edit name/part/image; drop it so
+    // every read-time author lookup (feed, comments, attendance…) resolves the
+    // fresh profile instead of the stale snapshot.
+    invalidateUserDataCache(uid!);
+  }
+
+  /// Forget the cached `users/{userId}` document so the next `_safeUserData`
+  /// call refetches it. Call after any write that changes a user's profile.
+  static void invalidateUserDataCache(String userId) {
+    _userDataCache.remove(userId);
+    _userDataFutures.remove(userId);
   }
 
   /// 프로필 이미지 업로드 → downloadUrl 반환
@@ -490,17 +501,25 @@ class FirebaseService {
   ) {
     final data = doc.data();
     final id = data['userId']?.toString();
-    return !_postHasStoredAuthorFields(data) &&
-        id != null &&
-        id.isNotEmpty &&
-        !_userDataCache.containsKey(id);
+    if (id == null || id.isEmpty || _userDataCache.containsKey(id)) return false;
+    // Look up when author fields aren't stored, or it's my own post so my just
+    // -edited profile replaces the stale stored snapshot.
+    return !_postHasStoredAuthorFields(data) || id == uid;
+  }
+
+  // My own posts always re-resolve live so a profile edit shows immediately;
+  // other authors keep the stored snapshot to avoid a lookup per feed item.
+  static bool _postCanUseStoredAuthor(Map<String, dynamic> data) {
+    final authorId = data['userId']?.toString();
+    final isMine = authorId != null && authorId == uid;
+    return _postHasStoredAuthorFields(data) && !isMine;
   }
 
   static Map<String, dynamic> _postListSnapshotFast(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) {
     final data = doc.data();
-    final userData = _postHasStoredAuthorFields(data)
+    final userData = _postCanUseStoredAuthor(data)
         ? null
         : _cachedUserData(data['userId']);
     return _postListSnapshotWithUserData(doc, userData);
@@ -510,8 +529,7 @@ class FirebaseService {
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final data = doc.data();
-    final hasStoredAuthorName = _postHasStoredAuthorFields(data);
-    final userData = hasStoredAuthorName
+    final userData = _postCanUseStoredAuthor(data)
         ? null
         : await _safeUserData(data['userId']);
     return _postListSnapshotWithUserData(doc, userData);
@@ -676,7 +694,9 @@ class FirebaseService {
     final attendees = <Map<String, dynamic>>[];
     for (final doc in snapshot.docs) {
       final data = doc.data();
-      final userData = (data['userName'] == null || data['userPart'] == null)
+      final isMine = data['userId']?.toString() == uid;
+      final userData =
+          (isMine || data['userName'] == null || data['userPart'] == null)
           ? await _safeUserData(data['userId'])
           : null;
       final author = _authorFields(data, userData);
@@ -1024,9 +1044,13 @@ class FirebaseService {
             final data = doc.data();
             if ((data['part']?.toString() ?? '') != part) continue;
             final feedbackByData = await _safeUserData(data['feedbackBy']);
+            // These are my own takes — re-resolve my author fields live so a
+            // profile edit isn't stuck on the snapshot stored at submit time.
+            final authorData = await _safeUserData(data['userId']);
             submissions.add({
               'id': doc.id,
               ...data,
+              ..._authorFields(data, authorData),
               'feedbackByName':
                   data['feedbackByName'] ??
                   feedbackByData?['name'] ??
@@ -3183,7 +3207,9 @@ class FirebaseService {
     return Future.wait(
       snapshot.docs.map((doc) async {
         final data = doc.data();
-        final userData = (data['userName'] == null || data['userPart'] == null)
+        final isMine = data['userId']?.toString() == uid;
+        final userData =
+            (isMine || data['userName'] == null || data['userPart'] == null)
             ? await _safeUserData(data['userId'])
             : null;
         final author = _authorFields(data, userData);
@@ -3263,17 +3289,21 @@ class FirebaseService {
     return Future.wait(
       snapshot.docs.map((doc) async {
         final data = doc.data();
+        final isMine = data['userId']?.toString() == uid;
         final hasUserFields =
             data['userName'] != null && data['userGeneration'] != null;
-        final userData = hasUserFields
+        final userData = (hasUserFields && !isMine)
             ? null
             : await _safeUserData(data['userId']);
         return {
           'id': doc.id,
           ...data,
-          'userName': data['userName'] ?? userData?['name'] ?? '',
-          'userGeneration':
-              data['userGeneration'] ?? userData?['generation'] ?? '',
+          'userName': isMine
+              ? (userData?['name'] ?? data['userName'] ?? '')
+              : (data['userName'] ?? userData?['name'] ?? ''),
+          'userGeneration': isMine
+              ? (userData?['generation'] ?? data['userGeneration'] ?? '')
+              : (data['userGeneration'] ?? userData?['generation'] ?? ''),
         };
       }),
     );

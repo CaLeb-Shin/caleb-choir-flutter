@@ -20,7 +20,9 @@ class MembersScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const AppLogoTitle(title: '단원 관리')),
       bottomNavigationBar: const AppBottomNavBar(),
-      body: membersAsync.when(
+      body: RefreshIndicator(
+        onRefresh: () async => ref.invalidate(membersProvider),
+        child: membersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('불러오기 실패: $e')),
         data: (members) {
@@ -31,15 +33,24 @@ class MembersScreen extends ConsumerWidget {
           });
 
           if (members.isEmpty) {
-            return Center(
-              child: Text(
-                '등록된 단원이 없습니다',
-                style: AppText.body(14, color: AppColors.muted),
-              ),
+            return ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 120),
+                  child: Center(
+                    child: Text(
+                      '등록된 단원이 없습니다',
+                      style: AppText.body(14, color: AppColors.muted),
+                    ),
+                  ),
+                ),
+              ],
             );
           }
 
           return ListView.separated(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(20),
             itemCount: members.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -139,6 +150,7 @@ class MembersScreen extends ConsumerWidget {
             },
           );
         },
+        ),
       ),
     );
   }

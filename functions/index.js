@@ -1376,3 +1376,108 @@ exports.backfillPostThumbnails = onRequest(
     res.json({ total: snapshot.size, done, skipped, failed });
   },
 );
+
+// Read-only integrity audit. Trigger with ?key=ccnote-audit-7f3a9k2x.
+// Reports drifted/dangling/orphaned records so they can be reviewed before any
+// deletion. Never writes anything.
+exports.auditDataIntegrity = onRequest(
+  { region: "us-east1", memory: "512MiB", timeoutSeconds: 540 },
+  async (req, res) => {
+    if (req.query.key !== "ccnote-audit-7f3a9k2x") {
+      res.status(403).send("forbidden");
+      return;
+    }
+    const db = admin.firestore();
+    const report = {};
+
+    const usersSnap = await db.collection("users").get();
+    const userIds = new Set(usersSnap.docs.map((d) => d.id));
+    report.userCount = userIds.size;
+
+    // Author refs pointing at a user that no longer exists → blank author.
+    async function missingUserRefs(coll, field = "userId") {
+      const snap = await db.collection(coll).get();
+      const missing = [];
+      snap.forEach((doc) => {
+        const id = doc.get(field);
+        if (id && id !== "admin" && !userIds.has(String(id))) {
+          missing.push(doc.id);
+        }
+      });
+      return { total: snap.size, missing: missing.length, sample: missing.slice(0, 5) };
+    }
+    report.attendance_missingUser = await missingUserRefs("attendance");
+    report.poll_votes_missingUser = await missingUserRefs("poll_votes");
+    report.harmony_notes_missingUser = await missingUserRefs("harmony_notes");
+    report.harmony_relay_clips_missingUser = await missingUserRefs(
+      "harmony_relay_clips",
+    );
+    report.harmony_practice_submissions_missingUser = await missingUserRefs(
+      "harmony_practice_submissions",
+    );
+
+    // Posts: missing-user refs, commentCount drift, and stuck video posts.
+    const postsSnap = await db.collection("posts").get();
+    const postsMissingUser = [];
+    const stuckVideos = [];
+    const drift = [];
+    for (const post of postsSnap.docs) {
+      const authorId = post.get("userId");
+      if (authorId && authorId !== "admin" && !userIds.has(String(authorId))) {
+        postsMissingUser.push(post.id);
+      }
+      const vs = post.get("videoStatus");
+      if (vs === "processing" || vs === "failed") {
+        stuckVideos.push({ id: post.id, status: vs });
+      }
+      const stored = post.get("commentCount");
+      if (typeof stored === "number") {
+        const actual =
+          (await post.ref.collection("comments").count().get()).count || 0;
+        if (stored !== actual) drift.push({ id: post.id, stored, actual });
+      }
+    }
+    report.posts_missingUser = {
+      total: postsSnap.size,
+      missing: postsMissingUser.length,
+      sample: postsMissingUser.slice(0, 5),
+    };
+    report.commentCountDrift = { count: drift.length, sample: drift.slice(0, 10) };
+    report.stuckVideoPosts = {
+      count: stuckVideos.length,
+      sample: stuckVideos.slice(0, 5),
+    };
+
+    // Relay clips whose parent relay is gone.
+    const relayIds = new Set(
+      (await db.collection("harmony_relays").get()).docs.map((d) => d.id),
+    );
+    const clipsSnap = await db.collection("harmony_relay_clips").get();
+    const orphanClips = clipsSnap.docs.filter((d) => {
+      const r = d.get("relayId");
+      return r && !relayIds.has(String(r));
+    });
+    report.orphanRelayClips = {
+      total: clipsSnap.size,
+      orphan: orphanClips.length,
+      sample: orphanClips.slice(0, 5).map((d) => d.id),
+    };
+
+    // Attendance rows whose session is gone.
+    const sessionIds = new Set(
+      (await db.collection("attendance_sessions").get()).docs.map((d) => d.id),
+    );
+    const attSnap = await db.collection("attendance").get();
+    const orphanAtt = attSnap.docs.filter((d) => {
+      const s = d.get("sessionId");
+      return s && !sessionIds.has(String(s));
+    });
+    report.orphanAttendance = {
+      total: attSnap.size,
+      orphan: orphanAtt.length,
+      sample: orphanAtt.slice(0, 5).map((d) => d.id),
+    };
+
+    res.json(report);
+  },
+);

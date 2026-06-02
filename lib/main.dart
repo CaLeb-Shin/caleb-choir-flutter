@@ -12,6 +12,7 @@ import 'services/firebase_service.dart';
 import 'services/notification_service.dart';
 import 'theme/app_theme.dart';
 import 'providers/app_providers.dart';
+import 'providers/refresh_coordinator.dart';
 import 'screens/login/login_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/approval/pending_approval_screen.dart';
@@ -188,12 +189,38 @@ class _MainShellState extends ConsumerState<MainShell> {
 
   static const _titles = ['홈', '악보&음원', '영상', '출석&투표', '소통', '마이'];
 
+  // Refresh reference data when the app returns from a long background, so a
+  // reopened app isn't showing yesterday's sheet music / announcements. Streams
+  // reconnect on their own; only the cache-class FutureProviders need a nudge.
+  AppLifecycleListener? _lifecycleListener;
+  DateTime? _backgroundedAt;
+  static const _resumeRefreshThreshold = Duration(minutes: 5);
+
   @override
   void initState() {
     super.initState();
+    _lifecycleListener = AppLifecycleListener(
+      onPause: () => _backgroundedAt = DateTime.now(),
+      onResume: _handleResume,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _openInitialPreviewSection();
     });
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener?.dispose();
+    super.dispose();
+  }
+
+  void _handleResume() {
+    final since = _backgroundedAt;
+    _backgroundedAt = null;
+    if (since == null) return;
+    if (DateTime.now().difference(since) < _resumeRefreshThreshold) return;
+    if (!mounted) return;
+    invalidateCacheProviders(ref);
   }
 
   @override

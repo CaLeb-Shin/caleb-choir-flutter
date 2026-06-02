@@ -57,9 +57,15 @@ class AttendanceScreen extends ConsumerWidget {
         ? 'ccnote:attendance:${profile.churchId ?? ''}:${session['id']}:${profile.id}'
         : 'ccnote:member:${profile.churchId ?? ''}:${profile.id}';
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
-      child: Column(
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(myHistoryProvider);
+        ref.invalidate(recentSessionsProvider);
+      },
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('출석&투표', style: AppText.headline(28)),
@@ -399,6 +405,7 @@ class AttendanceScreen extends ConsumerWidget {
                   ),
                 ),
         ],
+        ),
       ),
     );
   }

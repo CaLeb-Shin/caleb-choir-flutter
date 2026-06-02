@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/refresh_coordinator.dart';
 import '../../services/firebase_service.dart';
 import '../../models/user.dart';
 import '../../widgets/interactive.dart';
@@ -422,6 +423,9 @@ class ProfileScreen extends ConsumerWidget {
               Navigator.pop(dialogCtx);
               ref.read(loggedOutProvider.notifier).state = true;
               await FirebaseService.signOut();
+              // Drop the previous user's cached reference data so it can't
+              // briefly flash to the next account that signs in.
+              invalidateCacheProviders(ref);
             },
             child: const Text('로그아웃', style: TextStyle(color: AppColors.error)),
           ),
@@ -539,7 +543,14 @@ class _ProfileEditSheetState extends State<_ProfileEditSheet> {
       };
       if (_imageUrl != null) data['profileImageUrl'] = _imageUrl;
       await FirebaseService.updateProfile(data);
+      // Refresh the views that carry a denormalized copy of my name/part/image
+      // so the change shows everywhere, not just on the profile screen.
       widget.ref.invalidate(profileProvider);
+      widget.ref.invalidate(postsProvider);
+      widget.ref.invalidate(membersProvider);
+      widget.ref.invalidate(commentsProvider);
+      widget.ref.invalidate(pollVotesProvider);
+      widget.ref.invalidate(seatingChartsProvider);
       if (mounted) Navigator.pop(context);
     } catch (e) {
       setState(() => _saving = false);
