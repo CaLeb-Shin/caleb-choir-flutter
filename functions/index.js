@@ -1434,7 +1434,15 @@ exports.auditDataIntegrity = onRequest(
       if (typeof stored === "number") {
         const actual =
           (await post.ref.collection("comments").count().get()).count || 0;
-        if (stored !== actual) drift.push({ id: post.id, stored, actual });
+        if (stored !== actual) {
+          drift.push({ id: post.id, stored, actual });
+          // ?fix=1 corrects the denormalized counter to the real count. This
+          // is the only non-destructive repair the audit performs; it never
+          // deletes documents.
+          if (req.query.fix === "1") {
+            await post.ref.update({ commentCount: actual });
+          }
+        }
       }
     }
     report.posts_missingUser = {
