@@ -1329,3 +1329,110 @@ exports.generatePostThumbnail = onDocumentCreated(
     }
   },
 );
+
+// 회원탈퇴: 본인의 계정과 개인 데이터를 삭제한다.
+// OAuth/커스텀 토큰 로그인은 클라이언트 user.delete()가 requires-recent-login으로
+// 자주 실패하므로 Admin SDK로 서버에서 처리한다. 스토어(Apple 5.1.1(v) / Google Play)
+// 의 "앱 내 계정 삭제" 요건을 충족한다.
+exports.deleteAccount = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "로그인이 필요합니다.");
+  }
+
+  const uid = request.auth.uid;
+  const db = admin.firestore();
+
+  // 1) 본인이 작성한 개인 음성/연습 데이터 정리 (개인정보 성격이 강함).
+  //    churchId 격리 없이 userId만으로 본인 문서만 지운다.
+  const personalCollections = [
+    "harmony_notes",
+    "harmony_practice_submissions",
+    "harmony_relay_clips",
+    "harmony_relay_votes",
+  ];
+  const storagePaths = new Set();
+  for (const collectionName of personalCollections) {
+    let lastDoc = null;
+    // 페이지네이션으로 안전하게 일괄 삭제 (대량 데이터 대비).
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let query = db
+        .collection(collectionName)
+        .where("userId", "==", uid)
+        .limit(300);
+      if (lastDoc) query = query.startAfter(lastDoc);
+      const snap = await query.get();
+      if (snap.empty) break;
+      const batch = db.batch();
+      for (const docSnap of snap.docs) {
+        const data = docSnap.data() || {};
+        if (typeof data.audioStoragePath === "string") {
+          storagePaths.add(data.audioStoragePath);
+        }
+        batch.delete(docSnap.ref);
+      }
+      await batch.commit();
+      lastDoc = snap.docs[snap.docs.length - 1];
+      if (snap.size < 300) break;
+    }
+  }
+
+  // 2) voterId 기준 투표(본인이 던진 표)도 정리.
+  try {
+    const voteSnap = await db
+      .collection("harmony_relay_votes")
+      .where("voterId", "==", uid)
+      .limit(300)
+      .get();
+    if (!voteSnap.empty) {
+      const batch = db.batch();
+      voteSnap.docs.forEach((docSnap) => batch.delete(docSnap.ref));
+      await batch.commit();
+    }
+  } catch (error) {
+    console.error("deleteAccount: vote cleanup failed", uid, error);
+  }
+
+  // 3) 개인 진행상황 문서 (docId == uid).
+  try {
+    await db.collection("harmony_practice_progress").doc(uid).delete();
+  } catch (error) {
+    console.error("deleteAccount: progress cleanup failed", uid, error);
+  }
+
+  // 4) 프로필 사진 등 개인 스토리지 정리 (best-effort).
+  try {
+    const bucket = admin.storage().bucket();
+    await bucket.deleteFiles({ prefix: `profile_images/${uid}/` });
+    await bucket.deleteFiles({ prefix: `harmony/${uid}/` });
+  } catch (error) {
+    console.error("deleteAccount: storage cleanup failed", uid, error);
+  }
+  for (const storagePath of storagePaths) {
+    try {
+      await admin.storage().bucket().file(storagePath).delete();
+    } catch (_) {
+      // 이미 삭제됐거나 경로가 다르면 무시.
+    }
+  }
+
+  // 5) 프로필 문서 삭제 (PII: 이름/이메일/소속 등).
+  try {
+    await db.collection("users").doc(uid).delete();
+  } catch (error) {
+    console.error("deleteAccount: user doc delete failed", uid, error);
+    throw new HttpsError("internal", "프로필 삭제 중 오류가 발생했습니다.");
+  }
+
+  // 6) 마지막으로 인증 계정 삭제 → 더 이상 로그인 불가.
+  try {
+    await admin.auth().deleteUser(uid);
+  } catch (error) {
+    if (error.code !== "auth/user-not-found") {
+      console.error("deleteAccount: auth delete failed", uid, error);
+      throw new HttpsError("internal", "계정 삭제 중 오류가 발생했습니다.");
+    }
+  }
+
+  return { deleted: true };
+});

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/refresh_coordinator.dart';
@@ -374,10 +375,31 @@ class ProfileScreen extends ConsumerWidget {
                       color: AppColors.border.withValues(alpha: 0.2),
                     ),
                     _MenuItem(
+                      icon: Icons.privacy_tip_outlined,
+                      label: '개인정보처리방침',
+                      onTap: () => _openPrivacyPolicy(context),
+                    ),
+                    Divider(
+                      height: 0.5,
+                      indent: 56,
+                      color: AppColors.border.withValues(alpha: 0.2),
+                    ),
+                    _MenuItem(
                       icon: Icons.logout_rounded,
                       label: '로그아웃',
                       isDestructive: true,
                       onTap: () => _confirmLogout(context, ref),
+                    ),
+                    Divider(
+                      height: 0.5,
+                      indent: 56,
+                      color: AppColors.border.withValues(alpha: 0.2),
+                    ),
+                    _MenuItem(
+                      icon: Icons.no_accounts_rounded,
+                      label: '회원탈퇴',
+                      isDestructive: true,
+                      onTap: () => _confirmDeleteAccount(context, ref),
                     ),
                   ],
                 ),
@@ -407,6 +429,18 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _openPrivacyPolicy(BuildContext context) async {
+    final uri = Uri.parse(
+      'https://caleb-choir-flutter.vercel.app/privacy.html',
+    );
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('개인정보처리방침을 열 수 없습니다')),
+      );
+    }
+  }
+
   void _confirmLogout(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
@@ -432,6 +466,58 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('회원탈퇴'),
+        content: const Text(
+          '탈퇴하면 프로필과 내가 올린 연습 녹음·투표 등 개인 데이터가 '
+          '삭제되며 되돌릴 수 없습니다.\n\n정말 탈퇴하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              await _runDeleteAccount(context, ref);
+            },
+            child: const Text('탈퇴', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runDeleteAccount(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    // 삭제가 끝나기 전에 인증 상태가 흔들려 다음 계정으로 깜빡이는 것을 막는다.
+    ref.read(loggedOutProvider.notifier).state = true;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      await FirebaseService.deleteAccount();
+      invalidateCacheProviders(ref);
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+    } catch (e) {
+      // 실패 시 로그인 상태로 되돌리고 사유를 알린다.
+      ref.read(loggedOutProvider.notifier).state = false;
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 }
 

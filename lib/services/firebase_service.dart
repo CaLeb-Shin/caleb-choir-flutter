@@ -74,6 +74,28 @@ class FirebaseService {
     } catch (_) {}
   }
 
+  /// 회원탈퇴: 서버(Cloud Function)에서 프로필·개인 데이터·인증 계정을 삭제한 뒤
+  /// 로컬 캐시와 세션을 정리한다. OAuth 로그인의 requires-recent-login 문제를
+  /// 피하기 위해 Admin SDK 기반 callable로 처리한다.
+  static Future<void> deleteAccount() async {
+    if (uid == null) {
+      throw Exception('로그인이 필요합니다');
+    }
+    try {
+      final callable = _functions.httpsCallable('deleteAccount');
+      await callable.call<Map<String, dynamic>>();
+    } on FirebaseFunctionsException catch (e) {
+      final message = e.message?.trim();
+      throw Exception(
+        message != null && message.isNotEmpty
+            ? message
+            : '회원탈퇴 처리 중 오류가 발생했습니다',
+      );
+    }
+    // 서버에서 계정이 삭제됐으므로 로컬 세션/캐시를 정리한다.
+    await signOut();
+  }
+
   // ============ User Profile ============
   static Future<Map<String, dynamic>?> getProfile() async {
     if (uid == null) return null;
