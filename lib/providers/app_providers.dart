@@ -851,6 +851,52 @@ final myHistoryProvider = FutureProvider<List<Map<String, dynamic>>>((
   return FirebaseService.getMyHistory();
 });
 
+/// 열린 세션의 출석자를 실시간으로 구독(일찍 온 순 정렬). 얼리버드 순위판용.
+final sessionAttendeesProvider =
+    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, sessionId) {
+      if (ref.watch(localPreviewModeProvider)) {
+        final now = DateTime.now();
+        Map<String, dynamic> seed(
+          String userId,
+          String name,
+          String part,
+          int minsAgo,
+        ) => {
+          'id': '${sessionId}_$userId',
+          'userId': userId,
+          'userName': name,
+          'userPart': part,
+          'checkedInAt': now
+              .subtract(Duration(minutes: minsAgo))
+              .toIso8601String(),
+        };
+        return Stream.value([
+          seed('preview-tenor-1', '정테너', 'tenor', 47),
+          seed('preview-alto-1', '최알토', 'alto', 41),
+          seed('preview-bass-1', '김베이스', 'bass', 33),
+          seed(_previewUserId, 'sinbun001', 'soprano', 21),
+          seed('preview-bass-2', '박저음', 'bass', 12),
+          seed('preview-alto-2', '한고음', 'alto', 5),
+        ]);
+      }
+      return FirebaseService.watchSessionAttendees(sessionId);
+    });
+
+/// 내가 받은 월간 트로피 목록 — 마이 화면 동기부여용. 각 항목:
+/// {month:'YYYY-MM', category:'attendance'|'earlybird', rank:1~3}
+final myMonthlyTrophiesProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+      if (ref.watch(localPreviewModeProvider)) {
+        return const [
+          {'month': '2026-05', 'category': 'attendance', 'rank': 1},
+          {'month': '2026-05', 'category': 'earlybird', 'rank': 2},
+          {'month': '2026-04', 'category': 'earlybird', 'rank': 1},
+          {'month': '2026-03', 'category': 'attendance', 'rank': 3},
+        ];
+      }
+      return FirebaseService.getMyMonthlyTrophies();
+    });
+
 final recentSessionsProvider = FutureProvider<List<Map<String, dynamic>>>((
   ref,
 ) async {

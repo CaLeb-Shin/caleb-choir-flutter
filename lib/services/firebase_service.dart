@@ -734,6 +734,146 @@ class FirebaseService {
     return attendees;
   }
 
+  /// 열린 세션의 출석자를 실시간으로 스트리밍한다. 출석 시각(checkedInAt)
+  /// 오름차순(일찍 온 순)으로 정렬되어, 얼리버드 순위판에 그대로 쓸 수 있다.
+  /// 출석 문서는 체크인 시 userName/userPart를 비정규화 저장하므로 추가
+  /// 조회 없이 동기적으로 매핑한다(이름 누락 시 캐시된 유저 데이터로 보완).
+  static Stream<List<Map<String, dynamic>>> watchSessionAttendees(
+    String sessionId,
+  ) {
+    return _db
+        .collection('attendance')
+        .where('churchId', isEqualTo: _requireChurchId())
+        .where('sessionId', isEqualTo: sessionId)
+        .snapshots()
+        .map((snapshot) {
+          final attendees = snapshot.docs.map((doc) {
+            final data = doc.data();
+            final cached = _cachedUserData(data['userId']);
+            return {
+              'id': doc.id,
+              'userId': data['userId']?.toString() ?? '',
+              'userName':
+                  (data['userName'] ?? cached?['name'] ?? '').toString(),
+              'userPart':
+                  (data['userPart'] ?? cached?['part'] ?? '').toString(),
+              'checkedInAt':
+                  (data['checkedInAt'] as Timestamp?)
+                      ?.toDate()
+                      .toIso8601String() ??
+                  '',
+            };
+          }).toList();
+          attendees.sort((a, b) {
+            final aTime = a['checkedInAt'] as String;
+            final bTime = b['checkedInAt'] as String;
+            // 아직 시각이 안 찍힌(서버 타임스탬프 반영 전) 항목은 뒤로.
+            if (aTime.isEmpty) return bTime.isEmpty ? 0 : 1;
+            if (bTime.isEmpty) return -1;
+            return aTime.compareTo(bTime);
+          });
+          return attendees;
+        });
+  }
+
+  /// 내가 받은 월간 트로피 목록. 완료된 각 달(현재 달 제외)마다 전체 단원을
+  /// 두 부문으로 시상한다:
+  ///  - attendance(개근): 그 달 출석 횟수 최다 상위 3명
+  ///  - earlybird(얼리버드): 그 달 세션별 1·2·3등에 3·2·1점, 합산 상위 3명
+  /// 부문별로 내가 1·2·3등이면 트로피로 보유. month는 'YYYY-MM', rank는 1~3.
+  /// 교회 전체 출석 1회 조회(equality-only, 인덱스 불필요) 후 클라이언트 집계.
+  static Future<List<Map<String, dynamic>>> getMyMonthlyTrophies() async {
+    if (uid == null) return [];
+    final churchId = _requireChurchId();
+    final myUid = uid!;
+
+    final all = await _db
+        .collection('attendance')
+        .where('churchId', isEqualTo: churchId)
+        .get();
+    if (all.docs.isEmpty) return [];
+
+    // month → 출석 기록(userId, sessionId, ms)
+    final byMonth = <String, List<Map<String, dynamic>>>{};
+    for (final doc in all.docs) {
+      final data = doc.data();
+      final ts = data['checkedInAt'] as Timestamp?;
+      final userId = data['userId']?.toString();
+      final sessionId = data['sessionId']?.toString();
+      if (ts == null || userId == null || sessionId == null) continue;
+      final d = ts.toDate();
+      final key = '${d.year}-${d.month.toString().padLeft(2, '0')}';
+      byMonth.putIfAbsent(key, () => []).add({
+        'userId': userId,
+        'sessionId': sessionId,
+        'ms': ts.millisecondsSinceEpoch,
+      });
+    }
+
+    final now = DateTime.now();
+    final currentKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}';
+
+    final trophies = <Map<String, dynamic>>[];
+    for (final entry in byMonth.entries) {
+      final monthKey = entry.key;
+      if (monthKey.compareTo(currentKey) >= 0) continue; // 완료된 달만 시상
+
+      final recs = entry.value;
+      final attendCount = <String, int>{};
+      final bySession = <String, List<Map<String, dynamic>>>{};
+      for (final r in recs) {
+        final u = r['userId'] as String;
+        attendCount[u] = (attendCount[u] ?? 0) + 1;
+        bySession.putIfAbsent(r['sessionId'] as String, () => []).add(r);
+      }
+
+      final ebPoints = <String, int>{};
+      for (final sess in bySession.values) {
+        sess.sort((a, b) => (a['ms'] as int).compareTo(b['ms'] as int));
+        for (var i = 0; i < sess.length && i < 3; i += 1) {
+          final u = sess[i]['userId'] as String;
+          ebPoints[u] = (ebPoints[u] ?? 0) + (3 - i); // 1등3·2등2·3등1
+        }
+      }
+
+      final attRank = _top3Rank(attendCount, myUid);
+      if (attRank > 0) {
+        trophies.add({
+          'month': monthKey,
+          'category': 'attendance',
+          'rank': attRank,
+        });
+      }
+      final ebRank = _top3Rank(ebPoints, myUid);
+      if (ebRank > 0) {
+        trophies.add({
+          'month': monthKey,
+          'category': 'earlybird',
+          'rank': ebRank,
+        });
+      }
+    }
+
+    trophies.sort(
+      (a, b) => (b['month'] as String).compareTo(a['month'] as String),
+    );
+    return trophies;
+  }
+
+  /// 점수 맵에서 [userId]의 순위가 1~3위면 그 등수를, 아니면 0을 반환.
+  /// 동점은 동순위(competition ranking): 나보다 점수가 큰 인원 수 + 1.
+  static int _top3Rank(Map<String, int> scores, String userId) {
+    final myScore = scores[userId];
+    if (myScore == null || myScore <= 0) return 0;
+    var greater = 0;
+    for (final value in scores.values) {
+      if (value > myScore) greater += 1;
+    }
+    final rank = greater + 1;
+    return rank <= 3 ? rank : 0;
+  }
+
   // ============ Videos ============
   static Future<List<Map<String, dynamic>>> getVideos({int? limit}) async {
     Query<Map<String, dynamic>> query = _db

@@ -21,6 +21,7 @@ void invalidateCacheProviders(WidgetRef ref) {
   ref.invalidate(recentVideosProvider);
   ref.invalidate(membersProvider);
   ref.invalidate(myHistoryProvider);
+  ref.invalidate(myMonthlyTrophiesProvider);
   ref.invalidate(recentSessionsProvider);
   ref.invalidate(seatingChartsProvider);
   ref.invalidate(seatingPresetsProvider);

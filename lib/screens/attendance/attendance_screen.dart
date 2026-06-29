@@ -61,6 +61,10 @@ class AttendanceScreen extends ConsumerWidget {
       onRefresh: () async {
         ref.invalidate(myHistoryProvider);
         ref.invalidate(recentSessionsProvider);
+        final sid = session?['id']?.toString();
+        if (sid != null && sid.isNotEmpty) {
+          ref.invalidate(sessionAttendeesProvider(sid));
+        }
       },
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -78,6 +82,11 @@ class AttendanceScreen extends ConsumerWidget {
 
           if (session != null) ...[
             _ActiveAttendanceCard(session: session),
+            const SizedBox(height: 14),
+            _EarlyBirdSection(
+              sessionId: session['id']?.toString() ?? '',
+              myUserId: profile?.id,
+            ),
             const SizedBox(height: 14),
           ],
 
@@ -463,10 +472,28 @@ class AttendanceScreen extends ConsumerWidget {
     if (s == null) return '';
     try {
       final d = DateTime.parse(s.toString());
-      return '${d.year}.${d.month}.${d.day} ${d.hour}:${d.minute.toString().padLeft(2, '0')}';
+      return '${d.year}.${d.month}.${d.day} ${_clockLabel(d)}';
     } catch (_) {
       return '';
     }
+  }
+
+  /// "오전 9:10" / "오후 2:05" 형식. null/파싱 실패 시 빈 문자열.
+  static String _timeLabel(dynamic s) {
+    if (s == null) return '';
+    try {
+      return _clockLabel(DateTime.parse(s.toString()));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  static String _clockLabel(DateTime d) {
+    final isAm = d.hour < 12;
+    var hour12 = d.hour % 12;
+    if (hour12 == 0) hour12 = 12;
+    final minute = d.minute.toString().padLeft(2, '0');
+    return '${isAm ? '오전' : '오후'} $hour12:$minute';
   }
 
   static String _dateLabel(dynamic value) {
@@ -1587,6 +1614,471 @@ class _AttendanceQr {
   final String? userId;
 
   const _AttendanceQr({this.churchId, this.sessionId, this.userId});
+}
+
+/// 메달 색상 (1·2·3위 금/은/동).
+const _goldColor = Color(0xFFEAB308);
+const _silverColor = Color(0xFF94A3B8);
+const _bronzeColor = Color(0xFFB87333);
+
+Color? _medalColor(int rank) {
+  switch (rank) {
+    case 1:
+      return _goldColor;
+    case 2:
+      return _silverColor;
+    case 3:
+      return _bronzeColor;
+    default:
+      return null;
+  }
+}
+
+/// 순위판 보기 모드.
+enum _LeaderboardView { overall, byPart }
+
+/// 열린 세션의 실시간 얼리버드 순위 + 본인 등수 배너.
+class _EarlyBirdSection extends ConsumerStatefulWidget {
+  final String sessionId;
+  final String? myUserId;
+
+  const _EarlyBirdSection({required this.sessionId, this.myUserId});
+
+  @override
+  ConsumerState<_EarlyBirdSection> createState() => _EarlyBirdSectionState();
+}
+
+class _EarlyBirdSectionState extends ConsumerState<_EarlyBirdSection> {
+  _LeaderboardView _view = _LeaderboardView.overall;
+
+  @override
+  Widget build(BuildContext context) {
+    final sessionId = widget.sessionId;
+    if (sessionId.isEmpty) return const SizedBox.shrink();
+    final attendeesAsync = ref.watch(sessionAttendeesProvider(sessionId));
+    final myUserId = widget.myUserId;
+
+    return attendeesAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (attendees) {
+        final myIndex = (myUserId == null || myUserId.isEmpty)
+            ? -1
+            : attendees.indexWhere((a) => a['userId'] == myUserId);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (myIndex >= 0) ...[
+              _MyRankBanner(
+                rank: myIndex + 1,
+                checkedInAt: attendees[myIndex]['checkedInAt'],
+                inTop10: myIndex < 10,
+              ),
+              const SizedBox(height: 12),
+            ],
+            _leaderboard(attendees),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _leaderboard(List<Map<String, dynamic>> attendees) {
+    final isOverall = _view == _LeaderboardView.overall;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.emoji_events_rounded,
+                size: 20,
+                color: _goldColor,
+              ),
+              const SizedBox(width: 8),
+              Text('오늘의 얼리버드', style: AppText.headline(16)),
+              const Spacer(),
+              Text(
+                '${attendees.length}명 출석',
+                style: AppText.body(
+                  12,
+                  weight: FontWeight.w800,
+                  color: AppColors.muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (attendees.isEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Center(
+                child: Text(
+                  '아직 첫 출석자를 기다리고 있어요',
+                  style: AppText.body(13, color: AppColors.muted),
+                ),
+              ),
+            ),
+          ] else ...[
+            _viewToggle(),
+            const SizedBox(height: 8),
+            Text(
+              isOverall
+                  ? '일찍 도착한 순서예요 · 상위 10위는 트로피 🏆'
+                  : '파트별로 일찍 온 순서예요 · 파트 1~3위는 트로피 🏆',
+              style: AppText.body(11, color: AppColors.muted),
+            ),
+            const SizedBox(height: 10),
+            if (isOverall)
+              ..._overallRows(attendees)
+            else
+              ..._byPartRows(attendees),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _viewToggle() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLow,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          _toggleButton('전체 순위', _LeaderboardView.overall),
+          _toggleButton('파트별 순위', _LeaderboardView.byPart),
+        ],
+      ),
+    );
+  }
+
+  Widget _toggleButton(String label, _LeaderboardView view) {
+    final selected = _view == view;
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: selected ? null : () => setState(() => _view = view),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: AppText.body(
+                12,
+                weight: selected ? FontWeight.w900 : FontWeight.w700,
+                color: selected ? AppColors.primary : AppColors.muted,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _overallRows(List<Map<String, dynamic>> attendees) {
+    final top = attendees.take(10).toList();
+    return [
+      for (var i = 0; i < top.length; i += 1)
+        _EarlyBirdRow(
+          rank: i + 1,
+          attendee: top[i],
+          isMe: widget.myUserId != null && top[i]['userId'] == widget.myUserId,
+        ),
+    ];
+  }
+
+  List<Widget> _byPartRows(List<Map<String, dynamic>> attendees) {
+    // attendees는 이미 출석 시각 오름차순 → 먼저 등장한 파트가 위로(가장 일찍 온 파트).
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final a in attendees) {
+      final part = (a['userPart'] ?? '').toString();
+      final key = part.isEmpty ? '__etc' : part;
+      groups.putIfAbsent(key, () => []).add(a);
+    }
+
+    final widgets = <Widget>[];
+    var first = true;
+    for (final entry in groups.entries) {
+      if (!first) widgets.add(const SizedBox(height: 8));
+      first = false;
+      final label = entry.key == '__etc'
+          ? '기타'
+          : (User.partLabels[entry.key] ?? entry.key);
+      widgets.add(_partHeader(label, entry.value.length));
+      for (var i = 0; i < entry.value.length; i += 1) {
+        widgets.add(
+          _EarlyBirdRow(
+            rank: i + 1,
+            attendee: entry.value[i],
+            isMe:
+                widget.myUserId != null &&
+                entry.value[i]['userId'] == widget.myUserId,
+          ),
+        );
+      }
+    }
+    return widgets;
+  }
+
+  Widget _partHeader(String label, int count) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6, top: 2),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 13,
+            decoration: BoxDecoration(
+              color: AppColors.secondary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            label,
+            style: AppText.body(
+              13,
+              weight: FontWeight.w900,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count명',
+            style: AppText.body(11, color: AppColors.muted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 순위판의 한 줄.
+class _EarlyBirdRow extends StatelessWidget {
+  final int rank;
+  final Map<String, dynamic> attendee;
+  final bool isMe;
+
+  const _EarlyBirdRow({
+    required this.rank,
+    required this.attendee,
+    required this.isMe,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (attendee['userName'] ?? '').toString().trim();
+    final part = (attendee['userPart'] ?? '').toString();
+    final partLabel = part.isEmpty ? null : (User.partLabels[part] ?? part);
+    final time = AttendanceScreen._timeLabel(attendee['checkedInAt']);
+    final medal = _medalColor(rank);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: isMe ? AppColors.primarySoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        border: isMe
+            ? Border.all(color: AppColors.primary.withValues(alpha: 0.4))
+            : null,
+      ),
+      child: Row(
+        children: [
+          _rankBadge(rank, medal),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    name.isEmpty ? '이름 미상' : name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.body(14, weight: FontWeight.w800),
+                  ),
+                ),
+                if (isMe) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '나',
+                      style: AppText.body(
+                        10,
+                        weight: FontWeight.w900,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+                if (partLabel != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    partLabel,
+                    style: AppText.body(11, color: AppColors.muted),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            time,
+            style: AppText.body(
+              12,
+              weight: FontWeight.w800,
+              color: medal ?? AppColors.muted,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _rankBadge(int rank, Color? medal) {
+    if (medal != null) {
+      return SizedBox(
+        width: 30,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.emoji_events_rounded, size: 24, color: medal),
+            Text(
+              '$rank',
+              style: AppText.body(9, weight: FontWeight.w900, color: medal),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLow,
+        shape: BoxShape.circle,
+      ),
+      child: Text(
+        '$rank',
+        style: AppText.body(
+          13,
+          weight: FontWeight.w900,
+          color: AppColors.muted,
+        ),
+      ),
+    );
+  }
+}
+
+/// 본인 출석 시각 + 등수 배너.
+class _MyRankBanner extends StatelessWidget {
+  final int rank;
+  final dynamic checkedInAt;
+  final bool inTop10;
+
+  const _MyRankBanner({
+    required this.rank,
+    required this.checkedInAt,
+    required this.inTop10,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final time = AttendanceScreen._timeLabel(checkedInAt);
+    final medal = _medalColor(rank);
+    final accent = medal ?? (inTop10 ? _goldColor : AppColors.primary);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withValues(alpha: 0.45), width: 1.2),
+        boxShadow: inTop10
+            ? [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.16),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: inTop10
+                ? Icon(Icons.emoji_events_rounded, size: 26, color: accent)
+                : const Icon(
+                    Icons.check_circle_rounded,
+                    size: 26,
+                    color: AppColors.success,
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  inTop10 ? '오늘 $rank번째로 출석했어요! 🎉' : '오늘 $rank번째로 출석했어요',
+                  style: AppText.body(15, weight: FontWeight.w900),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  time.isEmpty ? '출석 완료' : '$time 출석 · 상위 10위는 트로피',
+                  style: AppText.body(12, color: AppColors.muted),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 String _cleanErrorMessage(Object error) {

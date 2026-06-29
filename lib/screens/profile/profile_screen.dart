@@ -265,6 +265,7 @@ class ProfileScreen extends ConsumerWidget {
                         );
                       }),
                     ),
+                    const _MonthlyTrophyStrip(),
                   ],
                 ),
               ),
@@ -323,7 +324,7 @@ class ProfileScreen extends ConsumerWidget {
                       icon: Icons.calendar_today_rounded,
                       label: '출석 기록',
                       onTap: () =>
-                          ref.read(tabIndexProvider.notifier).state = 3,
+                          ref.read(tabIndexProvider.notifier).state = 2,
                     ),
                     if (effectiveIsAdmin) ...[
                       Divider(
@@ -962,6 +963,112 @@ class _InfoTile extends StatelessWidget {
               Text(label, style: AppText.body(11, color: AppColors.muted)),
               Text(value, style: AppText.body(14, weight: FontWeight.w600)),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+const _awardGold = Color(0xFFEAB308);
+const _awardSilver = Color(0xFF94A3B8);
+const _awardBronze = Color(0xFFB87333);
+
+Color _trophyColor(int rank) => switch (rank) {
+  1 => _awardGold,
+  2 => _awardSilver,
+  _ => _awardBronze,
+};
+
+/// 출석현황 카드 하단의 컴팩트한 "내 트로피" 모음.
+/// 매월 완료 시 개근·얼리버드 부문 상위 3등에게 주어진 트로피를 보유 표시.
+class _MonthlyTrophyStrip extends ConsumerWidget {
+  const _MonthlyTrophyStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final trophies = ref.watch(myMonthlyTrophiesProvider).valueOrNull;
+    if (trophies == null) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 16),
+        Divider(height: 1, color: AppColors.border.withValues(alpha: 0.25)),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Icon(
+              Icons.emoji_events_rounded,
+              size: 16,
+              color: _awardGold,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '내 트로피',
+              style: AppText.body(13, weight: FontWeight.w800),
+            ),
+            const Spacer(),
+            if (trophies.isNotEmpty)
+              Text(
+                '${trophies.length}개',
+                style: AppText.body(
+                  12,
+                  weight: FontWeight.w800,
+                  color: AppColors.muted,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (trophies.isEmpty)
+          Text(
+            '매월 개근·얼리버드 1~3등이면 트로피를 받아요 🏆',
+            style: AppText.body(11, color: AppColors.muted),
+          )
+        else
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final t in trophies) _TrophyChip(trophy: t),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _TrophyChip extends StatelessWidget {
+  final Map<String, dynamic> trophy;
+  const _TrophyChip({required this.trophy});
+
+  @override
+  Widget build(BuildContext context) {
+    final rank = (trophy['rank'] as num?)?.toInt() ?? 0;
+    final color = _trophyColor(rank);
+    final month = trophy['month']?.toString() ?? '';
+    final monthNum = month.contains('-')
+        ? int.tryParse(month.split('-').last) ?? 0
+        : 0;
+    final category = trophy['category']?.toString();
+    final categoryLabel = category == 'attendance' ? '개근' : '얼리버드';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.emoji_events_rounded, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            '$monthNum월 $categoryLabel',
+            style: AppText.body(11, weight: FontWeight.w800),
           ),
         ],
       ),

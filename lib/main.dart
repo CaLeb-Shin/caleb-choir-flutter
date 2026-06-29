@@ -177,8 +177,8 @@ class _MainShellState extends ConsumerState<MainShell> {
   final _screens = const [
     HomeScreen(),
     SheetMusicScreen(),
-    VideosScreen(),
     AttendanceScreen(),
+    VideosScreen(),
     CommunityScreen(),
     ProfileScreen(),
   ];
@@ -187,7 +187,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   final _loadedTabs = <int>{};
   bool _openedPreviewSection = false;
 
-  static const _titles = ['홈', '악보&음원', '영상', '출석&투표', '소통', '마이'];
+  static const _titles = ['홈', '악보&음원', '출석&투표', '영상', '소통', '마이'];
 
   // Refresh reference data when the app returns from a long background, so a
   // reopened app isn't showing yesterday's sheet music / announcements. Streams
