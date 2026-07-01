@@ -145,6 +145,7 @@ class HomeScreen extends ConsumerWidget {
                       actionRef,
                       isAdmin: profile.isAdmin,
                       canViewMembers: profile.hasManagePermission,
+                      canViewBilling: profile.isAdmin || profile.isOfficer,
                     ),
                   ),
                 ),
@@ -680,6 +681,7 @@ class HomeScreen extends ConsumerWidget {
     WidgetRef ref, {
     required bool isAdmin,
     required bool canViewMembers,
+    required bool canViewBilling,
   }) {
     // 관리자 pending 개수 (가입 승인 대기)
     final pendingCount = isAdmin
@@ -814,7 +816,7 @@ class HomeScreen extends ConsumerWidget {
             }
           },
         ),
-      if (isAdmin)
+      if (canViewBilling)
         MiniActionTile(
           icon: Icons.workspace_premium_rounded,
           label: '구독',

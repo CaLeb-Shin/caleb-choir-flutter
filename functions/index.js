@@ -12,7 +12,7 @@ const ffmpeg = require("fluent-ffmpeg");
 const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
 const sharp = require("sharp");
 
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
 
 admin.initializeApp();
@@ -1435,4 +1435,47 @@ exports.deleteAccount = onCall(async (request) => {
   }
 
   return { deleted: true };
+});
+
+// Keep churches/{cid}.activeMemberCount in sync with the church's approved,
+// profile-complete members. Runs on any users/{uid} write (create/update/delete)
+// and recomputes for the affected church(es). Count only — no enforcement here.
+exports.updateChurchMemberCount = onDocumentWritten("users/{uid}", async (event) => {
+  const before = event.data && event.data.before ? event.data.before.data() : null;
+  const after = event.data && event.data.after ? event.data.after.data() : null;
+
+  const churchIds = new Set();
+  if (before && before.churchId) churchIds.add(before.churchId);
+  if (after && after.churchId) churchIds.add(after.churchId);
+  if (churchIds.size === 0) return;
+
+  // Only recompute when something that affects the count changed.
+  const relevantChanged =
+    !before ||
+    !after ||
+    before.churchId !== after.churchId ||
+    before.approvalStatus !== after.approvalStatus ||
+    before.profileCompleted !== after.profileCompleted;
+  if (before && after && !relevantChanged) return;
+
+  const db = admin.firestore();
+  for (const cid of churchIds) {
+    const snap = await db
+      .collection("users")
+      .where("churchId", "==", cid)
+      .where("profileCompleted", "==", true)
+      .get();
+    let count = 0;
+    snap.forEach((doc) => {
+      const s = doc.data().approvalStatus;
+      if (s == null || s === "approved") count += 1;
+    });
+    await db.collection("churches").doc(cid).set(
+      {
+        activeMemberCount: count,
+        memberCountUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
 });

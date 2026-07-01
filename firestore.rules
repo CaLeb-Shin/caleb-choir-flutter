@@ -120,10 +120,14 @@ service cloud.firestore {
         && request.resource.data.status == 'pending'
         && request.resource.data.adminUids.size() == 0;
       // 업데이트: platform admin 전권 / church admin은 메타만(status/admin 변경 금지)
+      // 업데이트: platform admin 전권 / church admin은 메타만.
+      // 구독·엔타이틀먼트 필드(plan/blocks/limit/count/status)는 platform admin 전용.
       allow update: if isPlatformAdmin() ||
         (isChurchAdminOf(churchId) &&
          !request.resource.data.diff(resource.data).affectedKeys()
-           .hasAny(['status', 'requestedBy', 'adminUids', 'rejectionReason']));
+           .hasAny(['status', 'requestedBy', 'adminUids', 'rejectionReason',
+                    'plan', 'paidBlocks', 'activeMemberCount', 'sponsoredLimit',
+                    'subscriptionStatus', 'memberCountUpdatedAt']));
       allow delete: if isPlatformAdmin();
     }
 
