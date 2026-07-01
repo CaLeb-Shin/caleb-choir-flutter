@@ -14,6 +14,19 @@ class Church {
   final DateTime? createdAt;
   final DateTime? approvedAt;
 
+  // ── Subscription (member-count based, org-level). See billing plan.
+  final String plan; // 'free' | 'paid' | 'sponsored'
+  final int paidBlocks; // blocks of [blockSize] members purchased
+  final int activeMemberCount; // maintained server-side
+  final int? sponsoredLimit; // 미자립 grant: overrides the derived limit
+  final String
+  subscriptionStatus; // 'none' | 'active' | 'past_due' | 'canceled'
+
+  /// Free tier ceiling and paid block size. Server `config/billing` may tune
+  /// these later; these are the defaults the app reasons with.
+  static const int freeLimit = 50;
+  static const int blockSize = 10;
+
   Church({
     required this.id,
     required this.name,
@@ -29,11 +42,39 @@ class Church {
     this.rejectionReason,
     this.createdAt,
     this.approvedAt,
+    this.plan = 'free',
+    this.paidBlocks = 0,
+    this.activeMemberCount = 0,
+    this.sponsoredLimit,
+    this.subscriptionStatus = 'none',
   });
 
   bool get isPending => status == 'pending';
   bool get isApproved => status == 'approved';
   bool get isRejected => status == 'rejected';
+
+  /// Max approved members allowed: a sponsor grant wins, otherwise free 50 plus
+  /// [blockSize] per purchased block.
+  int get effectiveMemberLimit =>
+      sponsoredLimit ?? (freeLimit + paidBlocks * blockSize);
+
+  /// True once the church is at/over its member allowance (blocks new approvals).
+  bool get isOverMemberLimit => activeMemberCount >= effectiveMemberLimit;
+
+  int get remainingMemberSlots {
+    final left = effectiveMemberLimit - activeMemberCount;
+    return left < 0 ? 0 : left;
+  }
+
+  bool get isSponsored => plan == 'sponsored' || sponsoredLimit != null;
+  bool get isPaidPlan => plan == 'paid' && paidBlocks > 0;
+
+  String get planLabel {
+    if (isSponsored) return '후원';
+    if (isPaidPlan) return '구독';
+    return '무료';
+  }
+
   String get displayName {
     final choir = _effectiveChoirName;
     if (choir == null || choir.isEmpty || choir == name) return name;
@@ -63,6 +104,11 @@ class Church {
       rejectionReason: map['rejectionReason'] as String?,
       createdAt: _parseDate(map['createdAt']),
       approvedAt: _parseDate(map['approvedAt']),
+      plan: (map['plan'] ?? 'free').toString(),
+      paidBlocks: (map['paidBlocks'] as num?)?.toInt() ?? 0,
+      activeMemberCount: (map['activeMemberCount'] as num?)?.toInt() ?? 0,
+      sponsoredLimit: (map['sponsoredLimit'] as num?)?.toInt(),
+      subscriptionStatus: (map['subscriptionStatus'] ?? 'none').toString(),
     );
   }
 

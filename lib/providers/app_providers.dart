@@ -790,6 +790,34 @@ final currentChurchProvider = FutureProvider<Church?>((ref) async {
   return data == null ? null : Church.fromMap(data);
 });
 
+/// 현재 교회의 구독/한도 현황. 서버가 유지하는 activeMemberCount가 아직
+/// 없으면(초기) 실시간 멤버 수로 대체 계산한다.
+class SubscriptionInfo {
+  final Church church;
+  final int activeCount;
+  const SubscriptionInfo({required this.church, required this.activeCount});
+
+  int get limit => church.effectiveMemberLimit;
+  bool get isOver => activeCount >= limit;
+  int get remaining {
+    final left = limit - activeCount;
+    return left < 0 ? 0 : left;
+  }
+
+  String get planLabel => church.planLabel;
+  String get subscriptionStatus => church.subscriptionStatus;
+}
+
+final subscriptionInfoProvider = Provider<SubscriptionInfo?>((ref) {
+  final church = ref.watch(currentChurchProvider).valueOrNull;
+  if (church == null) return null;
+  final liveCount = ref.watch(membersProvider).valueOrNull?.length ?? 0;
+  final count = church.activeMemberCount > 0
+      ? church.activeMemberCount
+      : liveCount;
+  return SubscriptionInfo(church: church, activeCount: count);
+});
+
 /// 승인된 교회 검색 (ChurchSearchScreen용). query 변경 시 자동 재조회.
 final churchSearchProvider = FutureProvider.family<List<Church>, String>((
   ref,
@@ -884,18 +912,19 @@ final sessionAttendeesProvider =
 
 /// 내가 받은 월간 트로피 목록 — 마이 화면 동기부여용. 각 항목:
 /// {month:'YYYY-MM', category:'attendance'|'earlybird', rank:1~3}
-final myMonthlyTrophiesProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
-      if (ref.watch(localPreviewModeProvider)) {
-        return const [
-          {'month': '2026-05', 'category': 'attendance', 'rank': 1},
-          {'month': '2026-05', 'category': 'earlybird', 'rank': 2},
-          {'month': '2026-04', 'category': 'earlybird', 'rank': 1},
-          {'month': '2026-03', 'category': 'attendance', 'rank': 3},
-        ];
-      }
-      return FirebaseService.getMyMonthlyTrophies();
-    });
+final myMonthlyTrophiesProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
+  if (ref.watch(localPreviewModeProvider)) {
+    return const [
+      {'month': '2026-05', 'category': 'attendance', 'rank': 1},
+      {'month': '2026-05', 'category': 'earlybird', 'rank': 2},
+      {'month': '2026-04', 'category': 'earlybird', 'rank': 1},
+      {'month': '2026-03', 'category': 'attendance', 'rank': 3},
+    ];
+  }
+  return FirebaseService.getMyMonthlyTrophies();
+});
 
 final recentSessionsProvider = FutureProvider<List<Map<String, dynamic>>>((
   ref,
@@ -1037,22 +1066,21 @@ final myHarmonyPracticeSubmissionsProvider =
 
 // Part leader's review queue: every practice take submitted by their part.
 // Empty for everyone who isn't a part leader.
-final partPracticeReviewProvider =
-    StreamProvider<List<Map<String, dynamic>>>((ref) {
-      final profile = ref.watch(profileProvider).valueOrNull;
-      final isLeader = profile?.isPartLeader ?? false;
-      final part = profile?.partLeaderFor ?? profile?.part ?? '';
-      if (!isLeader || part.isEmpty) return Stream.value(const []);
-      if (ref.watch(localPreviewModeProvider)) {
-        final submissions = ref.watch(
-          previewHarmonyPracticeSubmissionsProvider,
-        );
-        return Stream.value(
-          submissions.where((item) => item['part'] == part).toList(),
-        );
-      }
-      return FirebaseService.watchPartPracticeSubmissions(part: part);
-    });
+final partPracticeReviewProvider = StreamProvider<List<Map<String, dynamic>>>((
+  ref,
+) {
+  final profile = ref.watch(profileProvider).valueOrNull;
+  final isLeader = profile?.isPartLeader ?? false;
+  final part = profile?.partLeaderFor ?? profile?.part ?? '';
+  if (!isLeader || part.isEmpty) return Stream.value(const []);
+  if (ref.watch(localPreviewModeProvider)) {
+    final submissions = ref.watch(previewHarmonyPracticeSubmissionsProvider);
+    return Stream.value(
+      submissions.where((item) => item['part'] == part).toList(),
+    );
+  }
+  return FirebaseService.watchPartPracticeSubmissions(part: part);
+});
 
 final postProvider = StreamProvider.family<Map<String, dynamic>?, String>((
   ref,

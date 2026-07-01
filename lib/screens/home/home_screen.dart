@@ -16,6 +16,7 @@ import '../videos/videos_screen.dart';
 import '../polls/polls_screen.dart';
 import '../admin/members_screen.dart';
 import '../admin/approvals_screen.dart';
+import '../admin/subscription_screen.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
 import '../../widgets/app_logo_title.dart';
 import '../../widgets/mini_action_tile.dart';
@@ -812,6 +813,16 @@ class HomeScreen extends ConsumerWidget {
               );
             }
           },
+        ),
+      if (isAdmin)
+        MiniActionTile(
+          icon: Icons.workspace_premium_rounded,
+          label: '구독',
+          tone: 'secondary',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+          ),
         ),
       MiniActionTile(
         icon: Icons.storefront_rounded,
