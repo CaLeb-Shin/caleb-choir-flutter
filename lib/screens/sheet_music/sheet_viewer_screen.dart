@@ -251,21 +251,21 @@ class _SheetAudioBarState extends State<_SheetAudioBar> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(26),
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+            // Light blur + low tint: the score behind stays readable through it.
+            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
             child: Container(
               decoration: BoxDecoration(
-                // Liquid-glass: very translucent so the score reads through.
-                color: Colors.white.withValues(alpha: 0.5),
+                color: Colors.white.withValues(alpha: 0.28),
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.55),
+                  color: Colors.white.withValues(alpha: 0.45),
                   width: 1,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
+                    color: AppColors.primary.withValues(alpha: 0.16),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
                   ),
                 ],
               ),
