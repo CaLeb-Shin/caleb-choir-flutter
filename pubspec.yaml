@@ -41,6 +41,7 @@ dependencies:
   record: ^6.2.0
   audioplayers: ^6.1.0
   pdfrx: ^2.4.4
+  sign_in_with_apple: ^8.1.0
 
 dev_dependencies:
   flutter_test:

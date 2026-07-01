@@ -1,8 +1,10 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
@@ -38,6 +40,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!kIsWeb) return false;
     return Uri.base.host == 'localhost' || Uri.base.host == '127.0.0.1';
   }
+
+  // Apple requires "Sign in with Apple" alongside other social logins on its
+  // platforms (App Store guideline 4.8). Shown on iOS/macOS only.
+  bool get _showApple =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
 
   GoogleSignIn _googleSignIn() {
     return GoogleSignIn(clientId: kIsWeb ? _webGoogleClientId : null);
@@ -316,6 +325,52 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  Future<void> _handleAppleSignIn() async {
+    setState(() {
+      _error = null;
+      _loading = true;
+      _loadingProvider = 'apple';
+    });
+    try {
+      await _applyAuthPersistence();
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      final oauthCredential = OAuthProvider('apple.com').credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+      await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+      await _afterSuccessfulSignIn('apple');
+    } on SignInWithAppleAuthorizationException catch (e) {
+      // Silent when the user cancels the native sheet.
+      if (e.code != AuthorizationErrorCode.canceled) {
+        debugPrint('Apple sign-in error: $e');
+        setState(() => _error = 'Apple 로그인에 실패했습니다.\n다시 시도해주세요.');
+      }
+    } on FirebaseAuthException catch (e) {
+      debugPrint('Apple sign-in error: $e');
+      setState(
+        () => _error = e.code == 'operation-not-allowed'
+            ? 'Firebase에서 Apple 로그인이 아직 활성화되지 않았습니다.\nAuthentication > Sign-in method에서 Apple을 켜주세요.'
+            : 'Apple 로그인에 실패했습니다.\n다시 시도해주세요.',
+      );
+    } catch (e) {
+      debugPrint('Apple sign-in error: $e');
+      setState(() => _error = 'Apple 로그인에 실패했습니다.\n다시 시도해주세요.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadingProvider = null;
+        });
+      }
+    }
+  }
+
   Future<void> _handleKakaoSignIn() async {
     setState(() {
       _error = null;
@@ -517,6 +572,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       color: AppColors.error,
                       fontSize: 13,
                       height: 1.4,
+                    ),
+                  ),
+                ),
+
+              // Apple — iOS/macOS only (App Store guideline 4.8)
+              if (_showApple)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _loading ? null : _handleAppleSignIn,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.black,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: _loading && _loadingProvider == 'apple'
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : _loginButtonContent(
+                              provider: 'apple',
+                              logo: const Icon(
+                                Icons.apple,
+                                size: 24,
+                                color: Colors.white,
+                              ),
+                              label: 'Apple로 시작하기',
+                              markerColor: Colors.white,
+                              markerBackgroundColor: Colors.white.withValues(
+                                alpha: 0.18,
+                              ),
+                            ),
                     ),
                   ),
                 ),
