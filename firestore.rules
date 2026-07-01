@@ -535,5 +535,22 @@ service cloud.firestore {
           )
         );
     }
+
+    // ── Billing / subscription ──
+    // Pricing config (config/billing): any admin reads; only platform admin writes.
+    match /config/{doc} {
+      allow read: if isSignedIn();
+      allow write: if isPlatformAdmin();
+    }
+    // Per-church billing secrets (PG billing key etc.): platform admin / server only.
+    match /billing/{cid} {
+      allow read, write: if isPlatformAdmin();
+    }
+    // Payment history: platform admin reads/writes; a church admin may read own.
+    match /payments/{id} {
+      allow read: if isPlatformAdmin() ||
+        (isSignedIn() && isChurchAdminOf(resource.data.get('churchId', '')));
+      allow write: if isPlatformAdmin();
+    }
   }
 }
