@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'firebase_options.dart';
 import 'config/feature_flags.dart';
 import 'services/firebase_service.dart';
@@ -43,11 +44,18 @@ void main() async {
     // lock; native platforms keep full offline persistence.
     persistenceEnabled: !kIsWeb,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+    // Some networks / local security software (e.g. nProtect) break Firestore's
+    // streaming WebChannel, so real-time listeners error out and lists never
+    // load. Auto-detect falls back to long-polling only when that happens.
+    webExperimentalAutoDetectLongPolling: true,
   );
   await cachedProfileWarm;
   runApp(const ProviderScope(child: CalebChoirApp()));
 
   unawaited(_initializeNotifications());
+  // Warm the PDF engine (pdfium ~2.4MB) in the background so the first sheet
+  // opens without waiting on that download.
+  unawaited(pdfrxFlutterInitialize());
 }
 
 Future<void> _initializeNotifications() async {
