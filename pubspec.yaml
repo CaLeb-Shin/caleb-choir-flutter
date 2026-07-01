@@ -69,3 +69,11 @@ flutter:
           weight: 800
         - asset: assets/fonts/inter/Inter-900.ttf
           weight: 900
+    # Korean glyphs — bundled so the web build renders Hangul without a runtime
+    # font download (which a proxy / security software can block → tofu).
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/pretendard/Pretendard-Regular.otf
+          weight: 400
+        - asset: assets/fonts/pretendard/Pretendard-Bold.otf
+          weight: 700

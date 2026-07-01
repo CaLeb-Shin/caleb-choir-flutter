@@ -50,6 +50,11 @@ class AppText {
     'Apple Color Emoji',
     'Segoe UI Emoji',
     'Noto Color Emoji',
+    // Pretendard is bundled (see pubspec `fonts:`), so Korean glyphs render on
+    // web (CanvasKit) from the app itself — no runtime Noto download that a
+    // proxy / security software could block, which was leaving some syllables
+    // as tofu (□). The system fonts below still cover native platforms.
+    'Pretendard',
     'Apple SD Gothic Neo',
     'Noto Sans CJK KR',
     'Noto Sans KR',
