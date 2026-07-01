@@ -13,6 +13,7 @@ import '../harmony_chat/harmony_chat_development_screen.dart';
 import '../harmony_chat/harmony_chat_screen.dart';
 import '../sheet_music/sheet_music_screen.dart';
 import '../videos/videos_screen.dart';
+import '../polls/polls_screen.dart';
 import '../admin/members_screen.dart';
 import '../admin/approvals_screen.dart';
 import '../../widgets/app_bottom_nav_bar.dart';
@@ -243,8 +244,7 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _scheduleSection(BuildContext context, WidgetRef ref) {
     final allEvents =
-        ref.watch(eventsProvider).valueOrNull ??
-        const <Map<String, dynamic>>[];
+        ref.watch(eventsProvider).valueOrNull ?? const <Map<String, dynamic>>[];
     final polls =
         ref.watch(pollsProvider).valueOrNull ?? const <Map<String, dynamic>>[];
     final seatingCharts =
@@ -258,13 +258,12 @@ class HomeScreen extends ConsumerWidget {
     final today = DateTime(now.year, now.month, now.day);
     final upcomingEvents =
         allEvents.where((e) {
-          final parsed = _eventDateTime(e);
-          if (parsed == null) return false;
-          final eventDay = DateTime(parsed.year, parsed.month, parsed.day);
-          return !eventDay.isBefore(today);
-        }).toList()..sort(
-          (a, b) => _eventDateTime(a)!.compareTo(_eventDateTime(b)!),
-        );
+            final parsed = _eventDateTime(e);
+            if (parsed == null) return false;
+            final eventDay = DateTime(parsed.year, parsed.month, parsed.day);
+            return !eventDay.isBefore(today);
+          }).toList()
+          ..sort((a, b) => _eventDateTime(a)!.compareTo(_eventDateTime(b)!));
     final weeklySchedules = _weeklyScheduleItems(
       upcomingEvents: upcomingEvents,
       polls: polls,
@@ -298,6 +297,7 @@ class HomeScreen extends ConsumerWidget {
         child: weeklySchedules.isNotEmpty
             ? _WeeklyScheduleCard(
                 schedules: weeklySchedules,
+                onVote: (item) => _openPollForSchedule(context, item),
                 onAttendance: (item) =>
                     _openAttendanceForSchedule(context, item),
                 onSeat: (item) => _openSeatForSchedule(
@@ -360,9 +360,7 @@ class HomeScreen extends ConsumerWidget {
       children: [
         Row(
           children: [
-            Expanded(
-              child: Text('이번 주 업로드', style: AppText.headline(18)),
-            ),
+            Expanded(child: Text('이번 주 업로드', style: AppText.headline(18))),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
@@ -407,12 +405,8 @@ class HomeScreen extends ConsumerWidget {
                   title: v['title'] ?? '',
                   sub: '영상',
                   color: AppColors.secondary,
-                  onTap: () => _openSection(
-                    context,
-                    '영상',
-                    const VideosScreen(),
-                    navIndex: 0,
-                  ),
+                  onTap: () =>
+                      _openSection(context, '영상', const VideosScreen()),
                 ),
               ),
             ],
@@ -617,6 +611,23 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  void _openPollForSchedule(BuildContext context, _WeeklyScheduleItem item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _BackableSectionScreen(
+          title: '투표',
+          navIndex: 3,
+          child: PollsScreen(
+            initialPollId: item.pollId,
+            initialTargetDate: item.targetDate,
+            initialTitle: item.title,
+          ),
+        ),
+      ),
+    );
+  }
+
   void _openAttendanceForSchedule(
     BuildContext context,
     _WeeklyScheduleItem item,
@@ -624,14 +635,10 @@ class HomeScreen extends ConsumerWidget {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => _BackableSectionScreen(
-          title: '출석&투표',
-          navIndex: 3,
-          child: AttendanceScreen(
-            initialPollId: item.pollId,
-            initialTargetDate: item.targetDate,
-            initialTitle: item.title,
-          ),
+        builder: (_) => const _BackableSectionScreen(
+          title: '출석',
+          navIndex: 2,
+          child: AttendanceScreen(),
         ),
       ),
     );
@@ -719,14 +726,17 @@ class HomeScreen extends ConsumerWidget {
     final items = <Widget>[
       MiniActionTile(
         icon: Icons.qr_code_rounded,
-        label: '출석&투표',
-        hasNew: hasOpenAttendance || hasNewPolls,
-        onTap: () => _openSection(
-          context,
-          '출석&투표',
-          const AttendanceScreen(),
-          navIndex: 3,
-        ),
+        label: '출석',
+        hasNew: hasOpenAttendance,
+        onTap: () =>
+            _openSection(context, '출석', const AttendanceScreen(), navIndex: 2),
+      ),
+      MiniActionTile(
+        icon: Icons.how_to_vote_rounded,
+        label: '투표',
+        hasNew: hasNewPolls,
+        onTap: () =>
+            _openSection(context, '투표', const PollsScreen(), navIndex: 3),
       ),
       MiniActionTile(
         icon: Icons.grid_view_rounded,
@@ -753,8 +763,7 @@ class HomeScreen extends ConsumerWidget {
         icon: Icons.play_circle_rounded,
         label: '영상',
         hasNew: hasNewVideos,
-        onTap: () =>
-            _openSection(context, '영상', const VideosScreen(), navIndex: 2),
+        onTap: () => _openSection(context, '영상', const VideosScreen()),
       ),
       MiniActionTile(
         icon: Icons.chat_bubble_rounded,
@@ -1029,6 +1038,37 @@ class _WeeklyScheduleItem {
   bool get canOpenPoll =>
       (pollId?.isNotEmpty ?? false) || (targetDate?.isNotEmpty ?? false);
 
+  bool get hasPoll => pollId?.isNotEmpty ?? false;
+
+  /// The schedule's date (date-only), parsed from [targetDate].
+  DateTime? get _date {
+    final raw = targetDate?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    final parsed = DateTime.tryParse(raw);
+    if (parsed != null) return DateTime(parsed.year, parsed.month, parsed.day);
+    final m = RegExp(r'(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(raw);
+    if (m != null) {
+      return DateTime(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!));
+    }
+    return null;
+  }
+
+  /// True only on the schedule's own date — gates the day-only 출석 button.
+  bool get isToday {
+    final d = _date;
+    if (d == null) return false;
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
+  /// True once the schedule date has passed — closes the 투표 window.
+  bool get isPast {
+    final d = _date;
+    if (d == null) return false;
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day).isAfter(d);
+  }
+
   factory _WeeklyScheduleItem.fromEvent(
     Map<String, dynamic> event, {
     Map<String, dynamic>? poll,
@@ -1089,12 +1129,14 @@ class _WeeklyScheduleItem {
 
 class _WeeklyScheduleCard extends StatelessWidget {
   final List<_WeeklyScheduleItem> schedules;
+  final void Function(_WeeklyScheduleItem item)? onVote;
   final void Function(_WeeklyScheduleItem item)? onAttendance;
   final void Function(_WeeklyScheduleItem item)? onSeat;
   final VoidCallback onDetails;
 
   const _WeeklyScheduleCard({
     required this.schedules,
+    required this.onVote,
     required this.onAttendance,
     required this.onSeat,
     required this.onDetails,
@@ -1136,7 +1178,15 @@ class _WeeklyScheduleCard extends StatelessWidget {
         for (var i = 0; i < schedules.length; i++) ...[
           _WeeklyScheduleRow(
             item: schedules[i],
-            onAttendance: onAttendance == null || !schedules[i].needsAttendance
+            // 투표: 일정 당일까지(당일 자정 전) 노출. 출석: 일정 당일에만 노출.
+            onVote:
+                onVote == null || !schedules[i].hasPoll || schedules[i].isPast
+                ? null
+                : () => onVote!(schedules[i]),
+            onAttendance:
+                onAttendance == null ||
+                    !schedules[i].needsAttendance ||
+                    !schedules[i].isToday
                 ? null
                 : () => onAttendance!(schedules[i]),
             onSeat: onSeat == null || !schedules[i].needsSeating
@@ -1185,11 +1235,13 @@ class _WeeklyScheduleCard extends StatelessWidget {
 
 class _WeeklyScheduleRow extends StatelessWidget {
   final _WeeklyScheduleItem item;
+  final VoidCallback? onVote;
   final VoidCallback? onAttendance;
   final VoidCallback? onSeat;
 
   const _WeeklyScheduleRow({
     required this.item,
+    this.onVote,
     this.onAttendance,
     this.onSeat,
   });
@@ -1262,10 +1314,14 @@ class _WeeklyScheduleRow extends StatelessWidget {
               ],
             ),
           ),
-          if (onAttendance != null || onSeat != null) ...[
+          if (onVote != null || onAttendance != null || onSeat != null) ...[
             const SizedBox(width: 8),
             Column(
               children: [
+                if (onVote != null)
+                  _scheduleButton(label: '투표', onTap: onVote!, filled: true),
+                if (onVote != null && (onAttendance != null || onSeat != null))
+                  const SizedBox(height: 5),
                 if (onAttendance != null)
                   _scheduleButton(
                     label: '출석',

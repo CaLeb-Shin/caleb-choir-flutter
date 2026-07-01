@@ -16,8 +16,8 @@ class AppBottomNavBar extends ConsumerWidget {
   static const _items = [
     (_NavGlyph.home, '홈'),
     (_NavGlyph.score, '악보&음원'),
-    (_NavGlyph.attendance, '출석&투표'),
-    (_NavGlyph.video, '영상'),
+    (_NavGlyph.attendance, '출석'),
+    (_NavGlyph.vote, '투표'),
     (_NavGlyph.community, '소통'),
     (_NavGlyph.profile, '마이'),
   ];
@@ -164,7 +164,7 @@ class AppBottomNavBar extends ConsumerWidget {
   }
 }
 
-enum _NavGlyph { home, score, video, attendance, community, profile }
+enum _NavGlyph { home, score, video, attendance, vote, community, profile }
 
 class _CalebNavGlyph extends StatelessWidget {
   final _NavGlyph glyph;
@@ -295,6 +295,24 @@ class _CalebNavGlyphPainter extends CustomPainter {
           ..lineTo(w * 0.66, h * 0.54);
         canvas.drawPath(check, stroke);
         canvas.drawCircle(p(0.72, 0.30), w * 0.045, accent);
+      case _NavGlyph.vote:
+        // Ballot box with a ballot (check) dropping into the slot.
+        final box = RRect.fromRectAndRadius(
+          Rect.fromLTWH(w * 0.20, h * 0.48, w * 0.60, h * 0.34),
+          Radius.circular(w * 0.09),
+        );
+        canvas.drawRRect(box, stroke);
+        final ballot = RRect.fromRectAndRadius(
+          Rect.fromLTWH(w * 0.38, h * 0.16, w * 0.34, h * 0.30),
+          Radius.circular(w * 0.05),
+        );
+        canvas.drawRRect(ballot, stroke);
+        final voteCheck = Path()
+          ..moveTo(w * 0.45, h * 0.30)
+          ..lineTo(w * 0.52, h * 0.37)
+          ..lineTo(w * 0.65, h * 0.23);
+        canvas.drawPath(voteCheck, stroke);
+        canvas.drawCircle(p(0.74, 0.30), w * 0.045, accent);
       case _NavGlyph.community:
         final bubble = RRect.fromRectAndRadius(
           Rect.fromLTWH(w * 0.18, h * 0.24, w * 0.64, h * 0.46),

@@ -24,7 +24,7 @@ import 'screens/harmony_chat/harmony_chat_development_screen.dart';
 import 'screens/harmony_chat/harmony_chat_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/sheet_music/sheet_music_screen.dart';
-import 'screens/videos/videos_screen.dart';
+import 'screens/polls/polls_screen.dart';
 import 'widgets/app_bottom_nav_bar.dart';
 import 'widgets/app_logo_title.dart';
 import 'widgets/caleb_logo_loader.dart';
@@ -178,7 +178,7 @@ class _MainShellState extends ConsumerState<MainShell> {
     HomeScreen(),
     SheetMusicScreen(),
     AttendanceScreen(),
-    VideosScreen(),
+    PollsScreen(),
     CommunityScreen(),
     ProfileScreen(),
   ];
@@ -187,7 +187,7 @@ class _MainShellState extends ConsumerState<MainShell> {
   final _loadedTabs = <int>{};
   bool _openedPreviewSection = false;
 
-  static const _titles = ['홈', '악보&음원', '출석&투표', '영상', '소통', '마이'];
+  static const _titles = ['홈', '악보&음원', '출석', '투표', '소통', '마이'];
 
   // Refresh reference data when the app returns from a long background, so a
   // reopened app isn't showing yesterday's sheet music / announcements. Streams

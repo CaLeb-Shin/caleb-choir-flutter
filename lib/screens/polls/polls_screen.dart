@@ -4,8 +4,31 @@ import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
 import '../../models/user.dart' show User;
-import '../../widgets/app_bottom_nav_bar.dart';
-import '../../widgets/app_logo_title.dart';
+
+/// Parses a poll's `targetDate` (typically `YYYY-MM-DD`) into a date-only value.
+DateTime? pollTargetDate(Map<String, dynamic> poll) {
+  final raw = poll['targetDate']?.toString().trim();
+  if (raw == null || raw.isEmpty) return null;
+  final parsed = DateTime.tryParse(raw);
+  if (parsed != null) return DateTime(parsed.year, parsed.month, parsed.day);
+  final m = RegExp(r'(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(raw);
+  if (m != null) {
+    return DateTime(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!));
+  }
+  return null;
+}
+
+/// A poll can be voted on while its `isOpen` flag is true AND today is on or
+/// before its target date. Past the target day it auto-locks (treated as
+/// closed) even if the stored flag is still open.
+bool isPollVotable(Map<String, dynamic> poll) {
+  if (poll['isOpen'] != true) return false;
+  final date = pollTargetDate(poll);
+  if (date == null) return true;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  return !today.isAfter(date);
+}
 
 class PollsScreen extends ConsumerStatefulWidget {
   final String? initialPollId;
@@ -42,75 +65,74 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
         ref.watch(effectiveHasManagePermissionProvider) ||
         ref.watch(effectiveIsPartLeaderProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: AppLogoTitle(title: '참석 투표', textStyle: AppText.headline(20)),
-        actions: [
-          if (canCreate)
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded),
-              onPressed: () => _showCreateDialog(context, profile),
-            ),
-        ],
-      ),
-      bottomNavigationBar: const AppBottomNavBar(),
-      body: pollsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('오류: $e')),
-        data: (polls) {
-          final userPart = profile?.part;
-          final isAdmin = profile?.isAdmin ?? false;
-          final filtered = polls
-              .where((p) {
-                if (isAdmin) return true;
-                final scope = p['scopePart'];
-                return scope == null || scope == userPart;
-              })
-              .where(
-                (p) => _showOpen ? p['isOpen'] == true : p['isOpen'] != true,
-              )
-              .toList();
-          if (!_initialSelectionApplied && filtered.isNotEmpty) {
-            _selectedPollId ??= _initialMatchingPollId(filtered);
-            _initialSelectionApplied = true;
-          }
-          final selectedPollId = _selectedPollId;
+    return pollsAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('오류: $e')),
+      data: (polls) {
+        final userPart = profile?.part;
+        final isAdmin = profile?.isAdmin ?? false;
+        final filtered = polls
+            .where((p) {
+              if (isAdmin) return true;
+              final scope = p['scopePart'];
+              return scope == null || scope == userPart;
+            })
+            .where((p) {
+              final votable = isPollVotable(p);
+              return _showOpen ? votable : !votable;
+            })
+            .toList();
+        if (!_initialSelectionApplied && filtered.isNotEmpty) {
+          _selectedPollId ??= _initialMatchingPollId(filtered);
+          _initialSelectionApplied = true;
+        }
+        final selectedPollId = _selectedPollId;
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: Row(
-                  children: [
-                    _tabChip(
-                      '진행 중',
-                      _showOpen,
-                      () => setState(() => _showOpen = true),
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  _tabChip(
+                    '진행 중',
+                    _showOpen,
+                    () => setState(() => _showOpen = true),
+                  ),
+                  const SizedBox(width: 8),
+                  _tabChip(
+                    '마감됨',
+                    !_showOpen,
+                    () => setState(() => _showOpen = false),
+                  ),
+                  const Spacer(),
+                  if (canCreate)
+                    TextButton.icon(
+                      onPressed: () => _showCreateDialog(context, profile),
+                      icon: const Icon(
+                        Icons.add_circle_outline_rounded,
+                        size: 18,
+                      ),
+                      label: const Text('투표 만들기'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
                     ),
-                    const SizedBox(width: 8),
-                    _tabChip(
-                      '마감됨',
-                      !_showOpen,
-                      () => setState(() => _showOpen = false),
-                    ),
-                  ],
-                ),
+                ],
               ),
-              Expanded(
-                child: filtered.isEmpty
-                    ? Center(
-                        child: Text(
-                          _showOpen ? '진행 중인 투표가 없습니다' : '마감된 투표가 없습니다',
-                          style: AppText.body(14, color: AppColors.muted),
-                        ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: () async =>
-                            ref.invalidate(pollVotesProvider),
-                        child: ListView.builder(
+            ),
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        _showOpen ? '진행 중인 투표가 없습니다' : '마감된 투표가 없습니다',
+                        style: AppText.body(14, color: AppColors.muted),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: () async => ref.invalidate(pollVotesProvider),
+                      child: ListView.builder(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(16),
                         itemCount: filtered.length,
@@ -130,12 +152,11 @@ class _PollsScreenState extends ConsumerState<PollsScreen> {
                           onClose: () => _handleClose(filtered[i]['id']),
                         ),
                       ),
-                      ),
-              ),
-            ],
-          );
-        },
-      ),
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -344,7 +365,9 @@ class _PollCardState extends ConsumerState<_PollCard> {
   Widget build(BuildContext context) {
     final poll = widget.poll;
     final profile = widget.profile;
-    final isOpen = poll['isOpen'] == true;
+    // Auto-locks once the target date has passed, even if the stored flag is
+    // still open — voting stays available through the target day's midnight.
+    final isOpen = isPollVotable(poll);
     final scopePart = poll['scopePart'] as String?;
     final scopeLabel = scopePart != null
         ? '${User.partLabels[scopePart] ?? scopePart} 파트'

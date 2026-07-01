@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../theme/app_theme.dart';
 import '../../providers/app_providers.dart';
 import '../../services/firebase_service.dart';
+import 'sheet_viewer_screen.dart';
 
 class SheetMusicScreen extends ConsumerWidget {
   const SheetMusicScreen({super.key});
@@ -22,73 +22,73 @@ class SheetMusicScreen extends ConsumerWidget {
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate.fixed([
-              Row(
-                children: [
-                  Expanded(child: Text('악보&음원', style: AppText.headline(28))),
-                  if (isAdmin)
-                    IconButton(
-                      onPressed: () => _showAddDialog(context, ref),
-                      icon: const Icon(
-                        Icons.add_circle_rounded,
-                        color: AppColors.secondary,
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate.fixed([
+                Row(
+                  children: [
+                    Expanded(child: Text('악보&음원', style: AppText.headline(28))),
+                    if (isAdmin)
+                      IconButton(
+                        onPressed: () => _showAddDialog(context, ref),
+                        icon: const Icon(
+                          Icons.add_circle_rounded,
+                          color: AppColors.secondary,
+                        ),
+                        tooltip: '악보&음원 추가',
                       ),
-                      tooltip: '악보&음원 추가',
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '악보를 보면서 파트 음원을 함께 연습하세요',
-                style: AppText.body(14, color: AppColors.muted),
-              ),
-              const SizedBox(height: 24),
-            ]),
-          ),
-        ),
-        sheetMusicAsync.when(
-          loading: () => const SliverToBoxAdapter(
-            child: Center(
-              child: Padding(
-                padding: EdgeInsets.all(60),
-                child: CircularProgressIndicator(),
-              ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '악보를 보면서 파트 음원을 함께 연습하세요',
+                  style: AppText.body(14, color: AppColors.muted),
+                ),
+                const SizedBox(height: 24),
+              ]),
             ),
           ),
-          error: (error, stackTrace) => const SliverToBoxAdapter(
-            child: Center(child: Text('악보를 불러올 수 없습니다')),
-          ),
-          data: (sheets) {
-            if (sheets.isEmpty) {
-              return const SliverPadding(
-                padding: EdgeInsets.fromLTRB(20, 0, 20, 40),
-                sliver: SliverToBoxAdapter(child: _EmptySheetMusicPanel()),
-              );
-            }
-            final groups = _groupSheetMusic(sheets);
-            return SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate((context, index) {
-                  final group = groups[index];
-                  return _SheetMusicCard(
-                    group: group,
-                    isAdmin: isAdmin,
-                    onDelete: () async {
-                      for (final sheet in group.items) {
-                        await FirebaseService.deleteSheetMusic(sheet['id']);
-                      }
-                      ref.invalidate(sheetMusicProvider);
-                    },
-                  );
-                }, childCount: groups.length),
+          sheetMusicAsync.when(
+            loading: () => const SliverToBoxAdapter(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(60),
+                  child: CircularProgressIndicator(),
+                ),
               ),
-            );
-          },
-        ),
+            ),
+            error: (error, stackTrace) => const SliverToBoxAdapter(
+              child: Center(child: Text('악보를 불러올 수 없습니다')),
+            ),
+            data: (sheets) {
+              if (sheets.isEmpty) {
+                return const SliverPadding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 40),
+                  sliver: SliverToBoxAdapter(child: _EmptySheetMusicPanel()),
+                );
+              }
+              final groups = _groupSheetMusic(sheets);
+              return SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 40),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final group = groups[index];
+                    return _SheetMusicCard(
+                      group: group,
+                      isAdmin: isAdmin,
+                      onDelete: () async {
+                        for (final sheet in group.items) {
+                          await FirebaseService.deleteSheetMusic(sheet['id']);
+                        }
+                        ref.invalidate(sheetMusicProvider);
+                      },
+                    );
+                  }, childCount: groups.length),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -193,14 +193,6 @@ class SheetMusicScreen extends ConsumerWidget {
       },
     );
   }
-
-  static Future<void> _openUrl(dynamic rawUrl) async {
-    final url = rawUrl?.toString();
-    if (url == null || url.isEmpty) return;
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
-  }
 }
 
 List<Map<String, dynamic>> _lyricsTimelineFromText(String text) {
@@ -285,6 +277,7 @@ class _PartResource {
   final String sheetLabel;
   final String? sheetUrl;
   final String? audioUrl;
+  final String? mrAudioUrl;
 
   const _PartResource({
     required this.partKey,
@@ -292,6 +285,7 @@ class _PartResource {
     required this.sheetLabel,
     this.sheetUrl,
     this.audioUrl,
+    this.mrAudioUrl,
   });
 
   bool get hasSheet => sheetUrl != null && sheetUrl!.isNotEmpty;
@@ -374,6 +368,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
         sheetLabel: part == 'all' ? '총보 보기' : '악보 보기',
         sheetUrl: _stringValue(sheet['fileUrl']),
         audioUrl: _stringValue(sheet['audioUrl']),
+        mrAudioUrl: _stringValue(sheet['mrAudioUrl']),
       );
     }).toList();
   }
@@ -385,11 +380,13 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
       sheetLabel: '총보 보기',
       sheetUrl: mainSheetUrl,
       audioUrl: mainAudioUrl,
+      mrAudioUrl: _stringValue(main['mrAudioUrl']),
     ),
     ..._choirPartOrder.map((part) {
       final files = _mapValue(partFiles[part['value']]);
       final partSheetUrl = _stringValue(files['sheetUrl']);
       final partAudioUrl = _stringValue(files['guideAudioUrl']);
+      final partMrUrl = _stringValue(files['mrAudioUrl']);
       final hasPartSheet = partSheetUrl.isNotEmpty;
 
       return _PartResource(
@@ -398,6 +395,7 @@ List<_PartResource> _resourcesForGroup(_SheetMusicGroup group) {
         sheetLabel: hasPartSheet ? '파트 악보' : '총보 보기',
         sheetUrl: hasPartSheet ? partSheetUrl : mainSheetUrl,
         audioUrl: partAudioUrl,
+        mrAudioUrl: partMrUrl,
       );
     }),
   ];
@@ -473,34 +471,33 @@ class _EmptySheetMusicPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 58),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF6),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1D6BE)),
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
       ),
-      child: Stack(
-        alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Positioned.fill(
-            child: CustomPaint(painter: _StaffPaperPainter()),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.asset(
+              'assets/images/icon.png',
+              width: 64,
+              height: 64,
+              fit: BoxFit.cover,
+            ),
           ),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _ScoreCoverBadge(),
-              const SizedBox(height: 14),
-              Text(
-                '등록된 악보&음원이 없습니다',
-                style: AppText.body(16, weight: FontWeight.w800),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                '관리자가 업로드하면 여기에 표시됩니다',
-                style: AppText.body(13, color: AppColors.muted),
-              ),
-            ],
+          const SizedBox(height: 14),
+          Text(
+            '등록된 악보&음원이 없습니다',
+            style: AppText.body(16, weight: FontWeight.w800),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            '관리자가 업로드하면 여기에 표시됩니다',
+            style: AppText.body(13, color: AppColors.muted),
           ),
         ],
       ),
@@ -556,6 +553,25 @@ class _SheetMusicCardState extends State<_SheetMusicCard> {
     setState(() => _expanded = !_expanded);
   }
 
+  void _openViewer(
+    BuildContext context,
+    _PartResource res, {
+    required bool withSheet,
+    required bool withAudio,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SheetViewerScreen(
+          title: widget.group.songTitle,
+          partLabel: res.partLabel,
+          sheetUrl: withSheet ? res.sheetUrl : null,
+          guideAudioUrl: withAudio ? res.audioUrl : null,
+          mrAudioUrl: withAudio ? res.mrAudioUrl : null,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final group = widget.group;
@@ -568,183 +584,183 @@ class _SheetMusicCardState extends State<_SheetMusicCard> {
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF6),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE1D6BE)),
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.07),
-            blurRadius: 22,
-            offset: const Offset(0, 12),
+            color: AppColors.primary.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: CustomPaint(painter: _StaffPaperPainter()),
-          ),
-          Positioned(
-            top: 0,
-            bottom: 0,
-            left: 0,
-            child: Container(width: 6, color: AppColors.primary),
-          ),
-          const Positioned(
-            top: 0,
-            right: 0,
-            child: SizedBox(
-              width: 34,
-              height: 34,
-              child: CustomPaint(painter: _FoldedCornerPainter()),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 16, 16),
-            child: Column(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: _toggle,
-                        behavior: HitTestBehavior.opaque,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const _ScoreCoverBadge(),
-                            const SizedBox(width: 13),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    group.dateLabel,
-                                    style: AppText.body(
-                                      12,
-                                      weight: FontWeight.w900,
-                                      color: AppColors.secondary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    group.songTitle,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppText.body(
-                                      18,
-                                      weight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  if (group.composer.isNotEmpty) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      group.composer,
-                                      style: AppText.body(
-                                        13,
-                                        color: AppColors.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (_isPast)
-                      IconButton(
-                        onPressed: _toggle,
-                        icon: Icon(
-                          _expanded
-                              ? Icons.expand_less_rounded
-                              : Icons.expand_more_rounded,
-                          size: 22,
-                          color: AppColors.onSurfaceVariant,
-                        ),
-                        style: IconButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                    if (isAdmin)
-                      IconButton(
-                        onPressed: onDelete == null
-                            ? null
-                            : () async {
-                                await onDelete();
-                              },
-                        icon: Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                          color: AppColors.error,
-                        ),
-                        style: IconButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
-                  ],
-                ),
-                if (collapsed)
-                  GestureDetector(
+                Expanded(
+                  child: GestureDetector(
                     onTap: _toggle,
                     behavior: HitTestBehavior.opaque,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.download_rounded,
-                            size: 16,
-                            color: AppColors.secondary,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(13),
+                          child: Image.asset(
+                            'assets/images/icon.png',
+                            width: 54,
+                            height: 54,
+                            fit: BoxFit.cover,
                           ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              '총보·파트 음원 ${resources.length}개 · 눌러서 펼쳐 받기',
-                              style: AppText.body(
-                                12.5,
-                                weight: FontWeight.w700,
-                                color: AppColors.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else ...[
-                  if (group.conductorComment.isNotEmpty) ...[
-                    const SizedBox(height: 15),
-                    _ConductorCue(comment: group.conductorComment),
-                  ],
-                  const SizedBox(height: 12),
-                  Column(
-                    children: [
-                      for (var i = 0; i < resources.length; i += 1)
-                        _PartResourceRow(
-                          partKey: resources[i].partKey,
-                          partLabel: resources[i].partLabel,
-                          sheetLabel: resources[i].sheetLabel,
-                          hasFile: resources[i].hasSheet,
-                          hasAudio: resources[i].hasAudio,
-                          showDivider: i != resources.length - 1,
-                          onOpenFile: () =>
-                              SheetMusicScreen._openUrl(resources[i].sheetUrl),
-                          onOpenAudio: () =>
-                              SheetMusicScreen._openUrl(resources[i].audioUrl),
                         ),
-                    ],
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                group.dateLabel,
+                                style: AppText.body(
+                                  12,
+                                  weight: FontWeight.w900,
+                                  color: AppColors.secondary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                group.songTitle,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.body(
+                                  18,
+                                  weight: FontWeight.w900,
+                                ),
+                              ),
+                              if (group.composer.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  group.composer,
+                                  style: AppText.body(
+                                    13,
+                                    color: AppColors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
+                ),
+                if (_isPast)
+                  IconButton(
+                    onPressed: _toggle,
+                    icon: Icon(
+                      _expanded
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      size: 22,
+                      color: AppColors.onSurfaceVariant,
+                    ),
+                    style: IconButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                if (isAdmin)
+                  IconButton(
+                    onPressed: onDelete == null
+                        ? null
+                        : () async {
+                            await onDelete();
+                          },
+                    icon: Icon(
+                      Icons.delete_outline_rounded,
+                      size: 18,
+                      color: AppColors.error,
+                    ),
+                    style: IconButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
               ],
             ),
-          ),
-        ],
+            if (collapsed)
+              GestureDetector(
+                onTap: _toggle,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.download_rounded,
+                        size: 16,
+                        color: AppColors.secondary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '총보·파트 음원 ${resources.length}개 · 눌러서 펼쳐 받기',
+                          style: AppText.body(
+                            12.5,
+                            weight: FontWeight.w700,
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else ...[
+              if (group.conductorComment.isNotEmpty) ...[
+                const SizedBox(height: 15),
+                _ConductorCue(comment: group.conductorComment),
+              ],
+              const SizedBox(height: 12),
+              Column(
+                children: [
+                  for (var i = 0; i < resources.length; i += 1)
+                    _PartResourceRow(
+                      partKey: resources[i].partKey,
+                      partLabel: resources[i].partLabel,
+                      sheetLabel: resources[i].sheetLabel,
+                      hasFile: resources[i].hasSheet,
+                      hasAudio: resources[i].hasAudio,
+                      showDivider: i != resources.length - 1,
+                      onOpenBoth: () => _openViewer(
+                        context,
+                        resources[i],
+                        withSheet: true,
+                        withAudio: true,
+                      ),
+                      onOpenFile: () => _openViewer(
+                        context,
+                        resources[i],
+                        withSheet: true,
+                        withAudio: false,
+                      ),
+                      onOpenAudio: () => _openViewer(
+                        context,
+                        resources[i],
+                        withSheet: false,
+                        withAudio: true,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -798,170 +814,6 @@ class _ConductorCue extends StatelessWidget {
   }
 }
 
-class _ScoreCoverBadge extends StatelessWidget {
-  const _ScoreCoverBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 56,
-      height: 64,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF6),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD7CBB2)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: CustomPaint(painter: _MiniStaffPainter()),
-          ),
-          Positioned(
-            top: 8,
-            bottom: 8,
-            left: 8,
-            child: Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 12,
-            left: 18,
-            right: 9,
-            child: Container(
-              height: 20,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Text(
-                'C.C',
-                style: AppText.body(
-                  10,
-                  weight: FontWeight.w900,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 18,
-            right: 11,
-            bottom: 15,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  height: 2,
-                  width: 23,
-                  decoration: BoxDecoration(
-                    color: AppColors.secondary,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Container(
-                  height: 2,
-                  width: 15,
-                  decoration: BoxDecoration(
-                    color: AppColors.secondary.withValues(alpha: 0.58),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StaffPaperPainter extends CustomPainter {
-  const _StaffPaperPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final staffPaint = Paint()
-      ..color = AppColors.primary.withValues(alpha: 0.045)
-      ..strokeWidth = 1;
-    final measurePaint = Paint()
-      ..color = AppColors.secondary.withValues(alpha: 0.08)
-      ..strokeWidth = 1;
-
-    for (var y = 34.0; y < size.height; y += 76) {
-      for (var line = 0; line < 5; line += 1) {
-        final lineY = y + line * 4;
-        canvas.drawLine(
-          Offset(10, lineY),
-          Offset(size.width - 10, lineY),
-          staffPaint,
-        );
-      }
-    }
-
-    for (var x = 92.0; x < size.width; x += 96) {
-      canvas.drawLine(Offset(x, 20), Offset(x, size.height - 20), measurePaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _StaffPaperPainter oldDelegate) => false;
-}
-
-class _MiniStaffPainter extends CustomPainter {
-  const _MiniStaffPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.secondary.withValues(alpha: 0.2)
-      ..strokeWidth = 1;
-    for (var y = 12.0; y <= 46; y += 6) {
-      canvas.drawLine(Offset(7, y), Offset(size.width - 7, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _MiniStaffPainter oldDelegate) => false;
-}
-
-class _FoldedCornerPainter extends CustomPainter {
-  const _FoldedCornerPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final fill = Paint()..color = const Color(0xFFF1E7D4);
-    final stroke = Paint()
-      ..color = const Color(0xFFD7CBB2)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    final path = Path()
-      ..moveTo(size.width, 0)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, 0)
-      ..close();
-    canvas.drawPath(path, fill);
-    canvas.drawPath(path, stroke);
-  }
-
-  @override
-  bool shouldRepaint(covariant _FoldedCornerPainter oldDelegate) => false;
-}
-
 class _PartResourceRow extends StatelessWidget {
   final String partKey;
   final String partLabel;
@@ -969,6 +821,7 @@ class _PartResourceRow extends StatelessWidget {
   final bool hasFile;
   final bool hasAudio;
   final bool showDivider;
+  final VoidCallback onOpenBoth;
   final VoidCallback onOpenFile;
   final VoidCallback onOpenAudio;
 
@@ -979,6 +832,7 @@ class _PartResourceRow extends StatelessWidget {
     required this.hasFile,
     required this.hasAudio,
     required this.showDivider,
+    required this.onOpenBoth,
     required this.onOpenFile,
     required this.onOpenAudio,
   });
@@ -991,58 +845,41 @@ class _PartResourceRow extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               SizedBox(
                 width: 88,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 3,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: tone.accent,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        partLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.body(
-                          12,
-                          weight: FontWeight.w900,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 3,
+                        height: 22,
+                        decoration: BoxDecoration(
                           color: tone.accent,
+                          borderRadius: BorderRadius.circular(2),
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          partLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.body(
+                            12,
+                            weight: FontWeight.w900,
+                            color: tone.accent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _ResourcePill(
-                      icon: Icons.description_rounded,
-                      label: hasFile ? sheetLabel : '악보 없음',
-                      enabled: hasFile,
-                      onTap: onOpenFile,
-                      accent: tone.accent,
-                    ),
-                    _ResourcePill(
-                      icon: Icons.headphones_rounded,
-                      label: hasAudio ? '가이드 듣기' : '가이드 없음',
-                      enabled: hasAudio,
-                      onTap: onOpenAudio,
-                      accent: tone.accent,
-                    ),
-                  ],
-                ),
-              ),
+              Expanded(child: _actions(tone)),
             ],
           ),
         ),
@@ -1055,6 +892,126 @@ class _PartResourceRow extends StatelessWidget {
       ],
     );
   }
+
+  Widget _actions(_PartTone tone) {
+    // Both present → big "악보보면서 가이드 듣기" on top, 악보/가이드 separate below.
+    if (hasFile && hasAudio) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _PrimaryResourceButton(
+            icon: Icons.queue_music_rounded,
+            label: '악보보면서 가이드 듣기',
+            accent: tone.accent,
+            onTap: onOpenBoth,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _ResourcePill(
+                  icon: Icons.description_rounded,
+                  label: sheetLabel,
+                  enabled: true,
+                  onTap: onOpenFile,
+                  accent: tone.accent,
+                  expand: true,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ResourcePill(
+                  icon: Icons.headphones_rounded,
+                  label: '가이드 듣기',
+                  enabled: true,
+                  onTap: onOpenAudio,
+                  accent: tone.accent,
+                  expand: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+    // Only one present → a single full-width button.
+    if (hasFile) {
+      return _PrimaryResourceButton(
+        icon: Icons.description_rounded,
+        label: sheetLabel,
+        accent: tone.accent,
+        onTap: onOpenFile,
+      );
+    }
+    if (hasAudio) {
+      return _PrimaryResourceButton(
+        icon: Icons.headphones_rounded,
+        label: '가이드 듣기',
+        accent: tone.accent,
+        onTap: onOpenAudio,
+      );
+    }
+    return _ResourcePill(
+      icon: Icons.block_rounded,
+      label: '자료 없음',
+      enabled: false,
+      onTap: () {},
+      accent: tone.accent,
+      expand: true,
+    );
+  }
+}
+
+class _PrimaryResourceButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _PrimaryResourceButton({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: accent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16, color: Colors.white),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(
+                    13,
+                    weight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ResourcePill extends StatelessWidget {
@@ -1063,6 +1020,7 @@ class _ResourcePill extends StatelessWidget {
   final bool enabled;
   final VoidCallback onTap;
   final Color accent;
+  final bool expand;
 
   const _ResourcePill({
     required this.icon,
@@ -1070,6 +1028,7 @@ class _ResourcePill extends StatelessWidget {
     required this.enabled,
     required this.onTap,
     required this.accent,
+    this.expand = false,
   });
 
   @override
@@ -1094,16 +1053,23 @@ class _ResourcePill extends StatelessWidget {
             ),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: expand
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
               Icon(icon, size: 14, color: enabled ? accent : AppColors.muted),
               const SizedBox(width: 5),
-              Text(
-                label,
-                style: AppText.body(
-                  12,
-                  color: enabled ? AppColors.primary : AppColors.muted,
-                  weight: FontWeight.w700,
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.body(
+                    12,
+                    color: enabled ? AppColors.primary : AppColors.muted,
+                    weight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
