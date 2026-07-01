@@ -37,7 +37,11 @@ void main() async {
   final cachedProfileWarm = FirebaseService.warmCachedProfile();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
+    // On web, on-disk persistence is single-tab: a second tab of the same origin
+    // can't get the persistence lock, which left secondary tabs hanging forever
+    // on the splash (profile snapshot never arrived). Memory cache avoids the
+    // lock; native platforms keep full offline persistence.
+    persistenceEnabled: !kIsWeb,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
   await cachedProfileWarm;
