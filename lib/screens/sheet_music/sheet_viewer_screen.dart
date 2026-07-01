@@ -251,14 +251,15 @@ class _SheetAudioBarState extends State<_SheetAudioBar> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(26),
           child: BackdropFilter(
-            // Light blur + low tint: the score behind stays readable through it.
-            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+            // Near-clear glass: minimal blur + very low tint so the score behind
+            // stays sharp. Controls are dark, so they stay legible.
+            filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.28),
+                color: Colors.white.withValues(alpha: 0.16),
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.45),
+                  color: Colors.white.withValues(alpha: 0.4),
                   width: 1,
                 ),
                 boxShadow: [
@@ -278,22 +279,28 @@ class _SheetAudioBarState extends State<_SheetAudioBar> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        // Left slot holds the toggle; an equal-width empty slot
-                        // on the right keeps the transport centered.
+                        // Toggle sits at the left; the transport centers in the
+                        // remaining space to its right (so it reads centered in
+                        // the empty area, not the whole bar).
+                        if (showToggle) _toggle(),
                         Expanded(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: showToggle
-                                ? _toggle()
-                                : const SizedBox.shrink(),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _skipButton(
+                                forward: false,
+                                onTap: () => _seekBy(-3),
+                              ),
+                              const SizedBox(width: 22),
+                              _playButton(),
+                              const SizedBox(width: 22),
+                              _skipButton(
+                                forward: true,
+                                onTap: () => _seekBy(3),
+                              ),
+                            ],
                           ),
                         ),
-                        _skipButton(forward: false, onTap: () => _seekBy(-3)),
-                        const SizedBox(width: 22),
-                        _playButton(),
-                        const SizedBox(width: 22),
-                        _skipButton(forward: true, onTap: () => _seekBy(3)),
-                        const Expanded(child: SizedBox()),
                       ],
                     ),
                   ],

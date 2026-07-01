@@ -135,7 +135,7 @@ const _previewSheetMusic = [
       {'timeSec': 12.0, 'text': '한 걸음씩 나아가리라'},
     ],
     'fileUrl':
-        'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+        'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
     'audioUrl': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     'audioFileName': '파트연습.mp3',
     'mrAudioUrl':
@@ -151,7 +151,7 @@ const _previewSheetMusic = [
     'sheetDate': '2026-05-05',
     'composer': '미리보기 악보&음원',
     'fileUrl':
-        'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+        'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf',
     'createdAt': '2026-04-28T09:00:00',
   },
   {
