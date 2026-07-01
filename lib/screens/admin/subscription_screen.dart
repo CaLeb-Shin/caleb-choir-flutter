@@ -158,11 +158,11 @@ class SubscriptionScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('요금제 안내', style: AppText.headline(15)),
+          Text('요금 안내', style: AppText.headline(15)),
           const SizedBox(height: 8),
-          _bullet('활성 단원 50명까지 무료로 이용할 수 있어요.'),
-          _bullet('50명을 넘으면 10명 단위로 월 구독을 이용합니다.'),
-          _bullet('미자립 교회는 별도 지원(후원)으로 무료·할인 적용이 가능합니다.'),
+          _bullet('찬양대원 100명까지는 언제나 무료예요.'),
+          _bullet('100명을 넘으면 100명 단위로만, 운영을 함께 이어가 주세요.'),
+          _bullet('미자립 교회는 후원으로 계속 무료로 함께합니다.'),
         ],
       ),
     );
