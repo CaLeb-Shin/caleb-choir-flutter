@@ -25,14 +25,13 @@ class SubscriptionScreen extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
               children: [
                 _statusCard(info),
+                const SizedBox(height: 14),
+                _planInfoCard(info.isOver),
+                // 구독(결제) 안내는 100명을 넘었을 때만 노출.
                 if (info.isOver) ...[
                   const SizedBox(height: 14),
-                  _overLimitCard(),
+                  _manageNoteCard(),
                 ],
-                const SizedBox(height: 14),
-                _planExplainCard(),
-                const SizedBox(height: 14),
-                _manageNoteCard(),
               ],
             ),
     );
@@ -42,7 +41,7 @@ class SubscriptionScreen extends ConsumerWidget {
     final ratio = info.limit <= 0
         ? 0.0
         : (info.activeCount / info.limit).clamp(0.0, 1.0);
-    final accent = info.isOver ? AppColors.error : AppColors.primary;
+    final accent = info.isOver ? AppColors.secondary : AppColors.primary;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -96,11 +95,11 @@ class SubscriptionScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            info.isOver ? '한도를 초과했습니다' : '앞으로 ${info.remaining}명 더 등록할 수 있어요',
+            info.isOver ? '무료 100명을 넘었어요' : '앞으로 ${info.remaining}명 더 무료로 등록할 수 있어요',
             style: AppText.body(
               13,
               weight: FontWeight.w700,
-              color: info.isOver ? AppColors.error : AppColors.secondary,
+              color: AppColors.secondary,
             ),
           ),
         ],
@@ -123,31 +122,7 @@ class SubscriptionScreen extends ConsumerWidget {
     );
   }
 
-  Widget _overLimitCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.error.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.error_outline_rounded, size: 20, color: AppColors.error),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '한도를 초과해 신규 단원 승인이 제한됩니다.\n관리자 웹에서 요금제를 올리면 다시 승인할 수 있어요.',
-              style: AppText.body(13, height: 1.5, color: AppColors.error),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _planExplainCard() {
+  Widget _planInfoCard(bool isOver) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -161,8 +136,9 @@ class SubscriptionScreen extends ConsumerWidget {
           Text('요금 안내', style: AppText.headline(15)),
           const SizedBox(height: 8),
           _bullet('찬양대원 100명까지는 언제나 무료예요.'),
-          _bullet('100명을 넘으면 100명 단위로만, 운영을 함께 이어가 주세요.'),
-          _bullet('미자립 교회는 후원으로 계속 무료로 함께합니다.'),
+          // 100명을 넘었을 때만 구독 안내를 보여준다.
+          if (isOver)
+            _bullet('100명을 넘으면 10명 단위로 구독해 함께 이어가요.'),
         ],
       ),
     );
@@ -182,7 +158,7 @@ class SubscriptionScreen extends ConsumerWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              '요금제 변경과 결제는 교회 관리자 웹에서 관리합니다.',
+              '구독·결제는 교회 관리자 웹에서 관리합니다.',
               style: AppText.body(13, height: 1.5, color: AppColors.primary),
             ),
           ),

@@ -24,9 +24,9 @@ class Church {
 
   /// Free tier ceiling and paid block size. Server `config/billing` may tune
   /// these later; these are the defaults the app reasons with.
-  /// 100 members free; beyond that, subscribe per additional 100.
+  /// 100 members free; beyond that, subscribe per additional 10.
   static const int freeLimit = 100;
-  static const int blockSize = 100;
+  static const int blockSize = 10;
 
   Church({
     required this.id,
